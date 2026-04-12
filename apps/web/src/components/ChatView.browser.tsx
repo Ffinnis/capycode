@@ -3064,17 +3064,26 @@ describe("ChatView timeline estimator parity (full app)", () => {
           document.querySelector<HTMLButtonElement>(`[data-testid="thread-archive-${THREAD_ID}"]`),
         "Unable to find archive button.",
       );
+      const deleteButton = await waitForElement(
+        () =>
+          document.querySelector<HTMLButtonElement>(`[data-testid="thread-delete-${THREAD_ID}"]`),
+        "Unable to find delete button.",
+      );
       const archiveAction = archiveButton.parentElement;
+      const deleteAction = deleteButton.parentElement;
       expect(
         archiveAction,
         "Archive button should render inside a visibility wrapper.",
       ).not.toBeNull();
+      expect(deleteAction, "Delete button should render inside a visibility wrapper.").not.toBeNull();
       expect(getComputedStyle(archiveAction!).opacity).toBe("0");
+      expect(getComputedStyle(deleteAction!).opacity).toBe("0");
 
       await threadRow.hover();
       await vi.waitFor(
         () => {
           expect(getComputedStyle(archiveAction!).opacity).toBe("1");
+          expect(getComputedStyle(deleteAction!).opacity).toBe("1");
         },
         { timeout: 4_000, interval: 16 },
       );
@@ -3083,6 +3092,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await vi.waitFor(
         () => {
           expect(getComputedStyle(archiveAction!).opacity).toBe("0");
+          expect(getComputedStyle(deleteAction!).opacity).toBe("0");
         },
         { timeout: 4_000, interval: 16 },
       );
@@ -3121,6 +3131,53 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const confirmButton = page.getByTestId(`thread-archive-confirm-${THREAD_ID}`);
       await expect.element(confirmButton).toBeInTheDocument();
       await expect.element(confirmButton).toBeVisible();
+    } finally {
+      localStorage.removeItem("t3code:client-settings:v1");
+      await mounted.cleanup();
+    }
+  });
+
+  it("deleting the active thread shows the no-active-thread empty state", async () => {
+    localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        ...DEFAULT_CLIENT_SETTINGS,
+        confirmThreadDelete: false,
+      }),
+    );
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-delete-thread-test" as MessageId,
+        targetText: "delete thread target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      const threadRow = page.getByTestId(`thread-row-${THREAD_ID}`);
+
+      await expect.element(threadRow).toBeInTheDocument();
+      await threadRow.hover();
+
+      const deleteButton = page.getByTestId(`thread-delete-${THREAD_ID}`);
+      await expect.element(deleteButton).toBeInTheDocument();
+      await deleteButton.click();
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("Pick a thread to continue");
+        },
+        { timeout: 4_000, interval: 16 },
+      );
     } finally {
       localStorage.removeItem("t3code:client-settings:v1");
       await mounted.cleanup();
