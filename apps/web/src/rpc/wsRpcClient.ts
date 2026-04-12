@@ -61,8 +61,31 @@ export interface WsRpcClient {
   };
   readonly workspaces: {
     readonly create: RpcUnaryMethod<typeof WS_METHODS.workspacesCreate>;
+    readonly update: RpcUnaryMethod<typeof WS_METHODS.workspacesUpdate>;
     readonly setActive: RpcUnaryMethod<typeof WS_METHODS.workspacesSetActive>;
+    readonly getDeletePreview: RpcUnaryMethod<typeof WS_METHODS.workspacesGetDeletePreview>;
     readonly delete: RpcUnaryMethod<typeof WS_METHODS.workspacesDelete>;
+    readonly listOpenCandidates: RpcUnaryMethod<typeof WS_METHODS.workspacesListOpenCandidates>;
+    readonly openMainRepo: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenMainRepo>;
+    readonly openTrackedWorktree: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenTrackedWorktree>;
+    readonly openExternalWorktree: RpcUnaryMethod<
+      typeof WS_METHODS.workspacesOpenExternalWorktree
+    >;
+    readonly importAll: RpcUnaryMethod<typeof WS_METHODS.workspacesImportAll>;
+    readonly createSection: RpcUnaryMethod<typeof WS_METHODS.workspacesCreateSection>;
+    readonly renameSection: RpcUnaryMethod<typeof WS_METHODS.workspacesRenameSection>;
+    readonly deleteSection: RpcUnaryMethod<typeof WS_METHODS.workspacesDeleteSection>;
+    readonly setSectionColor: RpcUnaryMethod<typeof WS_METHODS.workspacesSetSectionColor>;
+    readonly toggleSectionCollapsed: RpcUnaryMethod<
+      typeof WS_METHODS.workspacesToggleSectionCollapsed
+    >;
+    readonly reorderProjectChildren: RpcUnaryMethod<
+      typeof WS_METHODS.workspacesReorderProjectChildren
+    >;
+    readonly reorderSectionWorkspaces: RpcUnaryMethod<
+      typeof WS_METHODS.workspacesReorderSectionWorkspaces
+    >;
+    readonly moveToSection: RpcUnaryMethod<typeof WS_METHODS.workspacesMoveToSection>;
   };
   readonly shell: {
     readonly openInEditor: (input: {
@@ -144,9 +167,38 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
     },
     workspaces: {
       create: (input) => transport.request((client) => client[WS_METHODS.workspacesCreate](input)),
+      update: (input) => transport.request((client) => client[WS_METHODS.workspacesUpdate](input)),
       setActive: (input) =>
         transport.request((client) => client[WS_METHODS.workspacesSetActive](input)),
+      getDeletePreview: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesGetDeletePreview](input)),
       delete: (input) => transport.request((client) => client[WS_METHODS.workspacesDelete](input)),
+      listOpenCandidates: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesListOpenCandidates](input)),
+      openMainRepo: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesOpenMainRepo](input)),
+      openTrackedWorktree: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesOpenTrackedWorktree](input)),
+      openExternalWorktree: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesOpenExternalWorktree](input)),
+      importAll: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesImportAll](input)),
+      createSection: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesCreateSection](input)),
+      renameSection: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesRenameSection](input)),
+      deleteSection: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesDeleteSection](input)),
+      setSectionColor: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesSetSectionColor](input)),
+      toggleSectionCollapsed: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesToggleSectionCollapsed](input)),
+      reorderProjectChildren: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesReorderProjectChildren](input)),
+      reorderSectionWorkspaces: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesReorderSectionWorkspaces](input)),
+      moveToSection: (input) =>
+        transport.request((client) => client[WS_METHODS.workspacesMoveToSection](input)),
     },
     shell: {
       openInEditor: (input) =>

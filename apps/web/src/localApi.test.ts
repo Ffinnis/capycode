@@ -54,8 +54,23 @@ const rpcClientMock = {
   },
   workspaces: {
     create: vi.fn(),
+    update: vi.fn(),
     setActive: vi.fn(),
+    getDeletePreview: vi.fn(),
     delete: vi.fn(),
+    listOpenCandidates: vi.fn(),
+    openMainRepo: vi.fn(),
+    openTrackedWorktree: vi.fn(),
+    openExternalWorktree: vi.fn(),
+    importAll: vi.fn(),
+    createSection: vi.fn(),
+    renameSection: vi.fn(),
+    deleteSection: vi.fn(),
+    setSectionColor: vi.fn(),
+    toggleSectionCollapsed: vi.fn(),
+    reorderProjectChildren: vi.fn(),
+    reorderSectionWorkspaces: vi.fn(),
+    moveToSection: vi.fn(),
   },
   shell: {
     openInEditor: vi.fn(),
@@ -480,16 +495,18 @@ describe("wsApi", () => {
     });
   });
 
-  it("forwards context menu metadata to the desktop bridge", async () => {
+  it("uses the in-app context menu fallback even when the desktop bridge exists", async () => {
     const showContextMenu = vi.fn().mockResolvedValue("delete");
     getWindowForTest().desktopBridge = makeDesktopBridge({ showContextMenu });
+    showContextMenuFallbackMock.mockResolvedValue("delete");
 
     const { createLocalApi } = await import("./localApi");
     const api = createLocalApi(rpcClientMock as never);
     const items = [{ id: "delete", label: "Delete" }] as const;
 
     await expect(api.contextMenu.show(items)).resolves.toBe("delete");
-    expect(showContextMenu).toHaveBeenCalledWith(items, undefined);
+    expect(showContextMenuFallbackMock).toHaveBeenCalledWith(items, undefined);
+    expect(showContextMenu).not.toHaveBeenCalled();
   });
 
   it("falls back to the browser context menu helper when the desktop bridge is missing", async () => {

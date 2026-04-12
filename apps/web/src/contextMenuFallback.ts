@@ -1,7 +1,8 @@
 import type { ContextMenuItem } from "@capycode/contracts";
 
 /**
- * Imperative DOM-based context menu for non-Electron environments.
+ * Imperative DOM-based context menu rendered inside the web app so the UI
+ * stays consistent across browser and desktop shells.
  * Shows a positioned dropdown and returns a promise that resolves
  * with the clicked item id, or null if dismissed.
  */
@@ -12,10 +13,12 @@ export function showContextMenuFallback<T extends string>(
   return new Promise<T | null>((resolve) => {
     const overlay = document.createElement("div");
     overlay.style.cssText = "position:fixed;inset:0;z-index:9999";
+    overlay.setAttribute("data-sidebar-context-menu-overlay", "true");
 
     const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
     menu.className =
-      "fixed z-[10000] min-w-[140px] rounded-md border border-border bg-popover py-1 shadow-xl animate-in fade-in zoom-in-95";
+      "fixed z-[10000] min-w-44 rounded-lg border bg-popover not-dark:bg-clip-padding p-1 shadow-lg/5 outline-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]";
 
     const x = position?.x ?? 0;
     const y = position?.y ?? 0;
@@ -37,20 +40,25 @@ export function showContextMenuFallback<T extends string>(
     }
 
     overlay.addEventListener("mousedown", () => cleanup(null));
+    overlay.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      cleanup(null);
+    });
     document.addEventListener("keydown", onKeyDown);
 
     for (const item of items) {
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.setAttribute("role", "menuitem");
       btn.textContent = item.label;
       const isDestructiveAction = item.destructive === true || item.id === "delete";
       const isDisabled = item.disabled === true;
       btn.disabled = isDisabled;
       btn.className = isDisabled
-        ? "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-muted-foreground/60 cursor-not-allowed"
+        ? "flex min-h-7 w-full items-center rounded-sm px-2 py-1 text-left text-sm text-muted-foreground/60 opacity-50 cursor-not-allowed"
         : isDestructiveAction
-          ? "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-destructive hover:bg-accent cursor-default"
-          : "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-popover-foreground hover:bg-accent cursor-default";
+          ? "flex min-h-7 w-full items-center rounded-sm px-2 py-1 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+          : "flex min-h-7 w-full items-center rounded-sm px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground";
       if (!isDisabled) {
         btn.addEventListener("click", () => cleanup(item.id));
       }
@@ -59,6 +67,9 @@ export function showContextMenuFallback<T extends string>(
 
     document.body.appendChild(overlay);
     document.body.appendChild(menu);
+    const focusableItems = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>('button:not([disabled])'),
+    );
 
     // Adjust if menu overflows viewport
     requestAnimationFrame(() => {
@@ -69,6 +80,7 @@ export function showContextMenuFallback<T extends string>(
       if (rect.bottom > window.innerHeight) {
         menu.style.top = `${window.innerHeight - rect.height - 4}px`;
       }
+      focusableItems[0]?.focus();
     });
   });
 }

@@ -23,6 +23,23 @@ import {
   WS_METHODS,
   WorkspaceError,
   type Workspace as WorkspaceRecord,
+  type WorkspaceCreateInput,
+  type WorkspaceDeleteInput,
+  type WorkspaceMoveToSectionInput,
+  type WorkspaceOpenExternalWorktreeInput,
+  type WorkspaceOpenMainRepoInput,
+  type WorkspaceOpenTrackedWorktreeInput,
+  type WorkspaceImportAllInput,
+  type WorkspaceReorderProjectChildrenInput,
+  type WorkspaceReorderSectionWorkspacesInput,
+  type WorkspaceSection as WorkspaceSectionRecord,
+  type WorkspaceSectionColorInput,
+  type WorkspaceSectionCreateInput,
+  type WorkspaceSectionDeleteInput,
+  type WorkspaceSectionRenameInput,
+  type WorkspaceSectionToggleCollapsedInput,
+  type WorkspaceSetActiveInput,
+  type WorkspaceUpdateInput,
   WsRpcGroup,
 } from "@capycode/contracts";
 import { clamp } from "effect/Number";
@@ -89,16 +106,41 @@ type ProjectWorkspaceRootRow = {
   readonly workspaceRoot: string;
 };
 
-type WorkspaceThreadCountRow = {
-  readonly threadCount: number;
-};
-
 type WorktreeDbRow = {
   readonly id: string;
+  readonly projectId: string;
   readonly path: string;
   readonly branch: string;
   readonly baseBranch: string | null;
   readonly createdByCapycode: number;
+};
+
+type WorkspaceSectionDbRow = {
+  readonly id: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly tabOrder: number;
+  readonly isCollapsed: number;
+  readonly color: string | null;
+  readonly createdAt: string;
+};
+
+type WorkspaceDeletePreviewDbRow = {
+  readonly activeThreadCount: number;
+  readonly archivedThreadCount: number;
+  readonly totalThreadCount: number;
+};
+
+type ProjectChildOrderItemDbRow = {
+  readonly kind: "workspace" | "section";
+  readonly id: string;
+};
+
+type ListedGitWorktree = {
+  readonly path: string;
+  readonly branch: string | null;
+  readonly isBare: boolean;
+  readonly isDetached: boolean;
 };
 
 function makeWorkspaceError(message: string, cause?: unknown): WorkspaceError {
@@ -138,6 +180,18 @@ function mapWorkspaceRow(row: WorkspaceDbRow): WorkspaceRecord {
     updatedAt: row.updatedAt,
     lastOpenedAt: row.lastOpenedAt,
     deletingAt: row.deletingAt,
+  };
+}
+
+function mapWorkspaceSectionRow(row: WorkspaceSectionDbRow): WorkspaceSectionRecord {
+  return {
+    id: row.id as never,
+    projectId: row.projectId as never,
+    name: row.name,
+    tabOrder: row.tabOrder,
+    isCollapsed: row.isCollapsed === 1,
+    color: row.color,
+    createdAt: row.createdAt,
   };
 }
 
@@ -210,14 +264,103 @@ const loadWorkspaceRecord = (
     return mapWorkspaceRow(workspace);
   });
 
+const loadWorkspaceSectionRecord = (
+  sql: SqlClient.SqlClient,
+  sectionId: string,
+): Effect.Effect<WorkspaceSectionRecord, WorkspaceError> =>
+  Effect.gen(function* () {
+    const rows = yield* sql<WorkspaceSectionDbRow>`
+      SELECT
+        id,
+        project_id AS "projectId",
+        name,
+        tab_order AS "tabOrder",
+        is_collapsed AS "isCollapsed",
+        color,
+        created_at AS "createdAt"
+      FROM workspace_sections
+      WHERE id = ${sectionId}
+      LIMIT 1
+    `.pipe(
+      Effect.mapError((cause) => makeWorkspaceError("Failed to load workspace section", cause)),
+    );
+
+    const section = rows[0];
+    if (!section) {
+      return yield* Effect.fail(makeWorkspaceError("Workspace section not found"));
+    }
+
+    return mapWorkspaceSectionRow(section);
+  });
+
 const resolveCurrentProjectBranch = (
   git: GitCoreShape,
   projectRoot: string,
 ): Effect.Effect<string, WorkspaceError> =>
   git.listBranches({ cwd: projectRoot }).pipe(
     Effect.map((result) => result.branches.find((branch) => branch.current)?.name ?? "main"),
-    Effect.catchAll(() => Effect.succeed("main")),
+    Effect.orElseSucceed(() => "main"),
   );
+
+const resolveCurrentBranchAtPath = (
+  git: GitCoreShape,
+  cwd: string,
+): Effect.Effect<string, WorkspaceError> =>
+  git.listBranches({ cwd }).pipe(
+    Effect.map((result) => result.branches.find((branch) => branch.current)?.name ?? "main"),
+    Effect.catch((cause) =>
+      Effect.fail(makeWorkspaceError("Failed to resolve current branch", cause)),
+    ),
+  );
+
+function parseGitWorktreeListPorcelain(output: string): ReadonlyArray<ListedGitWorktree> {
+  const blocks = output
+    .trim()
+    .split(/\n\s*\n/g)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+
+  const worktrees: ListedGitWorktree[] = [];
+  for (const block of blocks) {
+    const lines = block.split("\n");
+    let path: string | null = null;
+    let branch: string | null = null;
+    let isBare = false;
+    let isDetached = false;
+
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        path = line.slice("worktree ".length).trim();
+        continue;
+      }
+      if (line.startsWith("branch ")) {
+        const ref = line.slice("branch ".length).trim();
+        branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+        continue;
+      }
+      if (line === "bare") {
+        isBare = true;
+        continue;
+      }
+      if (line === "detached") {
+        isDetached = true;
+      }
+    }
+
+    if (!path) {
+      continue;
+    }
+
+    worktrees.push({
+      path,
+      branch,
+      isBare,
+      isDetached,
+    });
+  }
+
+  return worktrees;
+}
 
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
@@ -658,6 +801,166 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           return yield* loadWorkspaceRecord(sql, workspaceId);
         });
 
+      const loadWorktreeRecordById = (worktreeId: string) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<WorktreeDbRow>`
+            SELECT
+              id,
+              project_id AS "projectId",
+              path,
+              branch,
+              base_branch AS "baseBranch",
+              created_by_capycode AS "createdByCapycode"
+            FROM worktrees
+            WHERE id = ${worktreeId}
+            LIMIT 1
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to load worktree", cause)),
+          );
+          const worktree = rows[0];
+          if (!worktree) {
+            return yield* Effect.fail(makeWorkspaceError("Worktree not found"));
+          }
+          return worktree;
+        });
+
+      const findWorktreeRecordByPath = (projectId: string, worktreePath: string) =>
+        sql<WorktreeDbRow>`
+          SELECT
+            id,
+            project_id AS "projectId",
+            path,
+            branch,
+            base_branch AS "baseBranch",
+            created_by_capycode AS "createdByCapycode"
+          FROM worktrees
+          WHERE project_id = ${projectId}
+            AND path = ${worktreePath}
+          LIMIT 1
+        `.pipe(
+          Effect.map((rows) => rows[0] ?? null),
+          Effect.mapError((cause) => makeWorkspaceError("Failed to load worktree", cause)),
+        );
+
+      const loadGitListedWorktrees = (projectRoot: string) =>
+        git
+          .execute({
+            operation: "Workspace.listGitWorktrees",
+            cwd: projectRoot,
+            args: ["worktree", "list", "--porcelain"],
+          })
+          .pipe(
+            Effect.map((result) => parseGitWorktreeListPorcelain(result.stdout)),
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to list git worktrees for project", cause),
+            ),
+          );
+
+      const resolveNextTopLevelTabOrder = (projectId: string) =>
+        sql<{ readonly nextTabOrder: number }>`
+          SELECT COALESCE(MAX(tab_order) + 1, 0) AS "nextTabOrder"
+          FROM (
+            SELECT tab_order
+            FROM workspaces
+            WHERE project_id = ${projectId}
+              AND section_id IS NULL
+              AND deleting_at IS NULL
+            UNION ALL
+            SELECT tab_order
+            FROM workspace_sections
+            WHERE project_id = ${projectId}
+          ) AS project_children
+        `.pipe(
+          Effect.map((rows) => rows[0]?.nextTabOrder ?? 0),
+          Effect.mapError((cause) =>
+            makeWorkspaceError("Failed to resolve top-level workspace ordering", cause),
+          ),
+        );
+
+      const resolveNextSectionTabOrder = (sectionId: string) =>
+        sql<{ readonly nextTabOrder: number }>`
+          SELECT COALESCE(MAX(tab_order) + 1, 0) AS "nextTabOrder"
+          FROM workspaces
+          WHERE section_id = ${sectionId}
+            AND deleting_at IS NULL
+        `.pipe(
+          Effect.map((rows) => rows[0]?.nextTabOrder ?? 0),
+          Effect.mapError((cause) =>
+            makeWorkspaceError("Failed to resolve section workspace ordering", cause),
+          ),
+        );
+
+      const insertWorkspaceRecord = (input: {
+        readonly projectId: string;
+        readonly worktreeId: string | null;
+        readonly type: "branch" | "worktree";
+        readonly branch: string;
+        readonly name: string;
+        readonly sectionId: string | null;
+      }) =>
+        Effect.gen(function* () {
+          const now = new Date().toISOString();
+          const tabOrder =
+            input.sectionId === null
+              ? yield* resolveNextTopLevelTabOrder(input.projectId)
+              : yield* resolveNextSectionTabOrder(input.sectionId);
+          const workspaceId = crypto.randomUUID();
+          yield* sql`
+            INSERT INTO workspaces (
+              id,
+              project_id,
+              worktree_id,
+              type,
+              branch,
+              name,
+              tab_order,
+              is_default,
+              created_at,
+              updated_at,
+              last_opened_at,
+              deleting_at,
+              section_id
+            )
+            VALUES (
+              ${workspaceId},
+              ${input.projectId},
+              ${input.worktreeId},
+              ${input.type},
+              ${input.branch},
+              ${input.name},
+              ${tabOrder},
+              0,
+              ${now},
+              ${now},
+              ${now},
+              NULL,
+              ${input.sectionId}
+            )
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to create workspace", cause)),
+          );
+          return yield* setActiveWorkspace(workspaceId);
+        });
+
+      const updateWorkspace = (input: {
+        readonly workspaceId: string;
+        readonly name: string;
+      }) =>
+        Effect.gen(function* () {
+          const workspace = yield* loadWorkspaceRecord(sql, input.workspaceId);
+          const now = new Date().toISOString();
+          yield* sql`
+            UPDATE workspaces
+            SET
+              name = ${input.name},
+              updated_at = ${now}
+            WHERE id = ${workspace.id}
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to update workspace", cause)),
+          );
+          return yield* loadWorkspaceRecord(sql, workspace.id);
+        });
+
       const createWorkspace = (input: {
         projectId: string;
         name: string;
@@ -671,25 +974,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           const projectRoot = yield* loadProjectWorkspaceRoot(sql, input.projectId);
           const requestedType = input.type ?? (input.worktreePath ? "worktree" : "branch");
           const now = new Date().toISOString();
-          const nextTabOrderRows = yield* sql<{ readonly nextTabOrder: number }>`
-            SELECT COALESCE(MAX(tab_order) + 1, 0) AS "nextTabOrder"
-            FROM workspaces
-            WHERE project_id = ${input.projectId}
-          `.pipe(
-            Effect.mapError((cause) =>
-              makeWorkspaceError("Failed to resolve workspace ordering", cause),
-            ),
-          );
-          const nextTabOrder = nextTabOrderRows[0]?.nextTabOrder ?? 0;
 
           if (requestedType === "worktree") {
-            const baseBranch =
-              input.baseBranch ??
-              (yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
-                Effect.catchAll((cause) =>
-                  Effect.fail(makeWorkspaceError("Failed to resolve base branch", cause)),
-                ),
-              ));
+            const resolvedBaseBranch = yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
+              Effect.catch((cause) =>
+                Effect.fail(makeWorkspaceError("Failed to resolve base branch", cause)),
+              ),
+            );
+            const baseBranch = input.baseBranch ?? resolvedBaseBranch;
             const targetBranch = input.branch ?? slugifyWorkspaceName(input.name);
             const targetWorktreePath = input.worktreePath ?? deriveWorktreePath(projectRoot, targetBranch);
 
@@ -805,54 +1097,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ),
               );
             }
-
-            const workspaceId = crypto.randomUUID();
-            yield* sql`
-              INSERT INTO workspaces (
-                id,
-                project_id,
-                worktree_id,
-                type,
-                branch,
-                name,
-                tab_order,
-                is_default,
-                created_at,
-                updated_at,
-                last_opened_at,
-                deleting_at,
-                section_id
-              )
-              VALUES (
-                ${workspaceId},
-                ${input.projectId},
-                ${worktreeId},
-                ${requestedType},
-                ${resolvedBranch},
-                ${input.name},
-                ${nextTabOrder},
-                0,
-                ${now},
-                ${now},
-                ${now},
-                NULL,
-                ${input.sectionId ?? null}
-              )
-            `.pipe(
-              Effect.mapError((cause) => makeWorkspaceError("Failed to create workspace", cause)),
-            );
-
-            return yield* setActiveWorkspace(workspaceId);
+            return yield* insertWorkspaceRecord({
+              projectId: input.projectId,
+              worktreeId,
+              type: requestedType,
+              branch: resolvedBranch,
+              name: input.name,
+              sectionId: input.sectionId ?? null,
+            });
           }
 
-          const branch =
-            input.branch ??
-            input.baseBranch ??
-            (yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
-              Effect.catchAll((cause) =>
-                Effect.fail(makeWorkspaceError("Failed to resolve workspace branch", cause)),
-              ),
-            ));
+          const resolvedBranch = yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
+            Effect.catch((cause) =>
+              Effect.fail(makeWorkspaceError("Failed to resolve workspace branch", cause)),
+            ),
+          );
+          const branch = input.branch ?? input.baseBranch ?? resolvedBranch;
 
           const existingWorkspaceRows = yield* sql<{ readonly id: string }>`
             SELECT id
@@ -872,43 +1132,488 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             return yield* setActiveWorkspace(existingWorkspaceRows[0].id);
           }
 
-          const workspaceId = crypto.randomUUID();
-          yield* sql`
-            INSERT INTO workspaces (
-              id,
-              project_id,
-              worktree_id,
-              type,
-              branch,
-              name,
-              tab_order,
-              is_default,
-              created_at,
-              updated_at,
-              last_opened_at,
-              deleting_at,
-              section_id
-            )
-            VALUES (
-              ${workspaceId},
-              ${input.projectId},
-              NULL,
-              'branch',
-              ${branch},
-              ${input.name},
-              ${nextTabOrder},
-              0,
-              ${now},
-              ${now},
-              ${now},
-              NULL,
-              ${input.sectionId ?? null}
-            )
+          return yield* insertWorkspaceRecord({
+            projectId: input.projectId,
+            worktreeId: null,
+            type: "branch",
+            branch,
+            name: input.name,
+            sectionId: input.sectionId ?? null,
+          });
+        });
+
+      const getWorkspaceDeletePreview = (workspaceId: string) =>
+        Effect.gen(function* () {
+          const workspace = yield* loadWorkspaceRecord(sql, workspaceId);
+          const counts = yield* sql<WorkspaceDeletePreviewDbRow>`
+            SELECT
+              SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) AS "activeThreadCount",
+              SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS "archivedThreadCount",
+              COUNT(*) AS "totalThreadCount"
+            FROM projection_threads
+            WHERE workspace_id = ${workspaceId}
+              AND deleted_at IS NULL
           `.pipe(
-            Effect.mapError((cause) => makeWorkspaceError("Failed to create workspace", cause)),
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to inspect workspace thread usage", cause),
+            ),
+          );
+          const worktree =
+            workspace.worktreeId === null
+              ? null
+              : yield* loadWorktreeRecordById(workspace.worktreeId).pipe(
+                  Effect.orElseSucceed(() => null),
+                );
+          const row = counts[0];
+          return {
+            workspaceId: workspace.id,
+            activeThreadCount: row?.activeThreadCount ?? 0,
+            archivedThreadCount: row?.archivedThreadCount ?? 0,
+            totalThreadCount: row?.totalThreadCount ?? 0,
+            deletesWorktreePath:
+              worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path),
+            worktreePath: workspace.worktreePath,
+          };
+        });
+
+      const listOpenCandidates = (projectId: string) =>
+        Effect.gen(function* () {
+          const projectRoot = yield* loadProjectWorkspaceRoot(sql, projectId);
+          const mainRepoBranch = yield* resolveCurrentProjectBranch(git, projectRoot);
+          const trackedWorktrees = yield* sql<WorktreeDbRow>`
+            SELECT
+              worktrees.id,
+              worktrees.project_id AS "projectId",
+              worktrees.path,
+              worktrees.branch,
+              worktrees.base_branch AS "baseBranch",
+              worktrees.created_by_capycode AS "createdByCapycode"
+            FROM worktrees
+            LEFT JOIN workspaces
+              ON workspaces.worktree_id = worktrees.id
+              AND workspaces.deleting_at IS NULL
+            WHERE worktrees.project_id = ${projectId}
+              AND workspaces.id IS NULL
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to load tracked worktree candidates", cause),
+            ),
+          );
+          const listed = yield* loadGitListedWorktrees(projectRoot);
+          const trackedPaths = new Set(trackedWorktrees.map((worktree) => worktree.path));
+
+          return {
+            projectId: projectId as never,
+            mainRepoBranch,
+            trackedWorktrees: trackedWorktrees
+              .filter((worktree) => existsSync(worktree.path))
+              .map((worktree) => ({
+                worktreeId: worktree.id as never,
+                projectId: worktree.projectId as never,
+                path: worktree.path,
+                branch: worktree.branch,
+                baseBranch: worktree.baseBranch,
+              })),
+            externalWorktrees: listed
+              .filter(
+                (worktree) =>
+                  worktree.path !== projectRoot &&
+                  !worktree.isBare &&
+                  !worktree.isDetached &&
+                  worktree.branch !== null &&
+                  !trackedPaths.has(worktree.path),
+              )
+              .map((worktree) => ({
+                projectId: projectId as never,
+                path: worktree.path,
+                branch: worktree.branch ?? "main",
+              })),
+          };
+        });
+
+      const openMainRepoWorkspace = (projectId: string) =>
+        Effect.gen(function* () {
+          const projectRoot = yield* loadProjectWorkspaceRoot(sql, projectId);
+          const branch = yield* resolveCurrentProjectBranch(git, projectRoot);
+          const defaultWorkspaceRows = yield* sql<{ readonly id: string }>`
+            SELECT id
+            FROM workspaces
+            WHERE project_id = ${projectId}
+              AND is_default = 1
+              AND deleting_at IS NULL
+            LIMIT 1
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to load default workspace", cause),
+            ),
           );
 
-          return yield* setActiveWorkspace(workspaceId);
+          if (defaultWorkspaceRows[0]?.id) {
+            const now = new Date().toISOString();
+            yield* sql`
+              UPDATE workspaces
+              SET
+                branch = ${branch},
+                name = ${branch},
+                section_id = NULL,
+                updated_at = ${now},
+                last_opened_at = ${now}
+              WHERE id = ${defaultWorkspaceRows[0].id}
+            `.pipe(
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to sync main repo workspace", cause),
+              ),
+            );
+            return yield* setActiveWorkspace(defaultWorkspaceRows[0].id);
+          }
+
+          return yield* createWorkspace({
+            projectId,
+            name: branch,
+            type: "branch",
+            branch,
+          });
+        });
+
+      const openTrackedWorktree = (worktreeId: string) =>
+        Effect.gen(function* () {
+          const worktree = yield* loadWorktreeRecordById(worktreeId);
+          const existingWorkspaceRows = yield* sql<{ readonly id: string }>`
+            SELECT id
+            FROM workspaces
+            WHERE worktree_id = ${worktreeId}
+              AND deleting_at IS NULL
+            LIMIT 1
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to inspect existing worktree workspace", cause),
+            ),
+          );
+          if (existingWorkspaceRows[0]?.id) {
+            return yield* setActiveWorkspace(existingWorkspaceRows[0].id);
+          }
+          if (!existsSync(worktree.path)) {
+            return yield* Effect.fail(makeWorkspaceError("Worktree no longer exists on disk"));
+          }
+          return yield* insertWorkspaceRecord({
+            projectId: worktree.projectId,
+            worktreeId: worktree.id,
+            type: "worktree",
+            branch: worktree.branch,
+            name: worktree.branch,
+            sectionId: null,
+          });
+        });
+
+      const openExternalWorktree = (input: {
+        readonly projectId: string;
+        readonly worktreePath: string;
+        readonly branch: string;
+      }) =>
+        Effect.gen(function* () {
+          const projectRoot = yield* loadProjectWorkspaceRoot(sql, input.projectId);
+          const listed = yield* loadGitListedWorktrees(projectRoot);
+          const matched = listed.find((worktree) => worktree.path === input.worktreePath);
+          if (!matched || matched.isBare || matched.isDetached || matched.path === projectRoot) {
+            return yield* Effect.fail(makeWorkspaceError("External worktree not found"));
+          }
+
+          const existingWorktree = yield* findWorktreeRecordByPath(input.projectId, input.worktreePath);
+          if (existingWorktree) {
+            return yield* openTrackedWorktree(existingWorktree.id);
+          }
+
+          const now = new Date().toISOString();
+          const worktreeId = crypto.randomUUID();
+          const branch =
+            matched.branch ??
+            (yield* resolveCurrentBranchAtPath(git, input.worktreePath).pipe(
+              Effect.orElseSucceed(() => input.branch),
+            ));
+          yield* sql`
+            INSERT INTO worktrees (
+              id,
+              project_id,
+              path,
+              branch,
+              base_branch,
+              created_at,
+              created_by_capycode
+            )
+            VALUES (
+              ${worktreeId},
+              ${input.projectId},
+              ${input.worktreePath},
+              ${branch},
+              NULL,
+              ${now},
+              0
+            )
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to import external worktree", cause)),
+          );
+
+          return yield* insertWorkspaceRecord({
+            projectId: input.projectId,
+            worktreeId,
+            type: "worktree",
+            branch,
+            name: branch,
+            sectionId: null,
+          });
+        });
+
+      const importAllWorkspaces = (projectId: string) =>
+        Effect.gen(function* () {
+          const candidates = yield* listOpenCandidates(projectId);
+          const reopenedTracked = yield* Effect.forEach(
+            candidates.trackedWorktrees,
+            (candidate) => openTrackedWorktree(candidate.worktreeId),
+            { concurrency: 1 },
+          );
+          const importedExternal = yield* Effect.forEach(
+            candidates.externalWorktrees,
+            (candidate) =>
+              openExternalWorktree({
+                projectId: candidate.projectId,
+                worktreePath: candidate.path,
+                branch: candidate.branch,
+              }),
+            { concurrency: 1 },
+          );
+          return [...reopenedTracked, ...importedExternal];
+        });
+
+      const createWorkspaceSection = (input: {
+        readonly projectId: string;
+        readonly name: string;
+      }) =>
+        Effect.gen(function* () {
+          const tabOrder = yield* resolveNextTopLevelTabOrder(input.projectId);
+          const sectionId = crypto.randomUUID();
+          const createdAt = new Date().toISOString();
+          yield* sql`
+            INSERT INTO workspace_sections (
+              id,
+              project_id,
+              name,
+              tab_order,
+              is_collapsed,
+              color,
+              created_at
+            )
+            VALUES (
+              ${sectionId},
+              ${input.projectId},
+              ${input.name},
+              ${tabOrder},
+              0,
+              NULL,
+              ${createdAt}
+            )
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to create workspace section", cause)),
+          );
+          return yield* loadWorkspaceSectionRecord(sql, sectionId);
+        });
+
+      const renameWorkspaceSection = (input: {
+        readonly sectionId: string;
+        readonly name: string;
+      }) =>
+        Effect.gen(function* () {
+          yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+          yield* sql`
+            UPDATE workspace_sections
+            SET name = ${input.name}
+            WHERE id = ${input.sectionId}
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to rename workspace section", cause)),
+          );
+          return yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+        });
+
+      const deleteWorkspaceSection = (sectionId: string) =>
+        Effect.gen(function* () {
+          yield* loadWorkspaceSectionRecord(sql, sectionId);
+          yield* sql`
+            UPDATE workspaces
+            SET section_id = NULL
+            WHERE section_id = ${sectionId}
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to detach workspaces from section", cause),
+            ),
+          );
+          yield* sql`
+            DELETE FROM workspace_sections
+            WHERE id = ${sectionId}
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to delete workspace section", cause)),
+          );
+        });
+
+      const setWorkspaceSectionColor = (input: {
+        readonly sectionId: string;
+        readonly color: string | null;
+      }) =>
+        Effect.gen(function* () {
+          yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+          yield* sql`
+            UPDATE workspace_sections
+            SET color = ${input.color}
+            WHERE id = ${input.sectionId}
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to update workspace section color", cause),
+            ),
+          );
+          return yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+        });
+
+      const toggleWorkspaceSectionCollapsed = (input: {
+        readonly sectionId: string;
+        readonly isCollapsed: boolean;
+      }) =>
+        Effect.gen(function* () {
+          yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+          yield* sql`
+            UPDATE workspace_sections
+            SET is_collapsed = ${input.isCollapsed ? 1 : 0}
+            WHERE id = ${input.sectionId}
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to update workspace section visibility", cause),
+            ),
+          );
+          return yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+        });
+
+      const reorderProjectChildren = (input: {
+        readonly projectId: string;
+        readonly orderedItems: ReadonlyArray<{ readonly kind: "workspace" | "section"; readonly id: string }>;
+      }) =>
+        Effect.gen(function* () {
+          const currentItems = yield* sql<ProjectChildOrderItemDbRow>`
+            SELECT id, 'workspace' AS "kind"
+            FROM workspaces
+            WHERE project_id = ${input.projectId}
+              AND section_id IS NULL
+              AND deleting_at IS NULL
+            UNION ALL
+            SELECT id, 'section' AS "kind"
+            FROM workspace_sections
+            WHERE project_id = ${input.projectId}
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to load project child ordering", cause),
+            ),
+          );
+          const currentKeys = new Set(currentItems.map((item) => `${item.kind}:${item.id}`));
+          const requestedKeys = new Set(input.orderedItems.map((item) => `${item.kind}:${item.id}`));
+          if (
+            currentKeys.size !== requestedKeys.size ||
+            [...currentKeys].some((key) => !requestedKeys.has(key))
+          ) {
+            return yield* Effect.fail(makeWorkspaceError("Project child order payload is invalid"));
+          }
+
+          for (const [index, item] of input.orderedItems.entries()) {
+            if (item.kind === "workspace") {
+              yield* sql`
+                UPDATE workspaces
+                SET tab_order = ${index}
+                WHERE id = ${item.id}
+              `.pipe(
+                Effect.mapError((cause) =>
+                  makeWorkspaceError("Failed to update workspace ordering", cause),
+                ),
+              );
+            } else {
+              yield* sql`
+                UPDATE workspace_sections
+                SET tab_order = ${index}
+                WHERE id = ${item.id}
+              `.pipe(
+                Effect.mapError((cause) =>
+                  makeWorkspaceError("Failed to update section ordering", cause),
+                ),
+              );
+            }
+          }
+        });
+
+      const reorderSectionWorkspaces = (input: {
+        readonly sectionId: string;
+        readonly orderedWorkspaceIds: ReadonlyArray<string>;
+      }) =>
+        Effect.gen(function* () {
+          yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+          const currentIds = yield* sql<{ readonly id: string }>`
+            SELECT id
+            FROM workspaces
+            WHERE section_id = ${input.sectionId}
+              AND deleting_at IS NULL
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to load section workspace ordering", cause),
+            ),
+          );
+          const currentIdSet = new Set(currentIds.map((row) => row.id));
+          const requestedIdSet = new Set(input.orderedWorkspaceIds);
+          if (
+            currentIdSet.size !== requestedIdSet.size ||
+            [...currentIdSet].some((id) => !requestedIdSet.has(id))
+          ) {
+            return yield* Effect.fail(makeWorkspaceError("Section workspace order payload is invalid"));
+          }
+
+          for (const [index, workspaceId] of input.orderedWorkspaceIds.entries()) {
+            yield* sql`
+              UPDATE workspaces
+              SET tab_order = ${index}
+              WHERE id = ${workspaceId}
+            `.pipe(
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to update section workspace ordering", cause),
+              ),
+            );
+          }
+        });
+
+      const moveWorkspaceToSection = (input: {
+        readonly workspaceId: string;
+        readonly sectionId: string | null;
+      }) =>
+        Effect.gen(function* () {
+          const workspace = yield* loadWorkspaceRecord(sql, input.workspaceId);
+          if (workspace.isDefault && input.sectionId !== null) {
+            return yield* Effect.fail(
+              makeWorkspaceError("The default project workspace cannot be moved into a section"),
+            );
+          }
+          if (input.sectionId !== null) {
+            const section = yield* loadWorkspaceSectionRecord(sql, input.sectionId);
+            if (section.projectId !== workspace.projectId) {
+              return yield* Effect.fail(makeWorkspaceError("Section does not belong to the workspace project"));
+            }
+          }
+          const tabOrder =
+            input.sectionId === null
+              ? yield* resolveNextTopLevelTabOrder(workspace.projectId)
+              : yield* resolveNextSectionTabOrder(input.sectionId);
+          const now = new Date().toISOString();
+          yield* sql`
+            UPDATE workspaces
+            SET
+              section_id = ${input.sectionId},
+              tab_order = ${tabOrder},
+              updated_at = ${now}
+            WHERE id = ${workspace.id}
+          `.pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to move workspace", cause)),
+          );
+          return yield* loadWorkspaceRecord(sql, workspace.id);
         });
 
       const deleteWorkspace = (workspaceId: string) =>
@@ -920,17 +1625,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             );
           }
 
-          const threadCountRows = yield* sql<WorkspaceThreadCountRow>`
-            SELECT COUNT(*) AS "threadCount"
-            FROM projection_threads
-            WHERE workspace_id = ${workspaceId}
-              AND deleted_at IS NULL
-          `.pipe(
-            Effect.mapError((cause) =>
-              makeWorkspaceError("Failed to inspect workspace thread usage", cause),
-            ),
-          );
-          if ((threadCountRows[0]?.threadCount ?? 0) > 0) {
+          const preview = yield* getWorkspaceDeletePreview(workspaceId);
+          if (preview.totalThreadCount > 0) {
             return yield* Effect.fail(
               makeWorkspaceError("Delete or move workspace threads before deleting this workspace"),
             );
@@ -942,6 +1638,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               ? yield* sql<WorktreeDbRow>`
                   SELECT
                     id,
+                    project_id AS "projectId",
                     path,
                     branch,
                     base_branch AS "baseBranch",
@@ -1235,11 +1932,29 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "workspace" },
           ),
-        [WS_METHODS.workspacesCreate]: (input) =>
-          observeRpcEffect(WS_METHODS.workspacesCreate, createWorkspace(input), {
+        [WS_METHODS.workspacesCreate]: (input: WorkspaceCreateInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesCreate,
+            createWorkspace({
+              projectId: input.projectId,
+              name: input.name,
+              ...(input.type !== undefined ? { type: input.type } : {}),
+              ...(input.baseBranch !== undefined ? { baseBranch: input.baseBranch } : {}),
+              ...(input.branch !== undefined ? { branch: input.branch } : {}),
+              ...(input.worktreePath !== undefined
+                ? { worktreePath: input.worktreePath }
+                : {}),
+              ...(input.sectionId !== undefined ? { sectionId: input.sectionId } : {}),
+            }),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesUpdate]: (input: WorkspaceUpdateInput) =>
+          observeRpcEffect(WS_METHODS.workspacesUpdate, updateWorkspace(input), {
             "rpc.aggregate": "workspace",
           }),
-        [WS_METHODS.workspacesSetActive]: (input) =>
+        [WS_METHODS.workspacesSetActive]: (input: WorkspaceSetActiveInput) =>
           observeRpcEffect(
             WS_METHODS.workspacesSetActive,
             setActiveWorkspace(input.workspaceId),
@@ -1247,7 +1962,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "workspace",
             },
           ),
-        [WS_METHODS.workspacesDelete]: (input) =>
+        [WS_METHODS.workspacesGetDeletePreview]: (input: WorkspaceDeleteInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesGetDeletePreview,
+            getWorkspaceDeletePreview(input.workspaceId),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesDelete]: (input: WorkspaceDeleteInput) =>
           observeRpcEffect(
             WS_METHODS.workspacesDelete,
             deleteWorkspace(input.workspaceId).pipe(Effect.as({})),
@@ -1255,6 +1978,110 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "workspace",
             },
           ),
+        [WS_METHODS.workspacesListOpenCandidates]: (input: WorkspaceOpenMainRepoInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesListOpenCandidates,
+            listOpenCandidates(input.projectId),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesOpenMainRepo]: (input: WorkspaceOpenMainRepoInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesOpenMainRepo,
+            openMainRepoWorkspace(input.projectId),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesOpenTrackedWorktree]: (input: WorkspaceOpenTrackedWorktreeInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesOpenTrackedWorktree,
+            openTrackedWorktree(input.worktreeId),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesOpenExternalWorktree]: (
+          input: WorkspaceOpenExternalWorktreeInput,
+        ) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesOpenExternalWorktree,
+            openExternalWorktree(input),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesImportAll]: (input: WorkspaceImportAllInput) =>
+          observeRpcEffect(WS_METHODS.workspacesImportAll, importAllWorkspaces(input.projectId), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.workspacesCreateSection]: (input: WorkspaceSectionCreateInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesCreateSection,
+            createWorkspaceSection(input),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesRenameSection]: (input: WorkspaceSectionRenameInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesRenameSection,
+            renameWorkspaceSection(input),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesDeleteSection]: (input: WorkspaceSectionDeleteInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesDeleteSection,
+            deleteWorkspaceSection(input.sectionId).pipe(Effect.as({})),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesSetSectionColor]: (input: WorkspaceSectionColorInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesSetSectionColor,
+            setWorkspaceSectionColor(input),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesToggleSectionCollapsed]: (
+          input: WorkspaceSectionToggleCollapsedInput,
+        ) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesToggleSectionCollapsed,
+            toggleWorkspaceSectionCollapsed(input),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesReorderProjectChildren]: (
+          input: WorkspaceReorderProjectChildrenInput,
+        ) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesReorderProjectChildren,
+            reorderProjectChildren(input).pipe(Effect.as({})),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesReorderSectionWorkspaces]: (
+          input: WorkspaceReorderSectionWorkspacesInput,
+        ) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesReorderSectionWorkspaces,
+            reorderSectionWorkspaces(input).pipe(Effect.as({})),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
+        [WS_METHODS.workspacesMoveToSection]: (input: WorkspaceMoveToSectionInput) =>
+          observeRpcEffect(WS_METHODS.workspacesMoveToSection, moveWorkspaceToSection(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, open.openInEditor(input), {
             "rpc.aggregate": "workspace",

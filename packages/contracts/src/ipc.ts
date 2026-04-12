@@ -28,7 +28,23 @@ import type {
   Workspace as WorkspaceRecord,
   WorkspaceCreateInput,
   WorkspaceDeleteInput,
+  WorkspaceDeletePreview,
+  WorkspaceOpenCandidates,
+  WorkspaceOpenExternalWorktreeInput,
+  WorkspaceOpenMainRepoInput,
+  WorkspaceOpenTrackedWorktreeInput,
+  WorkspaceSection,
+  WorkspaceSectionColorInput,
+  WorkspaceSectionCreateInput,
+  WorkspaceSectionDeleteInput,
+  WorkspaceSectionRenameInput,
+  WorkspaceSectionToggleCollapsedInput,
   WorkspaceSetActiveInput,
+  WorkspaceUpdateInput,
+  WorkspaceImportAllInput,
+  WorkspaceMoveToSectionInput,
+  WorkspaceReorderProjectChildrenInput,
+  WorkspaceReorderSectionWorkspacesInput,
 } from "./workspace";
 import type {
   ServerConfig,
@@ -235,8 +251,31 @@ export interface EnvironmentApi {
   };
   workspaces: {
     create: (input: WorkspaceCreateInput) => Promise<WorkspaceRecord>;
+    update: (input: WorkspaceUpdateInput) => Promise<WorkspaceRecord>;
     setActive: (input: WorkspaceSetActiveInput) => Promise<WorkspaceRecord>;
+    getDeletePreview: (input: WorkspaceDeleteInput) => Promise<WorkspaceDeletePreview>;
     delete: (input: WorkspaceDeleteInput) => Promise<void>;
+    listOpenCandidates: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceOpenCandidates>;
+    openMainRepo: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceRecord>;
+    openTrackedWorktree: (
+      input: WorkspaceOpenTrackedWorktreeInput,
+    ) => Promise<WorkspaceRecord>;
+    openExternalWorktree: (
+      input: WorkspaceOpenExternalWorktreeInput,
+    ) => Promise<WorkspaceRecord>;
+    importAll: (input: WorkspaceImportAllInput) => Promise<WorkspaceRecord[]>;
+    createSection: (input: WorkspaceSectionCreateInput) => Promise<WorkspaceSection>;
+    renameSection: (input: WorkspaceSectionRenameInput) => Promise<WorkspaceSection>;
+    deleteSection: (input: WorkspaceSectionDeleteInput) => Promise<void>;
+    setSectionColor: (input: WorkspaceSectionColorInput) => Promise<WorkspaceSection>;
+    toggleSectionCollapsed: (
+      input: WorkspaceSectionToggleCollapsedInput,
+    ) => Promise<WorkspaceSection>;
+    reorderProjectChildren: (input: WorkspaceReorderProjectChildrenInput) => Promise<void>;
+    reorderSectionWorkspaces: (
+      input: WorkspaceReorderSectionWorkspacesInput,
+    ) => Promise<void>;
+    moveToSection: (input: WorkspaceMoveToSectionInput) => Promise<WorkspaceRecord>;
   };
   git: {
     listBranches: (input: GitListBranchesInput) => Promise<GitListBranchesResult>;

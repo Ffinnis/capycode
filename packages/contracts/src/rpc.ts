@@ -57,8 +57,24 @@ import {
   Workspace,
   WorkspaceCreateInput,
   WorkspaceDeleteInput,
+  WorkspaceDeletePreview,
   WorkspaceError,
+  WorkspaceImportAllInput,
+  WorkspaceMoveToSectionInput,
+  WorkspaceOpenCandidates,
+  WorkspaceOpenExternalWorktreeInput,
+  WorkspaceOpenMainRepoInput,
+  WorkspaceOpenTrackedWorktreeInput,
+  WorkspaceReorderProjectChildrenInput,
+  WorkspaceReorderSectionWorkspacesInput,
+  WorkspaceSection,
+  WorkspaceSectionColorInput,
+  WorkspaceSectionCreateInput,
+  WorkspaceSectionDeleteInput,
+  WorkspaceSectionRenameInput,
+  WorkspaceSectionToggleCollapsedInput,
   WorkspaceSetActiveInput,
+  WorkspaceUpdateInput,
 } from "./workspace";
 import {
   TerminalClearInput,
@@ -91,8 +107,23 @@ export const WS_METHODS = {
 
   // Workspace methods
   workspacesCreate: "workspaces.create",
+  workspacesUpdate: "workspaces.update",
   workspacesSetActive: "workspaces.setActive",
+  workspacesGetDeletePreview: "workspaces.getDeletePreview",
   workspacesDelete: "workspaces.delete",
+  workspacesListOpenCandidates: "workspaces.listOpenCandidates",
+  workspacesOpenMainRepo: "workspaces.openMainRepo",
+  workspacesOpenTrackedWorktree: "workspaces.openTrackedWorktree",
+  workspacesOpenExternalWorktree: "workspaces.openExternalWorktree",
+  workspacesImportAll: "workspaces.importAll",
+  workspacesCreateSection: "workspaces.createSection",
+  workspacesRenameSection: "workspaces.renameSection",
+  workspacesDeleteSection: "workspaces.deleteSection",
+  workspacesSetSectionColor: "workspaces.setSectionColor",
+  workspacesToggleSectionCollapsed: "workspaces.toggleSectionCollapsed",
+  workspacesReorderProjectChildren: "workspaces.reorderProjectChildren",
+  workspacesReorderSectionWorkspaces: "workspaces.reorderSectionWorkspaces",
+  workspacesMoveToSection: "workspaces.moveToSection",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -181,15 +212,120 @@ export const WsWorkspacesCreateRpc = Rpc.make(WS_METHODS.workspacesCreate, {
   error: WorkspaceError,
 });
 
+export const WsWorkspacesUpdateRpc = Rpc.make(WS_METHODS.workspacesUpdate, {
+  payload: WorkspaceUpdateInput,
+  success: Workspace,
+  error: WorkspaceError,
+});
+
 export const WsWorkspacesSetActiveRpc = Rpc.make(WS_METHODS.workspacesSetActive, {
   payload: WorkspaceSetActiveInput,
   success: Workspace,
   error: WorkspaceError,
 });
 
+export const WsWorkspacesGetDeletePreviewRpc = Rpc.make(WS_METHODS.workspacesGetDeletePreview, {
+  payload: WorkspaceDeleteInput,
+  success: WorkspaceDeletePreview,
+  error: WorkspaceError,
+});
+
 export const WsWorkspacesDeleteRpc = Rpc.make(WS_METHODS.workspacesDelete, {
   payload: WorkspaceDeleteInput,
   success: Schema.Struct({}),
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesListOpenCandidatesRpc = Rpc.make(WS_METHODS.workspacesListOpenCandidates, {
+  payload: WorkspaceOpenMainRepoInput,
+  success: WorkspaceOpenCandidates,
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesOpenMainRepoRpc = Rpc.make(WS_METHODS.workspacesOpenMainRepo, {
+  payload: WorkspaceOpenMainRepoInput,
+  success: Workspace,
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesOpenTrackedWorktreeRpc = Rpc.make(
+  WS_METHODS.workspacesOpenTrackedWorktree,
+  {
+    payload: WorkspaceOpenTrackedWorktreeInput,
+    success: Workspace,
+    error: WorkspaceError,
+  },
+);
+
+export const WsWorkspacesOpenExternalWorktreeRpc = Rpc.make(
+  WS_METHODS.workspacesOpenExternalWorktree,
+  {
+    payload: WorkspaceOpenExternalWorktreeInput,
+    success: Workspace,
+    error: WorkspaceError,
+  },
+);
+
+export const WsWorkspacesImportAllRpc = Rpc.make(WS_METHODS.workspacesImportAll, {
+  payload: WorkspaceImportAllInput,
+  success: Schema.Array(Workspace),
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesCreateSectionRpc = Rpc.make(WS_METHODS.workspacesCreateSection, {
+  payload: WorkspaceSectionCreateInput,
+  success: WorkspaceSection,
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesRenameSectionRpc = Rpc.make(WS_METHODS.workspacesRenameSection, {
+  payload: WorkspaceSectionRenameInput,
+  success: WorkspaceSection,
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesDeleteSectionRpc = Rpc.make(WS_METHODS.workspacesDeleteSection, {
+  payload: WorkspaceSectionDeleteInput,
+  success: Schema.Struct({}),
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesSetSectionColorRpc = Rpc.make(WS_METHODS.workspacesSetSectionColor, {
+  payload: WorkspaceSectionColorInput,
+  success: WorkspaceSection,
+  error: WorkspaceError,
+});
+
+export const WsWorkspacesToggleSectionCollapsedRpc = Rpc.make(
+  WS_METHODS.workspacesToggleSectionCollapsed,
+  {
+    payload: WorkspaceSectionToggleCollapsedInput,
+    success: WorkspaceSection,
+    error: WorkspaceError,
+  },
+);
+
+export const WsWorkspacesReorderProjectChildrenRpc = Rpc.make(
+  WS_METHODS.workspacesReorderProjectChildren,
+  {
+    payload: WorkspaceReorderProjectChildrenInput,
+    success: Schema.Struct({}),
+    error: WorkspaceError,
+  },
+);
+
+export const WsWorkspacesReorderSectionWorkspacesRpc = Rpc.make(
+  WS_METHODS.workspacesReorderSectionWorkspaces,
+  {
+    payload: WorkspaceReorderSectionWorkspacesInput,
+    success: Schema.Struct({}),
+    error: WorkspaceError,
+  },
+);
+
+export const WsWorkspacesMoveToSectionRpc = Rpc.make(WS_METHODS.workspacesMoveToSection, {
+  payload: WorkspaceMoveToSectionInput,
+  success: Workspace,
   error: WorkspaceError,
 });
 
@@ -381,8 +517,23 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsWorkspacesCreateRpc,
+  WsWorkspacesUpdateRpc,
   WsWorkspacesSetActiveRpc,
+  WsWorkspacesGetDeletePreviewRpc,
   WsWorkspacesDeleteRpc,
+  WsWorkspacesListOpenCandidatesRpc,
+  WsWorkspacesOpenMainRepoRpc,
+  WsWorkspacesOpenTrackedWorktreeRpc,
+  WsWorkspacesOpenExternalWorktreeRpc,
+  WsWorkspacesImportAllRpc,
+  WsWorkspacesCreateSectionRpc,
+  WsWorkspacesRenameSectionRpc,
+  WsWorkspacesDeleteSectionRpc,
+  WsWorkspacesSetSectionColorRpc,
+  WsWorkspacesToggleSectionCollapsedRpc,
+  WsWorkspacesReorderProjectChildrenRpc,
+  WsWorkspacesReorderSectionWorkspacesRpc,
+  WsWorkspacesMoveToSectionRpc,
   WsShellOpenInEditorRpc,
   WsSubscribeGitStatusRpc,
   WsGitPullRpc,

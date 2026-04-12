@@ -20,10 +20,31 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
     },
     workspaces: {
       create: rpcClient.workspaces.create,
+      update: rpcClient.workspaces.update,
       setActive: rpcClient.workspaces.setActive,
+      getDeletePreview: rpcClient.workspaces.getDeletePreview,
       delete: async (input) => {
         await rpcClient.workspaces.delete(input);
       },
+      listOpenCandidates: rpcClient.workspaces.listOpenCandidates,
+      openMainRepo: rpcClient.workspaces.openMainRepo,
+      openTrackedWorktree: rpcClient.workspaces.openTrackedWorktree,
+      openExternalWorktree: rpcClient.workspaces.openExternalWorktree,
+      importAll: (input) => rpcClient.workspaces.importAll(input).then((workspaces) => [...workspaces]),
+      createSection: rpcClient.workspaces.createSection,
+      renameSection: rpcClient.workspaces.renameSection,
+      deleteSection: async (input) => {
+        await rpcClient.workspaces.deleteSection(input);
+      },
+      setSectionColor: rpcClient.workspaces.setSectionColor,
+      toggleSectionCollapsed: rpcClient.workspaces.toggleSectionCollapsed,
+      reorderProjectChildren: async (input) => {
+        await rpcClient.workspaces.reorderProjectChildren(input);
+      },
+      reorderSectionWorkspaces: async (input) => {
+        await rpcClient.workspaces.reorderSectionWorkspaces(input);
+      },
+      moveToSection: rpcClient.workspaces.moveToSection,
     },
     git: {
       pull: rpcClient.git.pull,

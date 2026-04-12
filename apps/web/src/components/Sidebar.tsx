@@ -5,6 +5,7 @@ import {
   CloudIcon,
   FolderIcon,
   GitPullRequestIcon,
+  GripVerticalIcon,
   PlusIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -15,6 +16,7 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { autoAnimate } from "@formkit/auto-animate";
 import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
@@ -28,11 +30,17 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  type ContextMenuItem,
   type DesktopUpdateState,
   type EnvironmentId,
   ProjectId,
@@ -40,6 +48,7 @@ import {
   type ScopedThreadRef,
   ThreadId,
   type GitStatusResult,
+  type WorkspaceSectionId,
 } from "@capycode/contracts";
 import {
   scopedProjectKey,
@@ -81,7 +90,7 @@ import {
 } from "../keybindings";
 import { useGitStatus } from "../lib/gitStatusState";
 import { readLocalApi } from "../localApi";
-import { useComposerDraftStore } from "../composerDraftStore";
+import { type DraftSessionState, useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -104,6 +113,15 @@ import {
 } from "./desktopUpdate.logic";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "./ui/dialog";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -137,7 +155,7 @@ import {
 } from "./Sidebar.logic";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { readEnvironmentApi } from "../environmentApi";
+import { ensureEnvironmentApi, readEnvironmentApi } from "../environmentApi";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "../rpc/serverState";
 import { deriveLogicalProjectKey } from "../logicalProject";
@@ -232,8 +250,93 @@ type SidebarWorkspaceSectionSnapshot = WorkspaceSection & {
   environmentLabel: string | null;
 };
 
+interface SidebarTextDialogRequest {
+  title: string;
+  description?: string;
+  submitLabel: string;
+  initialValue: string;
+}
+
+interface SidebarTextDialogState extends SidebarTextDialogRequest {
+  value: string;
+}
+
+interface SidebarContextMenuState {
+  items: readonly ContextMenuItem<string>[];
+  position: {
+    x: number;
+    y: number;
+  };
+}
+
+type SidebarProjectWorkspaceItem =
+  | {
+      kind: "section";
+      key: string;
+      tabOrder: number;
+      section: SidebarWorkspaceSectionSnapshot;
+    }
+  | {
+      kind: "workspace";
+      key: string;
+      tabOrder: number;
+      workspace: SidebarWorkspaceSnapshot;
+    };
+
+type WorkspaceDragData =
+  | {
+      type: "top-level-section";
+      section: SidebarWorkspaceSectionSnapshot;
+    }
+  | {
+      type: "top-level-workspace";
+      workspace: SidebarWorkspaceSnapshot;
+    }
+  | {
+      type: "section-workspace";
+      workspace: SidebarWorkspaceSnapshot;
+      section: SidebarWorkspaceSectionSnapshot;
+    };
+
 function scopedWorkspaceKey(environmentId: EnvironmentId, workspaceId: string): string {
   return `${environmentId}:${workspaceId}`;
+}
+
+function workspaceSortableId(workspace: Pick<SidebarWorkspaceSnapshot, "workspaceKey">): string {
+  return `workspace:${workspace.workspaceKey}`;
+}
+
+function sectionSortableId(section: Pick<SidebarWorkspaceSectionSnapshot, "sectionKey">): string {
+  return `section:${section.sectionKey}`;
+}
+
+function draftSessionMatchesWorkspace(
+  draftSession: DraftSessionState,
+  workspace: Pick<
+    Workspace,
+    "environmentId" | "projectId" | "branch" | "worktreePath" | "isDefault"
+  >,
+): boolean {
+  if (
+    draftSession.environmentId !== workspace.environmentId ||
+    draftSession.projectId !== workspace.projectId
+  ) {
+    return false;
+  }
+
+  if (workspace.worktreePath !== null) {
+    return draftSession.worktreePath === workspace.worktreePath;
+  }
+
+  if (draftSession.worktreePath !== null) {
+    return false;
+  }
+
+  if (workspace.isDefault) {
+    return draftSession.branch === null || draftSession.branch === workspace.branch;
+  }
+
+  return draftSession.branch === workspace.branch;
 }
 
 interface TerminalStatusIndicator {
@@ -945,6 +1048,322 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
   );
 });
 
+interface WorkspaceRowProps
+  extends Pick<
+    SidebarProjectThreadListProps,
+    | "activeRouteThreadKey"
+    | "threadJumpLabelByKey"
+    | "appSettingsConfirmThreadArchive"
+    | "renamingThreadKey"
+    | "renamingTitle"
+    | "setRenamingTitle"
+    | "renamingInputRef"
+    | "renamingCommittedRef"
+    | "confirmingArchiveThreadKey"
+    | "setConfirmingArchiveThreadKey"
+    | "confirmArchiveButtonRefs"
+    | "attachThreadListAutoAnimateRef"
+    | "handleThreadClick"
+    | "navigateToThread"
+    | "handleMultiSelectContextMenu"
+    | "handleThreadContextMenu"
+    | "clearSelection"
+    | "commitRename"
+    | "cancelRename"
+    | "attemptArchiveThread"
+    | "openPrLink"
+    | "expandThreadListForProject"
+    | "collapseThreadListForProject"
+  > {
+  workspace: SidebarWorkspaceSnapshot;
+  project: SidebarProjectSnapshot;
+  workspaceExpanded: boolean;
+  workspaceThreads: readonly SidebarThreadSummary[];
+  orderedWorkspaceThreadKeys: readonly string[];
+  hasOverflowingThreads: boolean;
+  renderedWorkspaceThreads: readonly SidebarThreadSummary[];
+  hiddenThreadStatus: ThreadStatusPill | null;
+  activeWorkspaceKey: string | null;
+  setWorkspaceActive: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
+  handleCreateThreadForWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
+  confirmDeleteWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
+  renameWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
+  moveWorkspaceToSection: (
+    workspace: SidebarWorkspaceSnapshot,
+    sectionId: WorkspaceSectionId | null,
+  ) => Promise<void>;
+  workspaceSections: readonly SidebarWorkspaceSectionSnapshot[];
+  copyPathToClipboard: (value: string, context: { path: string }) => void;
+  dragHandleProps: SortableHandleProps | null;
+  isDragging: boolean;
+  showContextMenu: <T extends string>(
+    items: readonly ContextMenuItem<T>[],
+    position: { x: number; y: number },
+  ) => Promise<T | null>;
+}
+
+const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
+  const {
+    workspace,
+    project,
+    workspaceExpanded,
+    workspaceThreads,
+    orderedWorkspaceThreadKeys,
+    hasOverflowingThreads,
+    renderedWorkspaceThreads,
+    hiddenThreadStatus,
+    activeWorkspaceKey,
+    activeRouteThreadKey,
+    threadJumpLabelByKey,
+    appSettingsConfirmThreadArchive,
+    renamingThreadKey,
+    renamingTitle,
+    setRenamingTitle,
+    renamingInputRef,
+    renamingCommittedRef,
+    confirmingArchiveThreadKey,
+    setConfirmingArchiveThreadKey,
+    confirmArchiveButtonRefs,
+    attachThreadListAutoAnimateRef,
+    handleThreadClick,
+    navigateToThread,
+    handleMultiSelectContextMenu,
+    handleThreadContextMenu,
+    clearSelection,
+    commitRename,
+    cancelRename,
+    attemptArchiveThread,
+    openPrLink,
+    expandThreadListForProject,
+    collapseThreadListForProject,
+    setWorkspaceActive,
+    handleCreateThreadForWorkspace,
+    confirmDeleteWorkspace,
+    renameWorkspace,
+    moveWorkspaceToSection,
+    workspaceSections,
+    copyPathToClipboard,
+    dragHandleProps,
+    isDragging,
+    showContextMenu,
+  } = props;
+
+  return (
+    <div className={`group/workspace relative ${isDragging ? "opacity-80" : ""}`}>
+      <SidebarMenuSubButton
+        size="sm"
+        className={`mx-2 h-7 w-auto gap-2 px-2 pr-24 text-left ${
+          activeWorkspaceKey === workspace.workspaceKey
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground/80 hover:bg-accent hover:text-foreground"
+        }`}
+        onClick={() => {
+          void setWorkspaceActive(workspace).catch((error) => {
+            toastManager.add({
+              type: "error",
+              title: "Failed to switch workspace",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          });
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          void (async () => {
+            const siblingSections = workspaceSections.filter(
+              (candidate) =>
+                candidate.projectId === workspace.projectId &&
+                candidate.environmentId === workspace.environmentId,
+            );
+            const clicked = await showContextMenu(
+              [
+                { id: "new-thread", label: "New thread" },
+                { id: "rename", label: "Rename workspace" },
+                ...siblingSections
+                  .filter((candidate) => candidate.id !== workspace.sectionId)
+                  .map((candidate) => ({
+                    id: `move:${candidate.id}` as const,
+                    label: `Move to ${candidate.name}`,
+                    disabled: workspace.isDefault,
+                  })),
+                ...(workspace.sectionId !== null
+                  ? [
+                      {
+                        id: "move:top-level" as const,
+                        label: "Move to top level",
+                        disabled: workspace.isDefault,
+                      },
+                    ]
+                  : []),
+                { id: "copy-path", label: "Copy Workspace Path" },
+                {
+                  id: "delete",
+                  label: "Delete workspace",
+                  destructive: true,
+                  disabled: workspace.isDefault,
+                },
+              ],
+              { x: event.clientX, y: event.clientY },
+            );
+            try {
+              if (clicked === "new-thread") {
+                await handleCreateThreadForWorkspace(workspace);
+                return;
+              }
+              if (clicked === "rename") {
+                await renameWorkspace(workspace);
+                return;
+              }
+              if (typeof clicked === "string" && clicked.startsWith("move:")) {
+                const nextSectionId = clicked.slice("move:".length);
+                await moveWorkspaceToSection(
+                  workspace,
+                  nextSectionId === "top-level" ? null : (nextSectionId as WorkspaceSectionId),
+                );
+                return;
+              }
+              if (clicked === "copy-path") {
+                const path = workspace.worktreePath ?? project.cwd;
+                copyPathToClipboard(path, { path });
+                return;
+              }
+              if (clicked === "delete") {
+                await confirmDeleteWorkspace(workspace);
+              }
+            } catch (error) {
+              toastManager.add({
+                type: "error",
+                title: "Failed to update workspace",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              });
+            }
+          })();
+        }}
+      >
+        <ChevronRightIcon
+          className={`size-3.5 shrink-0 transition-transform ${
+            workspaceExpanded ? "rotate-90" : ""
+          }`}
+        />
+        <FolderIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-xs">{workspace.name}</span>
+        {workspace.environmentLabel ? (
+          <span className="text-[10px] text-muted-foreground/60">{workspace.environmentLabel}</span>
+        ) : null}
+      </SidebarMenuSubButton>
+      <div className="absolute top-1.5 right-3 flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                ref={dragHandleProps?.setActivatorNodeRef}
+                aria-label={`Reorder workspace ${workspace.name}`}
+                className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                {...(dragHandleProps?.attributes ?? {})}
+                {...(dragHandleProps?.listeners ?? {})}
+              />
+            }
+          >
+            <GripVerticalIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Reorder workspace</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`Create new thread in ${workspace.name}`}
+                className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void handleCreateThreadForWorkspace(workspace).catch((error) => {
+                    toastManager.add({
+                      type: "error",
+                      title: "Failed to create thread",
+                      description: error instanceof Error ? error.message : "An error occurred.",
+                    });
+                  });
+                }}
+              >
+                <SquarePenIcon className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup side="top">New thread in workspace</TooltipPopup>
+        </Tooltip>
+        {!workspace.isDefault ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Delete workspace ${workspace.name}`}
+                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void confirmDeleteWorkspace(workspace).catch((error) => {
+                      toastManager.add({
+                        type: "error",
+                        title: "Failed to delete workspace",
+                        description: error instanceof Error ? error.message : "An error occurred.",
+                      });
+                    });
+                  }}
+                >
+                  <Trash2Icon className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipPopup side="top">Delete workspace</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </div>
+      <SidebarProjectThreadList
+        projectKey={workspace.workspaceKey}
+        projectExpanded={workspaceExpanded}
+        hasOverflowingThreads={hasOverflowingThreads}
+        hiddenThreadStatus={hiddenThreadStatus}
+        orderedProjectThreadKeys={orderedWorkspaceThreadKeys}
+        renderedThreads={renderedWorkspaceThreads}
+        showEmptyThreadState={workspaceExpanded && workspaceThreads.length === 0}
+        shouldShowThreadPanel={workspaceExpanded}
+        isThreadListExpanded={workspaceExpanded}
+        projectCwd={workspace.worktreePath ?? project.cwd}
+        activeRouteThreadKey={activeRouteThreadKey}
+        threadJumpLabelByKey={threadJumpLabelByKey}
+        appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
+        renamingThreadKey={renamingThreadKey}
+        renamingTitle={renamingTitle}
+        setRenamingTitle={setRenamingTitle}
+        renamingInputRef={renamingInputRef}
+        renamingCommittedRef={renamingCommittedRef}
+        confirmingArchiveThreadKey={confirmingArchiveThreadKey}
+        setConfirmingArchiveThreadKey={setConfirmingArchiveThreadKey}
+        confirmArchiveButtonRefs={confirmArchiveButtonRefs}
+        attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+        handleThreadClick={handleThreadClick}
+        navigateToThread={navigateToThread}
+        handleMultiSelectContextMenu={handleMultiSelectContextMenu}
+        handleThreadContextMenu={handleThreadContextMenu}
+        clearSelection={clearSelection}
+        commitRename={commitRename}
+        cancelRename={cancelRename}
+        attemptArchiveThread={attemptArchiveThread}
+        openPrLink={openPrLink}
+        expandThreadListForProject={expandThreadListForProject}
+        collapseThreadListForProject={collapseThreadListForProject}
+      />
+    </div>
+  );
+});
+
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
   activeRouteThreadKey: string | null;
@@ -960,7 +1379,7 @@ interface SidebarProjectItemProps {
   suppressProjectClickAfterDragRef: React.RefObject<boolean>;
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   isManualProjectSorting: boolean;
-  dragHandleProps: SortableProjectHandleProps | null;
+  dragHandleProps: SortableHandleProps | null;
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
@@ -991,6 +1410,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     (settings) => settings.confirmThreadArchive,
   );
   const router = useRouter();
+  const currentRouteTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
   const toggleProject = useUiStateStore((state) => state.toggleProject);
   const toggleThreadSelection = useThreadSelectionStore((state) => state.toggleThread);
@@ -1000,6 +1423,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const setSelectionAnchor = useThreadSelectionStore((state) => state.setAnchor);
   const selectedThreadCount = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const clearComposerDraftForThread = useComposerDraftStore((state) => state.clearDraftThread);
+  const draftThreadsByThreadKey = useComposerDraftStore((state) => state.draftThreadsByThreadKey);
   const getDraftThreadByProjectRef = useComposerDraftStore(
     (state) => state.getDraftThreadByProjectRef,
   );
@@ -1180,6 +1604,114 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const renamingCommittedRef = useRef(false);
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
   const confirmArchiveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [sidebarTextDialogState, setSidebarTextDialogState] =
+    useState<SidebarTextDialogState | null>(null);
+  const sidebarTextDialogResolverRef = useRef<((value: string | null) => void) | null>(null);
+  const sidebarTextInputRef = useRef<HTMLInputElement | null>(null);
+  const sidebarTextDialogWasOpenRef = useRef(false);
+  const [sidebarContextMenuState, setSidebarContextMenuState] =
+    useState<SidebarContextMenuState | null>(null);
+  const sidebarContextMenuResolverRef = useRef<((value: string | null) => void) | null>(null);
+  const sidebarContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [sidebarContextMenuPosition, setSidebarContextMenuPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+
+  const resolveSidebarTextDialog = useCallback((value: string | null) => {
+    const resolver = sidebarTextDialogResolverRef.current;
+    sidebarTextDialogResolverRef.current = null;
+    setSidebarTextDialogState(null);
+    resolver?.(value);
+  }, []);
+
+  const requestSidebarText = useCallback(
+    (request: SidebarTextDialogRequest) =>
+      new Promise<string | null>((resolve) => {
+        sidebarTextDialogResolverRef.current?.(null);
+        sidebarTextDialogResolverRef.current = resolve;
+        setSidebarTextDialogState({
+          ...request,
+          value: request.initialValue,
+        });
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    const isOpen = sidebarTextDialogState !== null;
+    if (!isOpen) {
+      sidebarTextDialogWasOpenRef.current = false;
+      return;
+    }
+    if (sidebarTextDialogWasOpenRef.current) {
+      return;
+    }
+    sidebarTextDialogWasOpenRef.current = true;
+    requestAnimationFrame(() => {
+      sidebarTextInputRef.current?.focus();
+      sidebarTextInputRef.current?.select();
+    });
+  }, [sidebarTextDialogState]);
+
+  const resolveSidebarContextMenu = useCallback((value: string | null) => {
+    const resolver = sidebarContextMenuResolverRef.current;
+    sidebarContextMenuResolverRef.current = null;
+    setSidebarContextMenuState(null);
+    setSidebarContextMenuPosition(null);
+    resolver?.(value);
+  }, []);
+
+  const requestSidebarContextMenu = useCallback(
+    <T extends string>(
+      items: readonly ContextMenuItem<T>[],
+      position: { x: number; y: number },
+    ) =>
+      new Promise<T | null>((resolve) => {
+        sidebarContextMenuResolverRef.current?.(null);
+        sidebarContextMenuResolverRef.current = resolve as (value: string | null) => void;
+        setSidebarContextMenuPosition({
+          left: position.x,
+          top: position.y,
+        });
+        setSidebarContextMenuState({
+          items: items as readonly ContextMenuItem<string>[],
+          position,
+        });
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!sidebarContextMenuState || !sidebarContextMenuRef.current) {
+      return;
+    }
+    const rect = sidebarContextMenuRef.current.getBoundingClientRect();
+    const nextLeft = Math.max(
+      8,
+      Math.min(sidebarContextMenuState.position.x, window.innerWidth - rect.width - 8),
+    );
+    const nextTop = Math.max(
+      8,
+      Math.min(sidebarContextMenuState.position.y, window.innerHeight - rect.height - 8),
+    );
+    setSidebarContextMenuPosition({ left: nextLeft, top: nextTop });
+  }, [sidebarContextMenuState]);
+
+  useEffect(() => {
+    if (!sidebarContextMenuState) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        resolveSidebarContextMenu(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [resolveSidebarContextMenu, sidebarContextMenuState]);
 
   const { projectStatus, visibleProjectThreads } = useMemo(() => {
     const lastVisitedAtByThreadKey = new Map(
@@ -1331,9 +1863,43 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     visibleProjectThreads,
     workspaceByScopedId,
   ]);
-  const ungroupedWorkspaceSnapshots = useMemo(
-    () => workspaceSnapshots.filter((workspace) => workspace.sectionId === null),
-    [workspaceSnapshots],
+  const workspacesBySectionId = useMemo(() => {
+    const next = new Map<string, SidebarWorkspaceSnapshot[]>();
+    for (const workspace of workspaceSnapshots) {
+      if (workspace.sectionId === null) {
+        continue;
+      }
+      const existing = next.get(workspace.sectionId);
+      if (existing) {
+        existing.push(workspace);
+      } else {
+        next.set(workspace.sectionId, [workspace]);
+      }
+    }
+    for (const workspaces of next.values()) {
+      workspaces.sort((left, right) => left.tabOrder - right.tabOrder || left.name.localeCompare(right.name));
+    }
+    return next;
+  }, [workspaceSnapshots]);
+  const projectWorkspaceItems = useMemo<readonly SidebarProjectWorkspaceItem[]>(
+    () =>
+      [
+        ...workspaceSections.map((section) => ({
+          kind: "section" as const,
+          key: section.sectionKey,
+          tabOrder: section.tabOrder,
+          section,
+        })),
+        ...workspaceSnapshots
+          .filter((workspace) => workspace.sectionId === null)
+          .map((workspace) => ({
+            kind: "workspace" as const,
+            key: workspace.workspaceKey,
+            tabOrder: workspace.tabOrder,
+            workspace,
+          })),
+      ].toSorted((left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key)),
+    [workspaceSections, workspaceSnapshots],
   );
 
   const handleProjectButtonClick = useCallback(
@@ -1410,6 +1976,358 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     useStore.getState().syncServerReadModel(snapshot, environmentId);
   }, []);
 
+  const createSectionForProject = useCallback(async () => {
+    const api = readEnvironmentApi(project.environmentId);
+    if (!api) {
+      throw new Error("Workspace API unavailable.");
+    }
+    const name = await requestSidebarText({
+      title: "Create section",
+      description: "Add a workspace section to organize this project.",
+      submitLabel: "Create section",
+      initialValue: `Section ${workspaceSections.length + 1}`,
+    });
+    if (!name) {
+      return;
+    }
+    await api.workspaces.createSection({
+      projectId: project.id,
+      name,
+    });
+    await refreshWorkspaceSnapshot(project.environmentId);
+  }, [
+    project.environmentId,
+    project.id,
+    refreshWorkspaceSnapshot,
+    requestSidebarText,
+    workspaceSections.length,
+  ]);
+
+  const renameWorkspace = useCallback(
+    async (workspace: SidebarWorkspaceSnapshot) => {
+      const api = readEnvironmentApi(workspace.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      const nextName = await requestSidebarText({
+        title: "Rename workspace",
+        description: "Update the workspace label shown in the sidebar.",
+        submitLabel: "Save",
+        initialValue: workspace.name,
+      });
+      if (!nextName || nextName === workspace.name) {
+        return;
+      }
+      await api.workspaces.update({
+        workspaceId: workspace.id,
+        name: nextName,
+      });
+      await refreshWorkspaceSnapshot(workspace.environmentId);
+    },
+    [refreshWorkspaceSnapshot, requestSidebarText],
+  );
+
+  const renameWorkspaceSection = useCallback(
+    async (section: SidebarWorkspaceSectionSnapshot) => {
+      const api = readEnvironmentApi(section.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      const nextName = await requestSidebarText({
+        title: "Rename section",
+        description: "Update the section label shown in the sidebar.",
+        submitLabel: "Save",
+        initialValue: section.name,
+      });
+      if (!nextName || nextName === section.name) {
+        return;
+      }
+      await api.workspaces.renameSection({
+        sectionId: section.id,
+        name: nextName,
+      });
+      await refreshWorkspaceSnapshot(section.environmentId);
+    },
+    [refreshWorkspaceSnapshot, requestSidebarText],
+  );
+
+  const setSectionCollapsed = useCallback(
+    async (section: SidebarWorkspaceSectionSnapshot, isCollapsed: boolean) => {
+      const api = readEnvironmentApi(section.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      await api.workspaces.toggleSectionCollapsed({
+        sectionId: section.id,
+        isCollapsed,
+      });
+      await refreshWorkspaceSnapshot(section.environmentId);
+    },
+    [refreshWorkspaceSnapshot],
+  );
+
+  const setSectionColor = useCallback(
+    async (section: SidebarWorkspaceSectionSnapshot, color: string | null) => {
+      const api = readEnvironmentApi(section.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      await api.workspaces.setSectionColor({
+        sectionId: section.id,
+        color,
+      });
+      await refreshWorkspaceSnapshot(section.environmentId);
+    },
+    [refreshWorkspaceSnapshot],
+  );
+
+  const deleteWorkspaceSection = useCallback(
+    async (section: SidebarWorkspaceSectionSnapshot) => {
+      const api = readEnvironmentApi(section.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      const localApi = readLocalApi();
+      if (!localApi) {
+        throw new Error("Workspace actions unavailable.");
+      }
+      const confirmed = await localApi.dialogs.confirm(
+        `Delete section "${section.name}"? Its workspaces will move to the top level.`,
+      );
+      if (!confirmed) {
+        return;
+      }
+      await api.workspaces.deleteSection({ sectionId: section.id });
+      await refreshWorkspaceSnapshot(section.environmentId);
+    },
+    [refreshWorkspaceSnapshot],
+  );
+
+  const moveWorkspaceToSection = useCallback(
+    async (
+      workspace: SidebarWorkspaceSnapshot,
+      sectionId: WorkspaceSectionId | null,
+    ) => {
+      const api = readEnvironmentApi(workspace.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      await api.workspaces.moveToSection({
+        workspaceId: workspace.id,
+        sectionId,
+      });
+      await refreshWorkspaceSnapshot(workspace.environmentId);
+    },
+    [refreshWorkspaceSnapshot],
+  );
+  const workspaceDnDSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+  );
+  const workspaceCollisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      return pointerCollisions;
+    }
+
+    return closestCorners(args);
+  }, []);
+  const reorderProjectWorkspaceChildren = useCallback(
+    async (orderedItems: readonly SidebarProjectWorkspaceItem[]) => {
+      const api = readEnvironmentApi(project.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      await api.workspaces.reorderProjectChildren({
+        projectId: project.id,
+        orderedItems: orderedItems.map((item) =>
+          item.kind === "section"
+            ? { kind: "section" as const, id: item.section.id }
+            : { kind: "workspace" as const, id: item.workspace.id },
+        ),
+      });
+      await refreshWorkspaceSnapshot(project.environmentId);
+    },
+    [project.environmentId, project.id, refreshWorkspaceSnapshot],
+  );
+  const reorderSectionWorkspaceChildren = useCallback(
+    async (section: SidebarWorkspaceSectionSnapshot, workspaces: readonly SidebarWorkspaceSnapshot[]) => {
+      const api = readEnvironmentApi(section.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
+      await api.workspaces.reorderSectionWorkspaces({
+        sectionId: section.id,
+        orderedWorkspaceIds: workspaces.map((workspace) => workspace.id),
+      });
+      await refreshWorkspaceSnapshot(section.environmentId);
+    },
+    [refreshWorkspaceSnapshot],
+  );
+  const handleWorkspaceDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const activeData = event.active.data.current as WorkspaceDragData | undefined;
+      const overData = event.over?.data.current as WorkspaceDragData | undefined;
+      if (!event.over || !activeData || !overData || event.active.id === event.over.id) {
+        return;
+      }
+
+      void (async () => {
+        if (activeData.type === "top-level-section") {
+          if (overData.type !== "top-level-section" && overData.type !== "top-level-workspace") {
+            return;
+          }
+          const activeIndex = projectWorkspaceItems.findIndex(
+            (item) => item.kind === "section" && item.section.id === activeData.section.id,
+          );
+          const overIndex = projectWorkspaceItems.findIndex((item) =>
+            overData.type === "top-level-section"
+              ? item.kind === "section" && item.section.id === overData.section.id
+              : item.kind === "workspace" && item.workspace.id === overData.workspace.id,
+          );
+          if (activeIndex < 0 || overIndex < 0) {
+            return;
+          }
+          await reorderProjectWorkspaceChildren(
+            arrayMove([...projectWorkspaceItems], activeIndex, overIndex),
+          );
+          return;
+        }
+
+        const activeWorkspace = activeData.workspace;
+
+        if (activeData.type === "top-level-workspace") {
+          if (overData.type === "top-level-workspace") {
+            const activeIndex = projectWorkspaceItems.findIndex(
+              (item) => item.kind === "workspace" && item.workspace.id === activeWorkspace.id,
+            );
+            const overIndex = projectWorkspaceItems.findIndex(
+              (item) => item.kind === "workspace" && item.workspace.id === overData.workspace.id,
+            );
+            if (activeIndex < 0 || overIndex < 0) {
+              return;
+            }
+            await reorderProjectWorkspaceChildren(
+              arrayMove([...projectWorkspaceItems], activeIndex, overIndex),
+            );
+            return;
+          }
+
+          if (overData.type === "top-level-section") {
+            await moveWorkspaceToSection(activeWorkspace, overData.section.id);
+            return;
+          }
+
+          const targetSectionWorkspaces = workspacesBySectionId.get(overData.section.id) ?? [];
+          const overIndex = targetSectionWorkspaces.findIndex(
+            (workspace) => workspace.id === overData.workspace.id,
+          );
+          if (overIndex < 0) {
+            return;
+          }
+          await moveWorkspaceToSection(activeWorkspace, overData.section.id);
+          const nextTargetWorkspaces = [...targetSectionWorkspaces];
+          nextTargetWorkspaces.splice(overIndex, 0, activeWorkspace);
+          await reorderSectionWorkspaceChildren(overData.section, nextTargetWorkspaces);
+          return;
+        }
+
+        const sourceSectionWorkspaces = workspacesBySectionId.get(activeData.section.id) ?? [];
+        if (overData.type === "section-workspace") {
+          const overIndex = (workspacesBySectionId.get(overData.section.id) ?? []).findIndex(
+            (workspace) => workspace.id === overData.workspace.id,
+          );
+          if (overIndex < 0) {
+            return;
+          }
+
+          if (activeData.section.id === overData.section.id) {
+            const activeIndex = sourceSectionWorkspaces.findIndex(
+              (workspace) => workspace.id === activeWorkspace.id,
+            );
+            if (activeIndex < 0) {
+              return;
+            }
+            await reorderSectionWorkspaceChildren(
+              activeData.section,
+              arrayMove([...sourceSectionWorkspaces], activeIndex, overIndex),
+            );
+            return;
+          }
+
+          await moveWorkspaceToSection(activeWorkspace, overData.section.id);
+          const nextTargetWorkspaces = [
+            ...(workspacesBySectionId.get(overData.section.id) ?? []).filter(
+              (workspace) => workspace.id !== activeWorkspace.id,
+            ),
+          ];
+          nextTargetWorkspaces.splice(overIndex, 0, activeWorkspace);
+          await reorderSectionWorkspaceChildren(overData.section, nextTargetWorkspaces);
+          return;
+        }
+
+        if (overData.type === "top-level-section") {
+          await moveWorkspaceToSection(activeWorkspace, overData.section.id);
+          return;
+        }
+
+        const topLevelItemsWithoutActive = projectWorkspaceItems.filter(
+          (item) => !(item.kind === "workspace" && item.workspace.id === activeWorkspace.id),
+        );
+        const overIndex = topLevelItemsWithoutActive.findIndex(
+          (item) => item.kind === "workspace" && item.workspace.id === overData.workspace.id,
+        );
+        if (overIndex < 0) {
+          return;
+        }
+        const nextTopLevelItems = [...topLevelItemsWithoutActive];
+        nextTopLevelItems.splice(overIndex, 0, {
+          kind: "workspace",
+          key: activeWorkspace.workspaceKey,
+          tabOrder: overIndex,
+          workspace: {
+            ...activeWorkspace,
+            sectionId: null,
+          },
+        });
+        await moveWorkspaceToSection(activeWorkspace, null);
+        await reorderProjectWorkspaceChildren(nextTopLevelItems);
+      })().catch((error) => {
+        toastManager.add({
+          type: "error",
+          title: "Failed to reorder workspaces",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      });
+    },
+    [
+      moveWorkspaceToSection,
+      projectWorkspaceItems,
+      reorderProjectWorkspaceChildren,
+      reorderSectionWorkspaceChildren,
+      workspacesBySectionId,
+    ],
+  );
+
+  const openMainRepoWorkspace = useCallback(async () => {
+    const api = readEnvironmentApi(project.environmentId);
+    if (!api) {
+      throw new Error("Workspace API unavailable.");
+    }
+    await api.workspaces.openMainRepo({ projectId: project.id });
+    await refreshWorkspaceSnapshot(project.environmentId);
+  }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
+
+  const importAllWorkspaces = useCallback(async () => {
+    const api = readEnvironmentApi(project.environmentId);
+    if (!api) {
+      throw new Error("Workspace API unavailable.");
+    }
+    await api.workspaces.importAll({ projectId: project.id });
+    await refreshWorkspaceSnapshot(project.environmentId);
+  }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
+
   const createWorkspaceForProject = useCallback(
     async (type: "branch" | "worktree") => {
       const api = readEnvironmentApi(project.environmentId);
@@ -1473,45 +2391,46 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (!api) {
         throw new Error("Workspace API unavailable.");
       }
-      const snapshot = await api.orchestration.getSnapshot();
-      useStore.getState().syncServerReadModel(snapshot, workspace.environmentId);
 
-      const defaultWorkspaceIdByProjectIdentity = new Map<string, string>();
-      for (const snapshotWorkspace of snapshot.workspaces) {
-        if (snapshotWorkspace.deletingAt !== null) {
-          continue;
-        }
-        const projectIdentity = `${workspace.environmentId}:${snapshotWorkspace.projectId}`;
-        if (!defaultWorkspaceIdByProjectIdentity.has(projectIdentity) || snapshotWorkspace.isDefault) {
-          defaultWorkspaceIdByProjectIdentity.set(projectIdentity, snapshotWorkspace.id);
-        }
+      const matchingDraftIds = Object.entries(draftThreadsByThreadKey)
+        .filter(([, draftSession]) => draftSessionMatchesWorkspace(draftSession, workspace))
+        .map(([draftId]) => draftId);
+      const activeDraftId =
+        currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null;
+      const shouldCloseActiveDraft =
+        activeDraftId !== null && matchingDraftIds.includes(activeDraftId);
+
+      for (const draftId of matchingDraftIds) {
+        clearComposerDraftForThread(draftId as Parameters<typeof clearComposerDraftForThread>[0]);
       }
 
-      const remainingThreads = snapshot.threads.filter((thread) => {
-        if (thread.deletedAt !== null || thread.archivedAt !== null) {
-          return false;
-        }
-        if (thread.workspaceId) {
-          return thread.workspaceId === workspace.id;
-        }
-        return (
-          defaultWorkspaceIdByProjectIdentity.get(
-            `${workspace.environmentId}:${thread.projectId}`,
-          ) === workspace.id
-        );
-      });
+      if (shouldCloseActiveDraft) {
+        await router.navigate({ to: "/", replace: true });
+      }
 
-      if (remainingThreads.length > 0) {
+      const preview = await api.workspaces.getDeletePreview({ workspaceId: workspace.id });
+      if (preview.totalThreadCount > 0) {
         const localApi = readLocalApi();
         if (!localApi) {
           throw new Error("Delete or move the workspace threads before deleting this workspace.");
         }
+        const snapshot = await api.orchestration.getSnapshot();
+        useStore.getState().syncServerReadModel(snapshot, workspace.environmentId);
+
+        const remainingThreads = snapshot.threads.filter(
+          (thread) => thread.deletedAt === null && thread.workspaceId === workspace.id,
+        );
         const confirmed = await localApi.dialogs.confirm(
           [
-            `Delete workspace "${workspace.name}" and its ${remainingThreads.length} thread${
-              remainingThreads.length === 1 ? "" : "s"
+            `Delete workspace "${workspace.name}" and its ${preview.totalThreadCount} thread${
+              preview.totalThreadCount === 1 ? "" : "s"
             }?`,
-            "This permanently deletes every thread in the workspace before removing the workspace.",
+            "This permanently deletes every active and archived thread in the workspace before removing it.",
+            preview.deletesWorktreePath && preview.worktreePath
+              ? `The worktree at ${preview.worktreePath} will also be removed from disk.`
+              : preview.worktreePath
+                ? `The imported worktree at ${preview.worktreePath} will stay on disk.`
+                : "This workspace has no separate worktree path.",
           ].join("\n"),
         );
         if (!confirmed) {
@@ -1536,7 +2455,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       await api.workspaces.delete({ workspaceId: workspace.id });
       await refreshWorkspaceSnapshot(workspace.environmentId);
     },
-    [deleteThread, refreshWorkspaceSnapshot],
+    [
+      clearComposerDraftForThread,
+      currentRouteTarget,
+      deleteThread,
+      draftThreadsByThreadKey,
+      refreshWorkspaceSnapshot,
+      router,
+    ],
   );
 
   const confirmDeleteWorkspace = useCallback(
@@ -1545,7 +2471,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (!localApi) {
         throw new Error("Workspace actions unavailable.");
       }
-      const confirmed = await localApi.dialogs.confirm(`Delete workspace "${workspace.name}"?`);
+      const preview = await ensureEnvironmentApi(workspace.environmentId).workspaces.getDeletePreview({
+        workspaceId: workspace.id,
+      });
+      const confirmed = await localApi.dialogs.confirm(
+        [
+          `Delete workspace "${workspace.name}"?`,
+          preview.deletesWorktreePath && preview.worktreePath
+            ? `Its worktree at ${preview.worktreePath} will be removed from disk.`
+            : preview.worktreePath
+              ? `Its imported worktree at ${preview.worktreePath} will stay on disk.`
+              : "This workspace has no separate worktree path.",
+        ].join("\n"),
+      );
       if (!confirmed) {
         return;
       }
@@ -1559,13 +2497,39 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       event.preventDefault();
       suppressProjectClickForContextMenuRef.current = true;
       void (async () => {
-        const api = readLocalApi();
-        if (!api) return;
+        const workspaceApi = readEnvironmentApi(project.environmentId);
+        const openCandidates = workspaceApi
+          ? await workspaceApi.workspaces
+              .listOpenCandidates({ projectId: project.id })
+              .catch(() => null)
+          : null;
+        const trackedCandidateItems =
+          openCandidates?.trackedWorktrees.map((candidate) => ({
+            id: `open-tracked:${candidate.worktreeId}` as const,
+            label: `Open tracked worktree: ${candidate.branch}`,
+          })) ?? [];
+        const externalCandidateItems =
+          openCandidates?.externalWorktrees.map((candidate) => ({
+            id: `open-external:${candidate.path}` as const,
+            label: `Import worktree: ${candidate.branch}`,
+          })) ?? [];
 
-        const clicked = await api.contextMenu.show(
+        const clicked = await requestSidebarContextMenu(
           [
             { id: "new-worktree-workspace", label: "New worktree workspace" },
             { id: "new-branch-workspace", label: "New branch workspace" },
+            { id: "create-section", label: "Create section" },
+            { id: "open-main-repo", label: "Open main repo workspace" },
+            ...trackedCandidateItems,
+            ...externalCandidateItems,
+            {
+              id: "import-all-worktrees",
+              label: "Import all worktrees",
+              disabled:
+                (openCandidates?.trackedWorktrees.length ?? 0) +
+                  (openCandidates?.externalWorktrees.length ?? 0) ===
+                0,
+            },
             { id: "copy-path", label: "Copy Project Path" },
             { id: "delete", label: "Remove project", destructive: true },
           ],
@@ -1576,6 +2540,83 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         );
         if (clicked === "copy-path") {
           copyPathToClipboard(project.cwd, { path: project.cwd });
+          return;
+        }
+        if (clicked === "create-section") {
+          try {
+            await createSectionForProject();
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Failed to create section",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          }
+          return;
+        }
+        if (clicked === "open-main-repo") {
+          try {
+            await openMainRepoWorkspace();
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Failed to open main repo workspace",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          }
+          return;
+        }
+        if (typeof clicked === "string" && clicked.startsWith("open-tracked:")) {
+          try {
+            const worktreeId = clicked.slice("open-tracked:".length);
+            if (!workspaceApi) {
+              throw new Error("Workspace API unavailable.");
+            }
+            await workspaceApi.workspaces.openTrackedWorktree({ worktreeId: worktreeId as never });
+            await refreshWorkspaceSnapshot(project.environmentId);
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Failed to open tracked worktree",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          }
+          return;
+        }
+        if (typeof clicked === "string" && clicked.startsWith("open-external:")) {
+          try {
+            const candidatePath = clicked.slice("open-external:".length);
+            const candidate = openCandidates?.externalWorktrees.find(
+              (worktree) => worktree.path === candidatePath,
+            );
+            if (!workspaceApi || !candidate) {
+              throw new Error("External worktree candidate not found.");
+            }
+            await workspaceApi.workspaces.openExternalWorktree({
+              projectId: candidate.projectId,
+              worktreePath: candidate.path,
+              branch: candidate.branch,
+            });
+            await refreshWorkspaceSnapshot(project.environmentId);
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Failed to import external worktree",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          }
+          return;
+        }
+        if (clicked === "import-all-worktrees") {
+          try {
+            await importAllWorkspaces();
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Failed to import worktrees",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            });
+          }
           return;
         }
         if (clicked === "new-worktree-workspace") {
@@ -1613,6 +2654,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           return;
         }
 
+        const api = readLocalApi();
+        if (!api) return;
         const confirmed = await api.dialogs.confirm(`Remove project "${project.name}"?`);
         if (!confirmed) return;
 
@@ -1649,13 +2692,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       clearComposerDraftForThread,
       clearProjectDraftThreadId,
       copyPathToClipboard,
+      createSectionForProject,
+      createWorkspaceForProject,
       getDraftThreadByProjectRef,
+      importAllWorkspaces,
+      openMainRepoWorkspace,
       project.cwd,
       project.environmentId,
       project.id,
       project.name,
       projectThreads.length,
-      createWorkspaceForProject,
+      requestSidebarContextMenu,
+      refreshWorkspaceSnapshot,
       suppressProjectClickForContextMenuRef,
     ],
   );
@@ -1718,7 +2766,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (threadKeys.length === 0) return;
       const count = threadKeys.length;
 
-      const clicked = await api.contextMenu.show(
+      const clicked = await requestSidebarContextMenu(
         [
           { id: "mark-unread", label: `Mark unread (${count})` },
           { id: "delete", label: `Delete (${count})`, destructive: true },
@@ -1763,6 +2811,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       deleteThread,
       markThreadUnread,
       removeFromSelection,
+      requestSidebarContextMenu,
       sidebarThreadByKey,
     ],
   );
@@ -1848,7 +2897,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         ) ?? null;
       if (!thread) return;
       const threadWorkspacePath = thread.worktreePath ?? project.cwd ?? null;
-      const clicked = await api.contextMenu.show(
+      const clicked = await requestSidebarContextMenu(
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
@@ -1908,20 +2957,98 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       markThreadUnread,
       project.cwd,
       projectThreads,
+      requestSidebarContextMenu,
     ],
   );
+
+  const renderWorkspaceRow = (
+    workspace: SidebarWorkspaceSnapshot,
+    dragHandleProps: SortableHandleProps | null,
+    isDragging: boolean,
+  ) => {
+    const workspaceThreads = workspaceThreadsByKey.get(workspace.workspaceKey) ?? [];
+    const workspaceExpanded =
+      expandedThreadListsByProject.has(workspace.workspaceKey) ||
+      activeWorkspaceKey === workspace.workspaceKey;
+    const orderedWorkspaceThreadKeys = workspaceThreads.map((thread) =>
+      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+    );
+    const hasOverflowingThreads = workspaceThreads.length > THREAD_PREVIEW_LIMIT;
+    const renderedWorkspaceThreads =
+      workspaceExpanded || !hasOverflowingThreads
+        ? workspaceThreads
+        : workspaceThreads.slice(0, THREAD_PREVIEW_LIMIT);
+    const hiddenThreadStatus = resolveProjectStatusIndicator(
+      workspaceThreads
+        .slice(renderedWorkspaceThreads.length)
+        .map((thread) =>
+          resolveThreadStatusPill({
+            thread: {
+              ...thread,
+              lastVisitedAt:
+                useUiStateStore.getState().threadLastVisitedAtById[
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+                ],
+            },
+          }),
+        ),
+    );
+
+    return (
+      <WorkspaceRow
+        key={workspace.workspaceKey}
+        workspace={workspace}
+        project={project}
+        workspaceExpanded={workspaceExpanded}
+        workspaceThreads={workspaceThreads}
+        orderedWorkspaceThreadKeys={orderedWorkspaceThreadKeys}
+        hasOverflowingThreads={hasOverflowingThreads}
+        renderedWorkspaceThreads={renderedWorkspaceThreads}
+        hiddenThreadStatus={hiddenThreadStatus}
+        activeWorkspaceKey={activeWorkspaceKey}
+        activeRouteThreadKey={activeRouteThreadKey}
+        threadJumpLabelByKey={threadJumpLabelByKey}
+        appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
+        renamingThreadKey={renamingThreadKey}
+        renamingTitle={renamingTitle}
+        setRenamingTitle={setRenamingTitle}
+        renamingInputRef={renamingInputRef}
+        renamingCommittedRef={renamingCommittedRef}
+        confirmingArchiveThreadKey={confirmingArchiveThreadKey}
+        setConfirmingArchiveThreadKey={setConfirmingArchiveThreadKey}
+        confirmArchiveButtonRefs={confirmArchiveButtonRefs}
+        attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+        handleThreadClick={handleThreadClick}
+        navigateToThread={navigateToThread}
+        handleMultiSelectContextMenu={handleMultiSelectContextMenu}
+        handleThreadContextMenu={handleThreadContextMenu}
+        clearSelection={clearSelection}
+        commitRename={commitRename}
+        cancelRename={cancelRename}
+        attemptArchiveThread={attemptArchiveThread}
+        openPrLink={openPrLink}
+        expandThreadListForProject={expandThreadListForProject}
+        collapseThreadListForProject={collapseThreadListForProject}
+        setWorkspaceActive={setWorkspaceActive}
+        handleCreateThreadForWorkspace={handleCreateThreadForWorkspace}
+        confirmDeleteWorkspace={confirmDeleteWorkspace}
+        renameWorkspace={renameWorkspace}
+        moveWorkspaceToSection={moveWorkspaceToSection}
+        workspaceSections={workspaceSections}
+        copyPathToClipboard={copyPathToClipboard}
+        dragHandleProps={dragHandleProps}
+        isDragging={isDragging}
+        showContextMenu={requestSidebarContextMenu}
+      />
+    );
+  };
 
   return (
     <>
       <div className="group/project-header relative">
         <SidebarMenuButton
-          ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           size="sm"
-          className={`gap-2 px-2 py-1.5 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground ${
-            isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-          }`}
-          {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
-          {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.listeners : {})}
+          className="gap-2 px-2 py-1.5 pr-14 text-left cursor-pointer hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground"
           onPointerDownCapture={handleProjectButtonPointerDownCapture}
           onClick={handleProjectButtonClick}
           onKeyDown={handleProjectButtonKeyDown}
@@ -1984,6 +3111,25 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               <div className="pointer-events-none absolute top-1 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
                 <button
                   type="button"
+                  ref={dragHandleProps?.setActivatorNodeRef}
+                  aria-label={`Reorder project ${project.name}`}
+                  title={
+                    isManualProjectSorting
+                      ? "Reorder project"
+                      : "Drag to switch to manual project order"
+                  }
+                  className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  {...(dragHandleProps?.attributes ?? {})}
+                  {...(dragHandleProps?.listeners ?? {})}
+                >
+                  <GripVerticalIcon className="size-3.5" />
+                </button>
+                <button
+                  type="button"
                   aria-label={`Create new workspace in ${project.name}`}
                   className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={(event) => {
@@ -2016,233 +3162,300 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </SidebarMenuSubItem>
         </SidebarMenuSub>
       ) : null}
-      {projectExpanded &&
-        [
-          ...workspaceSections.map((section) => ({
-            kind: "section" as const,
-            key: section.sectionKey,
-            section,
-            workspaces: workspaceSnapshots.filter((workspace) => workspace.sectionId === section.id),
-          })),
-          {
-            kind: "ungrouped" as const,
-            key: `${project.projectKey}:ungrouped`,
-            section: null,
-            workspaces: ungroupedWorkspaceSnapshots,
-          },
-        ].flatMap((group) => {
-          if (group.workspaces.length === 0) {
-            return [];
-          }
-          return [
-            <div key={group.key} className="mt-1">
-              {group.section ? (
-                <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-                  {group.section.name}
-                </div>
-              ) : null}
-              {group.workspaces.map((workspace) => {
-                const workspaceThreads = workspaceThreadsByKey.get(workspace.workspaceKey) ?? [];
-                const workspaceExpanded =
-                  expandedThreadListsByProject.has(workspace.workspaceKey) ||
-                  activeWorkspaceKey === workspace.workspaceKey;
-                const orderedWorkspaceThreadKeys = workspaceThreads.map((thread) =>
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                );
-                const hasOverflowingThreads = workspaceThreads.length > THREAD_PREVIEW_LIMIT;
-                const renderedWorkspaceThreads =
-                  workspaceExpanded || !hasOverflowingThreads
-                    ? workspaceThreads
-                    : workspaceThreads.slice(0, THREAD_PREVIEW_LIMIT);
-                const hiddenThreadStatus = resolveProjectStatusIndicator(
-                  workspaceThreads
-                    .slice(renderedWorkspaceThreads.length)
-                    .map((thread) =>
-                      resolveThreadStatusPill({
-                        thread: {
-                          ...thread,
-                          lastVisitedAt:
-                            useUiStateStore.getState().threadLastVisitedAtById[
-                              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-                            ],
-                        },
-                      }),
-                    ),
-                );
-
+      {projectExpanded && projectWorkspaceItems.length > 0 ? (
+        <DndContext
+          sensors={workspaceDnDSensors}
+          collisionDetection={workspaceCollisionDetection}
+          modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+          onDragEnd={handleWorkspaceDragEnd}
+        >
+          <SortableContext
+            items={projectWorkspaceItems.map((item) =>
+              item.kind === "section"
+                ? sectionSortableId(item.section)
+                : workspaceSortableId(item.workspace),
+            )}
+            strategy={verticalListSortingStrategy}
+          >
+            {projectWorkspaceItems.map((item) => {
+              if (item.kind === "section") {
+                const section = item.section;
+                const sectionWorkspaces = workspacesBySectionId.get(section.id) ?? [];
+                const colorClassName =
+                  section.color === "red"
+                    ? "bg-red-500"
+                    : section.color === "orange"
+                      ? "bg-orange-500"
+                      : section.color === "yellow"
+                        ? "bg-yellow-500"
+                        : section.color === "green"
+                          ? "bg-green-500"
+                          : section.color === "blue"
+                            ? "bg-blue-500"
+                            : section.color === "pink"
+                              ? "bg-pink-500"
+                              : "bg-muted-foreground/40";
                 return (
-                  <div key={workspace.workspaceKey} className="group/workspace relative">
-                    <SidebarMenuSubButton
-                      size="sm"
-                      className={`mx-2 h-7 w-auto gap-2 px-2 pr-15 text-left ${
-                        activeWorkspaceKey === workspace.workspaceKey
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground/80 hover:bg-accent hover:text-foreground"
-                      }`}
-                      onClick={() => {
-                        void setWorkspaceActive(workspace).catch((error) => {
-                          toastManager.add({
-                            type: "error",
-                            title: "Failed to switch workspace",
-                            description: error instanceof Error ? error.message : "An error occurred.",
-                          });
-                        });
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        void (async () => {
-                          const api = readLocalApi();
-                          if (!api) {
-                            return;
-                          }
-                          const clicked = await api.contextMenu.show(
-                            [
-                              { id: "new-thread", label: "New thread" },
-                              { id: "copy-path", label: "Copy Workspace Path" },
-                              {
-                                id: "delete",
-                                label: workspace.type === "worktree" ? "Delete workspace" : "Delete workspace",
-                                destructive: true,
-                                disabled: workspace.isDefault,
-                              },
-                            ],
-                            { x: event.clientX, y: event.clientY },
-                          );
-                          if (clicked === "new-thread") {
-                            await handleCreateThreadForWorkspace(workspace);
-                            return;
-                          }
-                          if (clicked === "copy-path") {
-                            const path = workspace.worktreePath ?? project.cwd;
-                            copyPathToClipboard(path, { path });
-                            return;
-                          }
-                          if (clicked !== "delete") {
-                            return;
-                          }
-                          try {
-                            await confirmDeleteWorkspace(workspace);
-                          } catch (error) {
-                            toastManager.add({
-                              type: "error",
-                              title: "Failed to delete workspace",
-                              description:
-                                error instanceof Error ? error.message : "An error occurred.",
+                  <SortableSidebarItem
+                    key={item.key}
+                    id={sectionSortableId(section)}
+                    data={{
+                      type: "top-level-section",
+                      section,
+                    }}
+                    className="mt-1"
+                  >
+                    {({ handleProps }) => (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          ref={handleProps.setActivatorNodeRef}
+                          aria-label={`Reorder section ${section.name}`}
+                          className="absolute top-0.5 left-3 inline-flex size-4 cursor-grab items-center justify-center rounded-sm text-muted-foreground/60 hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          {...handleProps.attributes}
+                          {...handleProps.listeners}
+                        >
+                          <GripVerticalIcon className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-6 w-full items-center gap-2 px-3 pl-8 pb-1 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-foreground"
+                          onClick={() => {
+                            void setSectionCollapsed(section, !section.isCollapsed).catch((error) => {
+                              toastManager.add({
+                                type: "error",
+                                title: "Failed to update section",
+                                description:
+                                  error instanceof Error ? error.message : "An error occurred.",
+                              });
                             });
-                          }
-                        })();
-                      }}
-                    >
-                      <ChevronRightIcon
-                        className={`size-3.5 shrink-0 transition-transform ${
-                          workspaceExpanded ? "rotate-90" : ""
-                        }`}
-                      />
-                      <FolderIcon className="size-3.5 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{workspace.name}</span>
-                      {workspace.environmentLabel ? (
-                        <span className="text-[10px] text-muted-foreground/60">
-                          {workspace.environmentLabel}
-                        </span>
-                      ) : null}
-                    </SidebarMenuSubButton>
-                    <div className="absolute top-1.5 right-3 flex items-center gap-1">
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <button
-                              type="button"
-                              aria-label={`Create new thread in ${workspace.name}`}
-                              className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                void handleCreateThreadForWorkspace(workspace).catch((error) => {
-                                  toastManager.add({
-                                    type: "error",
-                                    title: "Failed to create thread",
-                                    description:
-                                      error instanceof Error ? error.message : "An error occurred.",
-                                  });
+                          }}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            void (async () => {
+                              const clicked = await requestSidebarContextMenu(
+                                [
+                                  { id: "rename", label: "Rename section" },
+                                  {
+                                    id: section.isCollapsed ? "expand" : "collapse",
+                                    label: section.isCollapsed ? "Expand section" : "Collapse section",
+                                  },
+                                  { id: "color:none", label: "Clear color" },
+                                  { id: "color:red", label: "Red" },
+                                  { id: "color:orange", label: "Orange" },
+                                  { id: "color:yellow", label: "Yellow" },
+                                  { id: "color:green", label: "Green" },
+                                  { id: "color:blue", label: "Blue" },
+                                  { id: "color:pink", label: "Pink" },
+                                  { id: "delete", label: "Delete section", destructive: true },
+                                ],
+                                { x: event.clientX, y: event.clientY },
+                              );
+                              try {
+                                if (clicked === "rename") {
+                                  await renameWorkspaceSection(section);
+                                  return;
+                                }
+                                if (clicked === "collapse") {
+                                  await setSectionCollapsed(section, true);
+                                  return;
+                                }
+                                if (clicked === "expand") {
+                                  await setSectionCollapsed(section, false);
+                                  return;
+                                }
+                                if (typeof clicked === "string" && clicked.startsWith("color:")) {
+                                  const nextColor = clicked.slice("color:".length);
+                                  await setSectionColor(section, nextColor === "none" ? null : nextColor);
+                                  return;
+                                }
+                                if (clicked === "delete") {
+                                  await deleteWorkspaceSection(section);
+                                }
+                              } catch (error) {
+                                toastManager.add({
+                                  type: "error",
+                                  title: "Failed to update section",
+                                  description:
+                                    error instanceof Error ? error.message : "An error occurred.",
                                 });
-                              }}
-                            >
-                              <SquarePenIcon className="size-3.5" />
-                            </button>
-                          }
-                        />
-                        <TooltipPopup side="top">New thread in workspace</TooltipPopup>
-                      </Tooltip>
-                      {!workspace.isDefault ? (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <button
-                                type="button"
-                                aria-label={`Delete workspace ${workspace.name}`}
-                                className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  void confirmDeleteWorkspace(workspace).catch((error) => {
-                                    toastManager.add({
-                                      type: "error",
-                                      title: "Failed to delete workspace",
-                                      description:
-                                        error instanceof Error ? error.message : "An error occurred.",
-                                    });
-                                  });
+                              }
+                            })();
+                          }}
+                        >
+                          <ChevronRightIcon
+                            className={`size-3 shrink-0 transition-transform ${
+                              section.isCollapsed ? "" : "rotate-90"
+                            }`}
+                          />
+                          <span className={`inline-flex size-2 rounded-full ${colorClassName}`} />
+                          <span className="truncate">{section.name}</span>
+                        </button>
+                        {!section.isCollapsed ? (
+                          <SortableContext
+                            items={sectionWorkspaces.map((workspace) => workspaceSortableId(workspace))}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {sectionWorkspaces.map((workspace) => (
+                              <SortableSidebarItem
+                                key={workspace.workspaceKey}
+                                id={workspaceSortableId(workspace)}
+                                data={{
+                                  type: "section-workspace",
+                                  workspace,
+                                  section,
                                 }}
                               >
-                                <Trash2Icon className="size-3.5" />
-                              </button>
-                            }
-                          />
-                          <TooltipPopup side="top">Delete workspace</TooltipPopup>
-                        </Tooltip>
-                      ) : null}
-                    </div>
-                    <SidebarProjectThreadList
-                      projectKey={workspace.workspaceKey}
-                      projectExpanded={workspaceExpanded}
-                      hasOverflowingThreads={hasOverflowingThreads}
-                      hiddenThreadStatus={hiddenThreadStatus}
-                      orderedProjectThreadKeys={orderedWorkspaceThreadKeys}
-                      renderedThreads={renderedWorkspaceThreads}
-                      showEmptyThreadState={workspaceExpanded && workspaceThreads.length === 0}
-                      shouldShowThreadPanel={workspaceExpanded}
-                      isThreadListExpanded={workspaceExpanded}
-                      projectCwd={workspace.worktreePath ?? project.cwd}
-                      activeRouteThreadKey={activeRouteThreadKey}
-                      threadJumpLabelByKey={threadJumpLabelByKey}
-                      appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
-                      renamingThreadKey={renamingThreadKey}
-                      renamingTitle={renamingTitle}
-                      setRenamingTitle={setRenamingTitle}
-                      renamingInputRef={renamingInputRef}
-                      renamingCommittedRef={renamingCommittedRef}
-                      confirmingArchiveThreadKey={confirmingArchiveThreadKey}
-                      setConfirmingArchiveThreadKey={setConfirmingArchiveThreadKey}
-                      confirmArchiveButtonRefs={confirmArchiveButtonRefs}
-                      attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                      handleThreadClick={handleThreadClick}
-                      navigateToThread={navigateToThread}
-                      handleMultiSelectContextMenu={handleMultiSelectContextMenu}
-                      handleThreadContextMenu={handleThreadContextMenu}
-                      clearSelection={clearSelection}
-                      commitRename={commitRename}
-                      cancelRename={cancelRename}
-                      attemptArchiveThread={attemptArchiveThread}
-                      openPrLink={openPrLink}
-                      expandThreadListForProject={expandThreadListForProject}
-                      collapseThreadListForProject={collapseThreadListForProject}
-                    />
-                  </div>
+                                {({ handleProps, isDragging }) =>
+                                  renderWorkspaceRow(workspace, handleProps, isDragging)
+                                }
+                              </SortableSidebarItem>
+                            ))}
+                          </SortableContext>
+                        ) : null}
+                      </div>
+                    )}
+                  </SortableSidebarItem>
                 );
-              })}
+              }
+
+              const workspace = item.workspace;
+              return (
+                <SortableSidebarItem
+                  key={workspace.workspaceKey}
+                  id={workspaceSortableId(workspace)}
+                  data={{
+                    type: "top-level-workspace",
+                    workspace,
+                  }}
+                >
+                  {({ handleProps, isDragging }) =>
+                    renderWorkspaceRow(workspace, handleProps, isDragging)
+                  }
+                </SortableSidebarItem>
+              );
+            })}
+          </SortableContext>
+        </DndContext>
+      ) : null}
+
+      <Dialog
+        open={sidebarTextDialogState !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolveSidebarTextDialog(null);
+          }
+        }}
+      >
+        {sidebarTextDialogState ? (
+          <DialogPopup className="max-w-md" showCloseButton={false}>
+            <form
+              className="flex min-h-0 flex-1 flex-col"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const trimmed = sidebarTextDialogState.value.trim();
+                if (trimmed.length === 0) {
+                  return;
+                }
+                resolveSidebarTextDialog(trimmed);
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{sidebarTextDialogState.title}</DialogTitle>
+                {sidebarTextDialogState.description ? (
+                  <DialogDescription>{sidebarTextDialogState.description}</DialogDescription>
+                ) : null}
+              </DialogHeader>
+              <DialogPanel className="space-y-3">
+                <input
+                  ref={sidebarTextInputRef}
+                  value={sidebarTextDialogState.value}
+                  onChange={(event) => {
+                    setSidebarTextDialogState((current) =>
+                      current ? { ...current, value: event.target.value } : current,
+                    );
+                  }}
+                  className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+                  placeholder="Enter a name"
+                />
+              </DialogPanel>
+              <DialogFooter variant="bare">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    resolveSidebarTextDialog(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={sidebarTextDialogState.value.trim().length === 0}>
+                  {sidebarTextDialogState.submitLabel}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogPopup>
+        ) : null}
+      </Dialog>
+
+      {typeof document !== "undefined" && sidebarContextMenuState && sidebarContextMenuPosition
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-60"
+              onContextMenu={(event) => {
+                event.preventDefault();
+                resolveSidebarContextMenu(null);
+              }}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  resolveSidebarContextMenu(null);
+                }
+              }}
+            >
+              <div
+                ref={sidebarContextMenuRef}
+                role="menu"
+                className="fixed min-w-44 rounded-lg border bg-popover not-dark:bg-clip-padding p-1 shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+                style={{
+                  left: sidebarContextMenuPosition.left,
+                  top: sidebarContextMenuPosition.top,
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                }}
+              >
+                {sidebarContextMenuState.items.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={item.disabled}
+                    className={`flex min-h-7 w-full items-center rounded-sm px-2 py-1 text-left text-sm outline-none transition-colors ${
+                      item.disabled
+                        ? "cursor-not-allowed opacity-50"
+                        : item.destructive
+                          ? "text-destructive hover:bg-destructive/10"
+                          : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                    onClick={() => {
+                      if (item.disabled) {
+                        return;
+                      }
+                      resolveSidebarContextMenu(item.id);
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>,
-          ];
-        })}
+            document.body,
+          )
+        : null}
     </>
   );
 });
@@ -2261,7 +3474,7 @@ function CapycodeWordmark() {
   );
 }
 
-type SortableProjectHandleProps = Pick<
+type SortableHandleProps = Pick<
   ReturnType<typeof useSortable>,
   "attributes" | "listeners" | "setActivatorNodeRef"
 >;
@@ -2340,7 +3553,7 @@ function SortableProjectItem({
 }: {
   projectId: string;
   disabled?: boolean;
-  children: (handleProps: SortableProjectHandleProps) => React.ReactNode;
+  children: (handleProps: SortableHandleProps) => React.ReactNode;
 }) {
   const {
     attributes,
@@ -2367,6 +3580,54 @@ function SortableProjectItem({
     >
       {children({ attributes, listeners, setActivatorNodeRef })}
     </li>
+  );
+}
+
+function SortableSidebarItem({
+  id,
+  data,
+  disabled = false,
+  className,
+  children,
+}: {
+  id: string;
+  data: WorkspaceDragData;
+  disabled?: boolean;
+  className?: string;
+  children: (input: {
+    handleProps: SortableHandleProps;
+    isDragging: boolean;
+    isOver: boolean;
+  }) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id, data, disabled });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
+      className={`${className ?? ""} ${isDragging ? "z-20 opacity-80" : ""} ${
+        isOver && !isDragging ? "ring-1 ring-primary/40 rounded-md" : ""
+      }`}
+    >
+      {children({
+        handleProps: { attributes, listeners, setActivatorNodeRef },
+        isDragging,
+        isOver,
+      })}
+    </div>
   );
 }
 
@@ -2669,76 +3930,47 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </div>
         )}
 
-        {isManualProjectSorting ? (
-          <DndContext
-            sensors={projectDnDSensors}
-            collisionDetection={projectCollisionDetection}
-            modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-            onDragStart={handleProjectDragStart}
-            onDragEnd={handleProjectDragEnd}
-            onDragCancel={handleProjectDragCancel}
-          >
-            <SidebarMenu>
-              <SortableContext
-                items={sortedProjects.map((project) => project.projectKey)}
-                strategy={verticalListSortingStrategy}
-              >
-                {sortedProjects.map((project) => (
-                  <SortableProjectItem key={project.projectKey} projectId={project.projectKey}>
-                    {(dragHandleProps) => (
-                      <SidebarProjectItem
-                        project={project}
-                        activeRouteThreadKey={
-                          activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-                        }
-                        expandedThreadListsByProject={expandedThreadListsByProject}
-                        handleNewThread={handleNewThread}
-                        archiveThread={archiveThread}
-                        deleteThread={deleteThread}
-                        threadJumpLabelByKey={threadJumpLabelByKey}
-                        attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                        expandThreadListForProject={expandThreadListForProject}
-                        collapseThreadListForProject={collapseThreadListForProject}
-                        dragInProgressRef={dragInProgressRef}
-                        suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
-                        suppressProjectClickForContextMenuRef={
-                          suppressProjectClickForContextMenuRef
-                        }
-                        isManualProjectSorting={isManualProjectSorting}
-                        dragHandleProps={dragHandleProps}
-                      />
-                    )}
-                  </SortableProjectItem>
-                ))}
-              </SortableContext>
-            </SidebarMenu>
-          </DndContext>
-        ) : (
+        <DndContext
+          sensors={projectDnDSensors}
+          collisionDetection={projectCollisionDetection}
+          modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+          onDragStart={handleProjectDragStart}
+          onDragEnd={handleProjectDragEnd}
+          onDragCancel={handleProjectDragCancel}
+        >
           <SidebarMenu ref={attachProjectListAutoAnimateRef}>
-            {sortedProjects.map((project) => (
-              <SidebarProjectListRow
-                key={project.projectKey}
-                project={project}
-                activeRouteThreadKey={
-                  activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-                }
-                expandedThreadListsByProject={expandedThreadListsByProject}
-                handleNewThread={handleNewThread}
-                archiveThread={archiveThread}
-                deleteThread={deleteThread}
-                threadJumpLabelByKey={threadJumpLabelByKey}
-                attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                expandThreadListForProject={expandThreadListForProject}
-                collapseThreadListForProject={collapseThreadListForProject}
-                dragInProgressRef={dragInProgressRef}
-                suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
-                suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
-                isManualProjectSorting={isManualProjectSorting}
-                dragHandleProps={null}
-              />
-            ))}
+            <SortableContext
+              items={sortedProjects.map((project) => project.projectKey)}
+              strategy={verticalListSortingStrategy}
+            >
+              {sortedProjects.map((project) => (
+                <SortableProjectItem key={project.projectKey} projectId={project.projectKey}>
+                  {(dragHandleProps) => (
+                    <SidebarProjectItem
+                      project={project}
+                      activeRouteThreadKey={
+                        activeRouteProjectKey === project.projectKey ? routeThreadKey : null
+                      }
+                      expandedThreadListsByProject={expandedThreadListsByProject}
+                      handleNewThread={handleNewThread}
+                      archiveThread={archiveThread}
+                      deleteThread={deleteThread}
+                      threadJumpLabelByKey={threadJumpLabelByKey}
+                      attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+                      expandThreadListForProject={expandThreadListForProject}
+                      collapseThreadListForProject={collapseThreadListForProject}
+                      dragInProgressRef={dragInProgressRef}
+                      suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
+                      suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
+                      isManualProjectSorting={isManualProjectSorting}
+                      dragHandleProps={dragHandleProps}
+                    />
+                  )}
+                </SortableProjectItem>
+              ))}
+            </SortableContext>
           </SidebarMenu>
-        )}
+        </DndContext>
 
         {projectsLength === 0 && !shouldShowProjectPathEntry && (
           <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
@@ -3100,32 +4332,28 @@ export default function Sidebar() {
 
   const handleProjectDragEnd = useCallback(
     (event: DragEndEvent) => {
-      if (sidebarProjectSortOrder !== "manual") {
-        dragInProgressRef.current = false;
-        return;
-      }
       dragInProgressRef.current = false;
       const { active, over } = event;
       if (!over || active.id === over.id) return;
       const activeProject = sidebarProjects.find((project) => project.projectKey === active.id);
       const overProject = sidebarProjects.find((project) => project.projectKey === over.id);
       if (!activeProject || !overProject) return;
+      if (sidebarProjectSortOrder !== "manual") {
+        updateSettings({ sidebarProjectSortOrder: "manual" });
+      }
       const activeMemberKeys = activeProject.memberProjectRefs.map(scopedProjectKey);
       const overMemberKeys = overProject.memberProjectRefs.map(scopedProjectKey);
       reorderProjects(activeMemberKeys, overMemberKeys);
     },
-    [sidebarProjectSortOrder, reorderProjects, sidebarProjects],
+    [reorderProjects, sidebarProjectSortOrder, sidebarProjects, updateSettings],
   );
 
   const handleProjectDragStart = useCallback(
     (_event: DragStartEvent) => {
-      if (sidebarProjectSortOrder !== "manual") {
-        return;
-      }
       dragInProgressRef.current = true;
       suppressProjectClickAfterDragRef.current = true;
     },
-    [sidebarProjectSortOrder],
+    [],
   );
 
   const handleProjectDragCancel = useCallback((_event: DragCancelEvent) => {
