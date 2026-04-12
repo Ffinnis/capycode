@@ -261,6 +261,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         {
           id: ThreadId.make("thread-1"),
           projectId: asProjectId("project-1"),
+          workspaceId: null,
           title: "Thread 1",
           modelSelection: {
             provider: "codex",
@@ -341,6 +342,64 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           },
         },
       ]);
+    }),
+  );
+
+  it.effect("backfills a default workspace for existing projects missing workspace rows", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM workspace_project_state`;
+      yield* sql`DELETE FROM workspace_sections`;
+      yield* sql`DELETE FROM workspaces`;
+      yield* sql`DELETE FROM worktrees`;
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-backfill',
+          'Backfill Project',
+          '/tmp/backfill-project',
+          NULL,
+          '[]',
+          '2026-03-03T00:00:00.000Z',
+          '2026-03-03T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      const snapshot = yield* snapshotQuery.getSnapshot();
+
+      assert.equal(snapshot.workspaces.length, 1);
+      assert.deepEqual(snapshot.workspaces[0], {
+        id: snapshot.workspaces[0]!.id,
+        projectId: asProjectId("project-backfill"),
+        worktreeId: null,
+        type: "branch",
+        name: "main",
+        branch: "main",
+        worktreePath: null,
+        sectionId: null,
+        tabOrder: 0,
+        isDefault: true,
+        isActive: true,
+        createdAt: "2026-03-03T00:00:00.000Z",
+        updatedAt: "2026-03-03T00:00:01.000Z",
+        lastOpenedAt: "2026-03-03T00:00:01.000Z",
+        deletingAt: null,
+      });
     }),
   );
 

@@ -711,15 +711,101 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
         case "project.created":
-          yield* projectionProjectRepository.upsert({
-            projectId: event.payload.projectId,
-            title: event.payload.title,
-            workspaceRoot: event.payload.workspaceRoot,
-            defaultModelSelection: event.payload.defaultModelSelection,
-            scripts: event.payload.scripts,
-            createdAt: event.payload.createdAt,
-            updatedAt: event.payload.updatedAt,
-            deletedAt: null,
+          yield* Effect.gen(function* () {
+            yield* projectionProjectRepository.upsert({
+              projectId: event.payload.projectId,
+              title: event.payload.title,
+              workspaceRoot: event.payload.workspaceRoot,
+              defaultModelSelection: event.payload.defaultModelSelection,
+              scripts: event.payload.scripts,
+              createdAt: event.payload.createdAt,
+              updatedAt: event.payload.updatedAt,
+              deletedAt: null,
+            });
+
+            const existingDefaultWorkspaceRows = yield* sql<{
+              readonly workspaceId: string;
+            }>`
+              SELECT id AS "workspaceId"
+              FROM workspaces
+              WHERE
+                project_id = ${event.payload.projectId}
+                AND type = 'branch'
+                AND is_default = 1
+                AND deleting_at IS NULL
+              LIMIT 1
+            `.pipe(
+              Effect.mapError(
+                toPersistenceSqlError(
+                  "ProjectionPipeline.applyProjectsProjection:findDefaultWorkspace",
+                ),
+              ),
+            );
+
+            const defaultWorkspaceId =
+              existingDefaultWorkspaceRows[0]?.workspaceId ?? crypto.randomUUID();
+
+            if (existingDefaultWorkspaceRows.length === 0) {
+              yield* sql`
+                INSERT INTO workspaces (
+                  id,
+                  project_id,
+                  worktree_id,
+                  type,
+                  branch,
+                  name,
+                  tab_order,
+                  is_default,
+                  created_at,
+                  updated_at,
+                  last_opened_at,
+                  deleting_at,
+                  section_id
+                )
+                VALUES (
+                  ${defaultWorkspaceId},
+                  ${event.payload.projectId},
+                  NULL,
+                  'branch',
+                  'main',
+                  'main',
+                  0,
+                  1,
+                  ${event.payload.createdAt},
+                  ${event.payload.updatedAt},
+                  ${event.payload.updatedAt},
+                  NULL,
+                  NULL
+                )
+              `.pipe(
+                Effect.mapError(
+                  toPersistenceSqlError(
+                    "ProjectionPipeline.applyProjectsProjection:createDefaultWorkspace",
+                  ),
+                ),
+              );
+            }
+
+            yield* sql`
+              INSERT INTO workspace_project_state (
+                project_id,
+                active_workspace_id,
+                updated_at
+              )
+              VALUES (
+                ${event.payload.projectId},
+                ${defaultWorkspaceId},
+                ${event.payload.updatedAt}
+              )
+              ON CONFLICT(project_id)
+              DO NOTHING
+            `.pipe(
+              Effect.mapError(
+                toPersistenceSqlError(
+                  "ProjectionPipeline.applyProjectsProjection:seedProjectWorkspaceState",
+                ),
+              ),
+            );
           });
           return;
 

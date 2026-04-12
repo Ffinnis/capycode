@@ -2152,6 +2152,34 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         WHERE projector = 'projection.projects'
       `;
       assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
+
+      const workspaceRows = yield* sql<{
+        readonly branch: string | null;
+        readonly name: string;
+        readonly isDefault: number;
+        readonly isActive: number;
+      }>`
+        SELECT
+          workspaces.branch AS branch,
+          workspaces.name AS name,
+          workspaces.is_default AS "isDefault",
+          CASE
+            WHEN workspace_project_state.active_workspace_id = workspaces.id THEN 1
+            ELSE 0
+          END AS "isActive"
+        FROM workspaces
+        LEFT JOIN workspace_project_state
+          ON workspace_project_state.project_id = workspaces.project_id
+        WHERE workspaces.project_id = 'project-live'
+      `;
+      assert.deepEqual(workspaceRows, [
+        {
+          branch: "main",
+          name: "main",
+          isDefault: 1,
+          isActive: 1,
+        },
+      ]);
     }),
   );
 

@@ -4199,7 +4199,9 @@ export default function Sidebar() {
     async (rawCwd: string) => {
       const cwd = rawCwd.trim();
       if (!cwd || isAddingProject) return;
-      const api = activeEnvironmentId ? readEnvironmentApi(activeEnvironmentId) : undefined;
+      const environmentId = activeEnvironmentId;
+      if (environmentId === null) return;
+      const api = readEnvironmentApi(environmentId);
       if (!api) return;
 
       setIsAddingProject(true);
@@ -4236,11 +4238,11 @@ export default function Sidebar() {
           },
           createdAt,
         });
-        if (activeEnvironmentId !== null) {
-          await handleNewThread(scopeProjectRef(activeEnvironmentId, projectId), {
-            envMode: defaultThreadEnvMode,
-          }).catch(() => undefined);
-        }
+        const snapshot = await api.orchestration.getSnapshot();
+        useStore.getState().syncServerReadModel(snapshot, environmentId);
+        await handleNewThread(scopeProjectRef(environmentId, projectId), {
+          envMode: defaultThreadEnvMode,
+        }).catch(() => undefined);
       } catch (error) {
         const description =
           error instanceof Error ? error.message : "An error occurred while adding the project.";

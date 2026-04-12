@@ -519,99 +519,204 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const reconcileWorkspaceState = Effect.fn("reconcileWorkspaceState")(function* () {
+    yield* sql`
+      INSERT INTO workspaces (
+        id,
+        project_id,
+        worktree_id,
+        type,
+        branch,
+        name,
+        tab_order,
+        is_default,
+        created_at,
+        updated_at,
+        last_opened_at,
+        deleting_at,
+        section_id
+      )
+      SELECT
+        lower(hex(randomblob(16))),
+        projects.project_id,
+        NULL,
+        'branch',
+        'main',
+        'main',
+        0,
+        1,
+        projects.created_at,
+        projects.updated_at,
+        projects.updated_at,
+        NULL,
+        NULL
+      FROM projection_projects AS projects
+      WHERE
+        projects.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM workspaces
+          WHERE
+            workspaces.project_id = projects.project_id
+            AND workspaces.deleting_at IS NULL
+        )
+    `.pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionSnapshotQuery.reconcileWorkspaceState:seedWorkspaces"),
+      ),
+    );
+
+    yield* sql`
+      INSERT INTO workspace_project_state (
+        project_id,
+        active_workspace_id,
+        updated_at
+      )
+      SELECT
+        projects.project_id,
+        (
+          SELECT workspaces.id
+          FROM workspaces
+          WHERE
+            workspaces.project_id = projects.project_id
+            AND workspaces.deleting_at IS NULL
+          ORDER BY workspaces.is_default DESC, workspaces.tab_order ASC, workspaces.id ASC
+          LIMIT 1
+        ),
+        projects.updated_at
+      FROM projection_projects AS projects
+      WHERE
+        projects.deleted_at IS NULL
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM workspace_project_state
+            WHERE workspace_project_state.project_id = projects.project_id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM workspace_project_state
+            LEFT JOIN workspaces AS active_workspaces
+              ON active_workspaces.id = workspace_project_state.active_workspace_id
+            WHERE
+              workspace_project_state.project_id = projects.project_id
+              AND (
+                workspace_project_state.active_workspace_id IS NULL
+                OR active_workspaces.id IS NULL
+                OR active_workspaces.deleting_at IS NOT NULL
+              )
+          )
+        )
+      ON CONFLICT(project_id)
+      DO UPDATE SET
+        active_workspace_id = excluded.active_workspace_id,
+        updated_at = excluded.updated_at
+    `.pipe(
+      Effect.mapError(
+        toPersistenceSqlError(
+          "ProjectionSnapshotQuery.reconcileWorkspaceState:seedActiveWorkspace",
+        ),
+      ),
+    );
+  });
+
   const getSnapshot: ProjectionSnapshotQueryShape["getSnapshot"] = () =>
     sql
       .withTransaction(
-        Effect.all([
-          listProjectRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listProjects:query",
-                "ProjectionSnapshotQuery.getSnapshot:listProjects:decodeRows",
+        reconcileWorkspaceState().pipe(
+          Effect.flatMap(() =>
+            Effect.all([
+              listProjectRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listProjects:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listProjects:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listWorkspaceRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listWorkspaces:query",
-                "ProjectionSnapshotQuery.getSnapshot:listWorkspaces:decodeRows",
+              listWorkspaceRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listWorkspaces:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listWorkspaces:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listWorkspaceSectionRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listWorkspaceSections:query",
-                "ProjectionSnapshotQuery.getSnapshot:listWorkspaceSections:decodeRows",
+              listWorkspaceSectionRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listWorkspaceSections:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listWorkspaceSections:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listThreadRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listThreads:query",
-                "ProjectionSnapshotQuery.getSnapshot:listThreads:decodeRows",
+              listThreadRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listThreads:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listThreads:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listThreadMessageRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listThreadMessages:query",
-                "ProjectionSnapshotQuery.getSnapshot:listThreadMessages:decodeRows",
+              listThreadMessageRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadMessages:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadMessages:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listThreadProposedPlanRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listThreadProposedPlans:query",
-                "ProjectionSnapshotQuery.getSnapshot:listThreadProposedPlans:decodeRows",
+              listThreadProposedPlanRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadProposedPlans:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadProposedPlans:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listThreadActivityRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listThreadActivities:query",
-                "ProjectionSnapshotQuery.getSnapshot:listThreadActivities:decodeRows",
+              listThreadActivityRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadActivities:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadActivities:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listThreadSessionRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listThreadSessions:query",
-                "ProjectionSnapshotQuery.getSnapshot:listThreadSessions:decodeRows",
+              listThreadSessionRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadSessions:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listThreadSessions:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listCheckpointRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listCheckpoints:query",
-                "ProjectionSnapshotQuery.getSnapshot:listCheckpoints:decodeRows",
+              listCheckpointRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listCheckpoints:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listCheckpoints:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listLatestTurnRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listLatestTurns:query",
-                "ProjectionSnapshotQuery.getSnapshot:listLatestTurns:decodeRows",
+              listLatestTurnRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listLatestTurns:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listLatestTurns:decodeRows",
+                  ),
+                ),
               ),
-            ),
-          ),
-          listProjectionStateRows(undefined).pipe(
-            Effect.mapError(
-              toPersistenceSqlOrDecodeError(
-                "ProjectionSnapshotQuery.getSnapshot:listProjectionState:query",
-                "ProjectionSnapshotQuery.getSnapshot:listProjectionState:decodeRows",
+              listProjectionStateRows(undefined).pipe(
+                Effect.mapError(
+                  toPersistenceSqlOrDecodeError(
+                    "ProjectionSnapshotQuery.getSnapshot:listProjectionState:query",
+                    "ProjectionSnapshotQuery.getSnapshot:listProjectionState:decodeRows",
+                  ),
+                ),
               ),
-            ),
+            ]),
           ),
-        ]),
+        ),
       )
       .pipe(
         Effect.flatMap(
