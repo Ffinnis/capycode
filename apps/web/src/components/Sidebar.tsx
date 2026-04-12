@@ -4,6 +4,8 @@ import {
   ChevronRightIcon,
   CloudIcon,
   FolderIcon,
+  FolderGit2Icon,
+  GitBranchIcon,
   GitPullRequestIcon,
   GripVerticalIcon,
   PlusIcon,
@@ -1148,6 +1150,8 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     showContextMenu,
   } = props;
 
+  const WorkspaceTypeIcon = workspace.type === "branch" ? GitBranchIcon : FolderGit2Icon;
+
   return (
     <div className={`group/workspace relative ${isDragging ? "opacity-80" : ""}`}>
       <SidebarMenuSubButton
@@ -1244,7 +1248,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
             workspaceExpanded ? "rotate-90" : ""
           }`}
         />
-        <FolderIcon className="size-3.5 shrink-0" />
+        <WorkspaceTypeIcon className="size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-xs">{workspace.name}</span>
         {workspace.environmentLabel ? (
           <span className="text-[10px] text-muted-foreground/60">{workspace.environmentLabel}</span>
