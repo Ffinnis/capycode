@@ -69,6 +69,7 @@ const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 interface MessagesTimelineProps {
   hasMessages: boolean;
   isWorking: boolean;
+  extendedTraceMode: boolean;
   activeTurnInProgress: boolean;
   activeTurnId?: TurnId | null;
   activeTurnStartedAt: string | null;
@@ -108,6 +109,7 @@ interface MessagesTimelineProps {
 export const MessagesTimeline = memo(function MessagesTimeline({
   hasMessages,
   isWorking,
+  extendedTraceMode,
   activeTurnInProgress,
   activeTurnId,
   activeTurnStartedAt,
@@ -168,8 +170,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         completionDividerBeforeEntryId,
         isWorking,
         activeTurnStartedAt,
+        extendedTraceMode,
       }),
-    [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt],
+    [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt, extendedTraceMode],
   );
 
   const firstUnvirtualizedRowIndex = useMemo(() => {
@@ -231,6 +234,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       if (!row) return 96;
       return estimateMessagesTimelineRowHeight(row, {
         expandedWorkGroups,
+        extendedTraceMode,
         timelineWidthPx,
         turnDiffSummaryByAssistantMessageId,
       });
@@ -320,7 +324,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         (() => {
           const groupId = row.id;
           const groupedEntries = row.groupedEntries;
-          const isExpanded = expandedWorkGroups[groupId] ?? false;
+          const isExpanded = extendedTraceMode
+            ? (expandedWorkGroups[groupId] ?? true)
+            : (expandedWorkGroups[groupId] ?? false);
           const hasOverflow = groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES;
           const visibleEntries =
             hasOverflow && !isExpanded
@@ -329,19 +335,23 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           const hiddenCount = groupedEntries.length - visibleEntries.length;
           const onlyToolEntries = groupedEntries.every((entry) => entry.tone === "tool");
           const showHeader = hasOverflow || !onlyToolEntries;
-          const groupLabel = onlyToolEntries ? "Tool calls" : "Work log";
+          const groupLabel = extendedTraceMode
+            ? "Trace"
+            : onlyToolEntries
+              ? "Tool calls"
+              : "Work log";
 
           return (
-            <div className="rounded-xl border border-border/45 bg-card/25 px-2 py-1.5">
+            <div className="rounded-xl border border-border/40 bg-card/20 px-2.5 py-2">
               {showHeader && (
                 <div className="mb-1.5 flex items-center justify-between gap-2 px-0.5">
-                  <p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground/55">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
                     {groupLabel} ({groupedEntries.length})
                   </p>
                   {hasOverflow && (
                     <button
                       type="button"
-                      className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground/55 transition-colors duration-150 hover:text-foreground/75"
+                      className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60 transition-colors duration-150 hover:text-foreground/80"
                       onClick={() => onToggleWorkGroup(groupId)}
                     >
                       {isExpanded ? "Show less" : `Show ${hiddenCount} more`}
@@ -580,6 +590,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 : "Working..."}
             </span>
           </div>
+          {extendedTraceMode && row.recentEntries.length > 0 ? (
+            <div className="mt-3 rounded-xl border border-border/40 bg-card/20 px-2.5 py-2">
+              <div className="mb-1.5 px-0.5">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+                  Live trace ({row.recentEntries.length})
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                {row.recentEntries.map((workEntry) => (
+                  <SimpleWorkEntryRow key={`working-trace:${workEntry.id}`} workEntry={workEntry} />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -876,6 +900,21 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
 }) {
   const { workEntry } = props;
+  if (workEntry.tone === "thinking") {
+    const reasoningText = (workEntry.detail ?? workEntry.label).trim();
+    const reasoningHeading = workEntry.label.trim() || "Reasoning";
+    return (
+      <div className="rounded-md bg-muted/15 px-2.5 py-2">
+        <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-muted-foreground/70">
+          <BotIcon className="size-3.5 text-foreground/75" />
+          <span className="uppercase tracking-[0.1em]">{reasoningHeading}</span>
+        </div>
+        <p className="whitespace-pre-wrap break-words text-[13px] leading-5 text-muted-foreground/85">
+          {reasoningText}
+        </p>
+      </div>
+    );
+  }
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);

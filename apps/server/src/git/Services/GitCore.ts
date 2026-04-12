@@ -9,17 +9,22 @@
 import { Context } from "effect";
 import type { Effect } from "effect";
 import type {
+  GitChangedFile,
   GitCheckoutInput,
   GitCheckoutResult,
   GitCreateBranchInput,
   GitCreateBranchResult,
   GitCreateWorktreeInput,
   GitCreateWorktreeResult,
+  GitCommitSummary,
+  GitGetFileDiffInput,
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
   GitPullResult,
   GitRemoveWorktreeInput,
+  GitReviewStatusInput,
+  GitReviewStatusResult,
   GitStatusInput,
   GitStatusResult,
 } from "@capycode/contracts";
@@ -231,6 +236,36 @@ export interface GitCoreShape {
   readonly listBranches: (
     input: GitListBranchesInput,
   ) => Effect.Effect<GitListBranchesResult, GitCommandError>;
+
+  /**
+   * Read git-review status for the current checkout and selected base branch.
+   */
+  readonly getReviewStatus: (
+    input: GitReviewStatusInput,
+  ) => Effect.Effect<GitReviewStatusResult, GitCommandError>;
+
+  /**
+   * List commits that are ahead of the selected base branch.
+   */
+  readonly listCommitsAheadOfBase: (
+    cwd: string,
+    baseBranch?: string,
+  ) => Effect.Effect<{ baseBranch: string | null; commits: ReadonlyArray<GitCommitSummary> }, GitCommandError>;
+
+  /**
+   * List changed files for a single commit.
+   */
+  readonly getCommitFiles: (
+    cwd: string,
+    commitHash: string,
+  ) => Effect.Effect<ReadonlyArray<GitChangedFile>, GitCommandError>;
+
+  /**
+   * Build a single-file patch for the selected review category.
+   */
+  readonly getFileDiff: (
+    input: GitGetFileDiffInput,
+  ) => Effect.Effect<string, GitCommandError>;
 
   /**
    * Pull current branch from upstream using fast-forward only.

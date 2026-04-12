@@ -193,6 +193,7 @@ function createBaseTimelineProps(input: {
     markdownCwd: MARKDOWN_CWD,
     resolvedTheme: "light",
     timestampFormat: "locale",
+    extendedTraceMode: false,
     workspaceRoot: MARKDOWN_CWD,
     ...(input.onVirtualizerSnapshot ? { onVirtualizerSnapshot: input.onVirtualizerSnapshot } : {}),
   };

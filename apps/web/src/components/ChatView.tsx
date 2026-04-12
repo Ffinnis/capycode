@@ -604,6 +604,7 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const extendedTraceMode = settings.extendedTraceMode;
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -1054,8 +1055,13 @@ export default function ChatView(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(
-    () => deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
-    [activeLatestTurn?.turnId, threadActivities],
+    () =>
+      deriveWorkLogEntries(
+        threadActivities,
+        activeLatestTurn?.turnId ?? undefined,
+        extendedTraceMode ? "extended" : "compact",
+      ),
+    [activeLatestTurn?.turnId, extendedTraceMode, threadActivities],
   );
   const latestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
@@ -3384,6 +3390,7 @@ export default function ChatView(props: ChatViewProps) {
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
+                extendedTraceMode={extendedTraceMode}
                 workspaceRoot={activeWorkspaceRoot}
               />
             </div>

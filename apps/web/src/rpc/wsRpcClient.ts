@@ -106,6 +106,10 @@ export interface WsRpcClient {
       options?: GitRunStackedActionOptions,
     ) => Promise<GitRunStackedActionResult>;
     readonly listBranches: RpcUnaryMethod<typeof WS_METHODS.gitListBranches>;
+    readonly getReviewStatus: RpcUnaryMethod<typeof WS_METHODS.gitGetReviewStatus>;
+    readonly listCommits: RpcUnaryMethod<typeof WS_METHODS.gitListCommits>;
+    readonly getCommitFiles: RpcUnaryMethod<typeof WS_METHODS.gitGetCommitFiles>;
+    readonly getFileDiff: RpcUnaryMethod<typeof WS_METHODS.gitGetFileDiff>;
     readonly createWorktree: RpcUnaryMethod<typeof WS_METHODS.gitCreateWorktree>;
     readonly removeWorktree: RpcUnaryMethod<typeof WS_METHODS.gitRemoveWorktree>;
     readonly createBranch: RpcUnaryMethod<typeof WS_METHODS.gitCreateBranch>;
@@ -240,6 +244,14 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       },
       listBranches: (input) =>
         transport.request((client) => client[WS_METHODS.gitListBranches](input)),
+      getReviewStatus: (input) =>
+        transport.request((client) => client[WS_METHODS.gitGetReviewStatus](input)),
+      listCommits: (input) =>
+        transport.request((client) => client[WS_METHODS.gitListCommits](input)),
+      getCommitFiles: (input) =>
+        transport.request((client) => client[WS_METHODS.gitGetCommitFiles](input)),
+      getFileDiff: (input) =>
+        transport.request((client) => client[WS_METHODS.gitGetFileDiff](input)),
       createWorktree: (input) =>
         transport.request((client) => client[WS_METHODS.gitCreateWorktree](input)),
       removeWorktree: (input) =>

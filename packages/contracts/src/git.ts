@@ -159,6 +159,12 @@ export const GitPreparePullRequestThreadInput = Schema.Struct({
 });
 export type GitPreparePullRequestThreadInput = typeof GitPreparePullRequestThreadInput.Type;
 
+export const GitReviewStatusInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type GitReviewStatusInput = typeof GitReviewStatusInput.Type;
+
 export const GitRemoveWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
@@ -188,6 +194,36 @@ export const GitInitInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
 });
 export type GitInitInput = typeof GitInitInput.Type;
+
+export const GitListCommitsInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type GitListCommitsInput = typeof GitListCommitsInput.Type;
+
+export const GitGetCommitFilesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  commitHash: TrimmedNonEmptyStringSchema,
+});
+export type GitGetCommitFilesInput = typeof GitGetCommitFilesInput.Type;
+
+export const GitDiffCategory = Schema.Literals([
+  "against-base",
+  "staged",
+  "unstaged",
+  "committed",
+]);
+export type GitDiffCategory = typeof GitDiffCategory.Type;
+
+export const GitGetFileDiffInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  path: TrimmedNonEmptyStringSchema,
+  oldPath: Schema.optional(TrimmedNonEmptyStringSchema),
+  category: GitDiffCategory,
+  baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+  commitHash: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type GitGetFileDiffInput = typeof GitGetFileDiffInput.Type;
 
 // RPC Results
 
@@ -319,6 +355,61 @@ export const GitPullResult = Schema.Struct({
   upstreamBranch: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
 });
 export type GitPullResult = typeof GitPullResult.Type;
+
+export const GitChangedFileStatus = Schema.Literals([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+  "copied",
+  "untracked",
+]);
+export type GitChangedFileStatus = typeof GitChangedFileStatus.Type;
+
+export const GitChangedFile = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  oldPath: Schema.optional(TrimmedNonEmptyStringSchema),
+  status: GitChangedFileStatus,
+  additions: NonNegativeInt,
+  deletions: NonNegativeInt,
+});
+export type GitChangedFile = typeof GitChangedFile.Type;
+
+export const GitReviewStatusResult = Schema.Struct({
+  isRepo: Schema.Boolean,
+  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  baseBranch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  baseBranchOptions: Schema.Array(TrimmedNonEmptyStringSchema),
+  againstBase: Schema.Array(GitChangedFile),
+  staged: Schema.Array(GitChangedFile),
+  unstaged: Schema.Array(GitChangedFile),
+});
+export type GitReviewStatusResult = typeof GitReviewStatusResult.Type;
+
+export const GitCommitSummary = Schema.Struct({
+  hash: TrimmedNonEmptyStringSchema,
+  shortHash: TrimmedNonEmptyStringSchema,
+  message: Schema.String,
+  author: Schema.String,
+  date: TrimmedNonEmptyStringSchema,
+});
+export type GitCommitSummary = typeof GitCommitSummary.Type;
+
+export const GitListCommitsResult = Schema.Struct({
+  baseBranch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  commits: Schema.Array(GitCommitSummary),
+});
+export type GitListCommitsResult = typeof GitListCommitsResult.Type;
+
+export const GitGetCommitFilesResult = Schema.Struct({
+  files: Schema.Array(GitChangedFile),
+});
+export type GitGetCommitFilesResult = typeof GitGetCommitFilesResult.Type;
+
+export const GitGetFileDiffResult = Schema.Struct({
+  patch: Schema.String,
+});
+export type GitGetFileDiffResult = typeof GitGetFileDiffResult.Type;
 
 // RPC / domain errors
 export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()("GitCommandError", {

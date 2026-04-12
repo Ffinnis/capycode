@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  EventId,
   MessageId,
   type OrchestrationEvent,
   type OrchestrationProposedPlanId,
@@ -73,6 +74,83 @@ function sameId(left: string | null | undefined, right: string | null | undefine
 
 function truncateDetail(value: string, limit = 180): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
+}
+
+function asUnknownRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function readRecordString(record: Record<string, unknown> | null, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function reasoningActivityIdentity(
+  event: ProviderRuntimeEvent & {
+    type: "content.delta";
+    payload: { streamKind: "reasoning_text" | "reasoning_summary_text"; summaryIndex?: number };
+  },
+): string {
+  const providerRefs = asUnknownRecord(event.providerRefs);
+  const raw = asUnknownRecord(event.raw);
+  const rawPayload = asUnknownRecord(raw?.payload);
+  const rawMessage = asUnknownRecord(rawPayload?.msg);
+
+  const itemIdentity =
+    event.itemId ??
+    readRecordString(providerRefs, "providerItemId") ??
+    readRecordString(rawMessage, "item_id") ??
+    readRecordString(rawMessage, "itemId");
+  if (itemIdentity) {
+    return `item:${itemIdentity}`;
+  }
+
+  const taskIdentity =
+    readRecordString(rawPayload, "id") ??
+    readRecordString(rawMessage, "task_id") ??
+    readRecordString(rawMessage, "taskId") ??
+    readRecordString(rawMessage, "turn_id") ??
+    readRecordString(rawMessage, "turnId") ??
+    event.turnId ??
+    readRecordString(providerRefs, "providerTurnId");
+  if (taskIdentity) {
+    return `task:${taskIdentity}`;
+  }
+
+  return `event:${event.eventId}`;
+}
+
+function reasoningActivityId(
+  event: ProviderRuntimeEvent & {
+    type: "content.delta";
+    payload: { streamKind: "reasoning_text" | "reasoning_summary_text"; summaryIndex?: number };
+  },
+): EventId {
+  const summaryKey =
+    event.payload.streamKind === "reasoning_summary_text"
+      ? `summary:${event.payload.summaryIndex ?? 0}`
+      : "main";
+  return EventId.make(
+    [
+      "reasoning",
+      event.threadId,
+      reasoningActivityIdentity(event),
+      summaryKey,
+    ].join(":"),
+  );
+}
+
+function isReasoningContentDeltaEvent(
+  event: ProviderRuntimeEvent,
+): event is ProviderRuntimeEvent & {
+  type: "content.delta";
+  payload: { streamKind: "reasoning_text" | "reasoning_summary_text"; summaryIndex?: number };
+} {
+  return (
+    event.type === "content.delta" &&
+    (event.payload.streamKind === "reasoning_text" ||
+      event.payload.streamKind === "reasoning_summary_text")
+  );
 }
 
 function normalizeProposedPlanMarkdown(planMarkdown: string | undefined): string | undefined {
@@ -428,6 +506,38 @@ function runtimeEventToActivities(
       ];
     }
 
+    case "content.delta": {
+      if (!isReasoningContentDeltaEvent(event)) {
+        return [];
+      }
+
+      return [
+        {
+          id: reasoningActivityId(event),
+          createdAt: event.createdAt,
+          tone: "info",
+          kind:
+            event.payload.streamKind === "reasoning_summary_text"
+              ? "reasoning-summary.updated"
+              : "reasoning.updated",
+          summary:
+            event.payload.streamKind === "reasoning_summary_text"
+              ? "Reasoning summary"
+              : "Reasoning",
+          payload: {
+            streamKind: event.payload.streamKind,
+            detail: event.payload.delta,
+            ...(event.payload.streamKind === "reasoning_summary_text" &&
+            event.payload.summaryIndex !== undefined
+              ? { summaryIndex: event.payload.summaryIndex }
+              : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "item.updated": {
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
@@ -498,6 +608,42 @@ function runtimeEventToActivities(
   }
 
   return [];
+}
+
+function mergeReasoningActivityDelta(
+  existingActivity: OrchestrationThreadActivity | undefined,
+  nextActivity: OrchestrationThreadActivity,
+): OrchestrationThreadActivity {
+  if (
+    existingActivity === undefined ||
+    (nextActivity.kind !== "reasoning.updated" && nextActivity.kind !== "reasoning-summary.updated")
+  ) {
+    return nextActivity;
+  }
+
+  const existingPayload =
+    existingActivity.payload && typeof existingActivity.payload === "object"
+      ? (existingActivity.payload as Record<string, unknown>)
+      : null;
+  const nextPayload =
+    nextActivity.payload && typeof nextActivity.payload === "object"
+      ? (nextActivity.payload as Record<string, unknown>)
+      : null;
+  const existingDetail =
+    existingPayload && typeof existingPayload.detail === "string" ? existingPayload.detail : "";
+  const nextDetail =
+    nextPayload && typeof nextPayload.detail === "string" ? nextPayload.detail : undefined;
+
+  return {
+    ...nextActivity,
+    createdAt: existingActivity.createdAt,
+    payload: {
+      ...(existingPayload ?? {}),
+      ...(nextPayload ?? {}),
+      ...(nextDetail !== undefined ? { detail: `${existingDetail}${nextDetail}` } : {}),
+    },
+    ...(existingActivity.sequence !== undefined ? { sequence: existingActivity.sequence } : {}),
+  };
 }
 
 const make = Effect.fn("make")(function* () {
@@ -1208,7 +1354,12 @@ const make = Effect.fn("make")(function* () {
       }
     }
 
-    const activities = runtimeEventToActivities(event);
+    const activities = runtimeEventToActivities(event).map((activity) =>
+      mergeReasoningActivityDelta(
+        thread.activities.find((existingActivity) => existingActivity.id === activity.id),
+        activity,
+      ),
+    );
     yield* Effect.forEach(activities, (activity) =>
       orchestrationEngine.dispatch({
         type: "thread.activity.append",

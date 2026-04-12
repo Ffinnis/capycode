@@ -4,6 +4,7 @@ import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useSta
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
+import DiffPanelSidebarModeToggle from "../components/DiffPanelSidebarModeToggle";
 import {
   DiffPanelHeaderSkeleton,
   DiffPanelLoadingState,
@@ -156,7 +157,9 @@ const DiffPanelInlineSidebar = (props: {
         }}
       >
         {renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
-        <SidebarRail />
+        <SidebarRail className="overflow-visible [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-auto">
+          <DiffPanelSidebarModeToggle diffOpen={diffOpen} onOpenDiff={onOpenDiff} />
+        </SidebarRail>
       </Sidebar>
     </SidebarProvider>
   );

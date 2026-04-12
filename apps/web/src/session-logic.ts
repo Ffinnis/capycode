@@ -84,6 +84,8 @@ export interface LatestProposedPlanState {
   implementationThreadId: ThreadId | null;
 }
 
+export type WorkLogDisplayMode = "compact" | "extended";
+
 export type TimelineEntry =
   | {
       id: string;
@@ -459,17 +461,26 @@ export function hasActionableProposedPlan(
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
+  displayMode: WorkLogDisplayMode = "compact",
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries = ordered
-    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .filter((activity) => activity.kind !== "tool.started")
-    .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
-    .filter((activity) => activity.kind !== "context-window.updated")
+    .filter((activity) =>
+      displayMode === "extended" ? true : latestTurnId ? activity.turnId === latestTurnId : true,
+    )
+    .filter((activity) => displayMode === "extended" || activity.kind !== "tool.started")
+    .filter(
+      (activity) =>
+        displayMode === "extended" ||
+        (activity.kind !== "task.started" && activity.kind !== "task.completed"),
+    )
+    .filter((activity) => displayMode === "extended" || activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .map(toDerivedWorkLogEntry);
-  return collapseDerivedWorkLogEntries(entries).map(
+  const visibleEntries =
+    displayMode === "extended" ? entries : collapseDerivedWorkLogEntries(entries);
+  return visibleEntries.map(
     ({ activityKind: _activityKind, collapseKey: _collapseKey, ...entry }) => entry,
   );
 }
@@ -498,7 +509,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     id: activity.id,
     createdAt: activity.createdAt,
     label: activity.summary,
-    tone: activity.tone === "approval" ? "info" : activity.tone,
+    tone: isReasoningActivityKind(activity.kind)
+      ? "thinking"
+      : activity.tone === "approval"
+        ? "info"
+        : activity.tone,
     activityKind: activity.kind,
   };
   const itemType = extractWorkLogItemType(payload);
@@ -532,6 +547,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     entry.collapseKey = collapseKey;
   }
   return entry;
+}
+
+function isReasoningActivityKind(kind: string): boolean {
+  return kind === "reasoning.updated" || kind === "reasoning-summary.updated";
 }
 
 function collapseDerivedWorkLogEntries(

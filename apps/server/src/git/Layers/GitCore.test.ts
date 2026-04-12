@@ -2306,5 +2306,150 @@ it.layer(TestLayer)("git integration", (it) => {
         expect(didFailRemoteNames).toBe(true);
       }),
     );
+
+    it.effect("lists commits ahead of the selected base branch", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(tmp);
+        yield* git(tmp, ["checkout", "-b", "feature/diff-panel"]);
+        yield* writeTextFile(path.join(tmp, "feature.txt"), "feature work\n");
+        yield* git(tmp, ["add", "feature.txt"]);
+        yield* git(tmp, ["commit", "-m", "feat: add diff panel"]);
+
+        const result = yield* (yield* GitCore).listCommitsAheadOfBase(tmp, initialBranch);
+
+        expect(result.baseBranch).toBe(initialBranch);
+        expect(result.commits).toHaveLength(1);
+        expect(result.commits[0]?.message).toBe("feat: add diff panel");
+      }),
+    );
+
+    it.effect("classifies staged and unstaged tracked changes separately", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const gitCore = yield* GitCore;
+        yield* initRepoWithCommit(tmp);
+        yield* writeTextFile(path.join(tmp, "staged.txt"), "base staged\n");
+        yield* writeTextFile(path.join(tmp, "unstaged.txt"), "base unstaged\n");
+        yield* git(tmp, ["add", "staged.txt", "unstaged.txt"]);
+        yield* git(tmp, ["commit", "-m", "add tracked files"]);
+
+        yield* writeTextFile(path.join(tmp, "staged.txt"), "base staged\nnext line\n");
+        yield* writeTextFile(path.join(tmp, "unstaged.txt"), "base unstaged\nnext line\n");
+        yield* git(tmp, ["add", "staged.txt"]);
+
+        const result = yield* gitCore.getReviewStatus({ cwd: tmp });
+
+        expect(result.staged.find((file) => file.path === "staged.txt")?.status).toBe("modified");
+        expect(result.unstaged.find((file) => file.path === "unstaged.txt")?.status).toBe(
+          "modified",
+        );
+      }),
+    );
+
+    it.effect("groups untracked files into unstaged review results", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const gitCore = yield* GitCore;
+        yield* initRepoWithCommit(tmp);
+        yield* writeTextFile(path.join(tmp, "untracked.ts"), "export const value = 1;\n");
+
+        const result = yield* gitCore.getReviewStatus({ cwd: tmp });
+
+        expect(result.unstaged.find((file) => file.path === "untracked.ts")?.status).toBe(
+          "untracked",
+        );
+      }),
+    );
+
+    it.effect("preserves rename and copy metadata when listing commit files", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const gitCore = yield* GitCore;
+        yield* initRepoWithCommit(tmp);
+
+        yield* writeTextFile(path.join(tmp, "rename-source.txt"), "rename source\n");
+        yield* git(tmp, ["add", "rename-source.txt"]);
+        yield* git(tmp, ["commit", "-m", "add rename source"]);
+        yield* git(tmp, ["mv", "rename-source.txt", "rename-target.txt"]);
+        yield* git(tmp, ["commit", "-m", "rename source file"]);
+        const renameCommitHash = yield* git(tmp, ["rev-parse", "HEAD"]);
+
+        const renameFiles = yield* gitCore.getCommitFiles(tmp, renameCommitHash);
+        expect(renameFiles.find((file) => file.path === "rename-target.txt")?.oldPath).toBe(
+          "rename-source.txt",
+        );
+        expect(renameFiles.find((file) => file.path === "rename-target.txt")?.status).toBe(
+          "renamed",
+        );
+
+        yield* writeTextFile(
+          path.join(tmp, "copy-source.txt"),
+          Array.from({ length: 20 }, (_, index) => `copy line ${index}`).join("\n").concat("\n"),
+        );
+        yield* git(tmp, ["add", "copy-source.txt"]);
+        yield* git(tmp, ["commit", "-m", "add copy source"]);
+        yield* writeTextFile(
+          path.join(tmp, "copy-target.txt"),
+          Array.from({ length: 20 }, (_, index) => `copy line ${index}`).join("\n").concat("\n"),
+        );
+        yield* git(tmp, ["add", "copy-target.txt"]);
+        yield* git(tmp, ["commit", "-m", "copy source file"]);
+        const copyCommitHash = yield* git(tmp, ["rev-parse", "HEAD"]);
+
+        const copyFiles = yield* gitCore.getCommitFiles(tmp, copyCommitHash);
+        expect(copyFiles.find((file) => file.path === "copy-target.txt")?.oldPath).toBe(
+          "copy-source.txt",
+        );
+        expect(copyFiles.find((file) => file.path === "copy-target.txt")?.status).toBe("copied");
+      }),
+    );
+
+    it.effect("builds single-file patches for against-base, staged, unstaged, and committed views", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const gitCore = yield* GitCore;
+        const { initialBranch } = yield* initRepoWithCommit(tmp);
+
+        yield* git(tmp, ["checkout", "-b", "feature/review-diff"]);
+        yield* writeTextFile(path.join(tmp, "feature.txt"), "feature base\n");
+        yield* git(tmp, ["add", "feature.txt"]);
+        yield* git(tmp, ["commit", "-m", "add feature file"]);
+        const committedHash = yield* git(tmp, ["rev-parse", "HEAD"]);
+
+        yield* writeTextFile(path.join(tmp, "staged.txt"), "staged patch\n");
+        yield* git(tmp, ["add", "staged.txt"]);
+
+        yield* writeTextFile(path.join(tmp, "unstaged.txt"), "unstaged patch\n");
+
+        const againstBasePatch = yield* gitCore.getFileDiff({
+          cwd: tmp,
+          path: "feature.txt",
+          category: "against-base",
+          baseBranch: initialBranch,
+        });
+        const stagedPatch = yield* gitCore.getFileDiff({
+          cwd: tmp,
+          path: "staged.txt",
+          category: "staged",
+        });
+        const unstagedPatch = yield* gitCore.getFileDiff({
+          cwd: tmp,
+          path: "unstaged.txt",
+          category: "unstaged",
+        });
+        const committedPatch = yield* gitCore.getFileDiff({
+          cwd: tmp,
+          path: "feature.txt",
+          category: "committed",
+          commitHash: committedHash,
+        });
+
+        expect(againstBasePatch).toContain("feature.txt");
+        expect(stagedPatch).toContain("staged.txt");
+        expect(unstagedPatch).toContain("unstaged.txt");
+        expect(committedPatch).toContain("feature.txt");
+      }),
+    );
   });
 });

@@ -925,7 +925,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             event.payload.worktreePath !== undefined
               ? yield* resolveWorkspaceContextForThread({
                   projectId: existingRow.value.projectId,
-                  explicitWorkspaceId: event.payload.workspaceId ?? undefined,
+                  ...(event.payload.workspaceId !== undefined
+                    ? { explicitWorkspaceId: event.payload.workspaceId }
+                    : {}),
                   branch: event.payload.branch ?? existingRow.value.branch,
                   worktreePath: event.payload.worktreePath ?? existingRow.value.worktreePath,
                   createdAt: existingRow.value.createdAt,

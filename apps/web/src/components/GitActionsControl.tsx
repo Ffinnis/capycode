@@ -43,6 +43,7 @@ import { openInPreferredEditor } from "~/editorPreferences";
 import {
   gitInitMutationOptions,
   gitMutationKeys,
+  invalidateGitQueries,
   gitPullMutationOptions,
   gitRunStackedActionMutationOptions,
 } from "~/lib/gitReactQuery";
@@ -431,9 +432,14 @@ export default function GitActionsControl({
       }
       refreshTimeout = window.setTimeout(() => {
         refreshTimeout = null;
-        void refreshGitStatus({ environmentId: activeEnvironmentId, cwd: gitCwd }).catch(
-          () => undefined,
-        );
+        void refreshGitStatus({ environmentId: activeEnvironmentId, cwd: gitCwd })
+          .then(() =>
+            invalidateGitQueries(queryClient, {
+              environmentId: activeEnvironmentId,
+              cwd: gitCwd,
+            }),
+          )
+          .catch(() => undefined);
       }, GIT_STATUS_WINDOW_REFRESH_DEBOUNCE_MS);
     };
     const handleVisibilityChange = () => {
@@ -900,7 +906,14 @@ export default function GitActionsControl({
                 void refreshGitStatus({
                   environmentId: activeEnvironmentId,
                   cwd: gitCwd,
-                }).catch(() => undefined);
+                })
+                  .then(() =>
+                    invalidateGitQueries(queryClient, {
+                      environmentId: activeEnvironmentId,
+                      cwd: gitCwd,
+                    }),
+                  )
+                  .catch(() => undefined);
               }
             }}
           >

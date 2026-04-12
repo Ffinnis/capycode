@@ -8,6 +8,10 @@ import {
   GitActionProgressEvent,
   GitCheckoutInput,
   GitCheckoutResult,
+  GitGetCommitFilesInput,
+  GitGetCommitFilesResult,
+  GitGetFileDiffInput,
+  GitGetFileDiffResult,
   GitCommandError,
   GitCreateBranchInput,
   GitCreateBranchResult,
@@ -16,6 +20,10 @@ import {
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
+  GitListCommitsInput,
+  GitListCommitsResult,
+  GitReviewStatusInput,
+  GitReviewStatusResult,
   GitManagerServiceError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
@@ -133,6 +141,10 @@ export const WS_METHODS = {
   gitRefreshStatus: "git.refreshStatus",
   gitRunStackedAction: "git.runStackedAction",
   gitListBranches: "git.listBranches",
+  gitGetReviewStatus: "git.getReviewStatus",
+  gitListCommits: "git.listCommits",
+  gitGetCommitFiles: "git.getCommitFiles",
+  gitGetFileDiff: "git.getFileDiff",
   gitCreateWorktree: "git.createWorktree",
   gitRemoveWorktree: "git.removeWorktree",
   gitCreateBranch: "git.createBranch",
@@ -378,6 +390,30 @@ export const WsGitListBranchesRpc = Rpc.make(WS_METHODS.gitListBranches, {
   error: GitCommandError,
 });
 
+export const WsGitGetReviewStatusRpc = Rpc.make(WS_METHODS.gitGetReviewStatus, {
+  payload: GitReviewStatusInput,
+  success: GitReviewStatusResult,
+  error: GitCommandError,
+});
+
+export const WsGitListCommitsRpc = Rpc.make(WS_METHODS.gitListCommits, {
+  payload: GitListCommitsInput,
+  success: GitListCommitsResult,
+  error: GitCommandError,
+});
+
+export const WsGitGetCommitFilesRpc = Rpc.make(WS_METHODS.gitGetCommitFiles, {
+  payload: GitGetCommitFilesInput,
+  success: GitGetCommitFilesResult,
+  error: GitCommandError,
+});
+
+export const WsGitGetFileDiffRpc = Rpc.make(WS_METHODS.gitGetFileDiff, {
+  payload: GitGetFileDiffInput,
+  success: GitGetFileDiffResult,
+  error: GitCommandError,
+});
+
 export const WsGitCreateWorktreeRpc = Rpc.make(WS_METHODS.gitCreateWorktree, {
   payload: GitCreateWorktreeInput,
   success: GitCreateWorktreeResult,
@@ -542,6 +578,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
   WsGitListBranchesRpc,
+  WsGitGetReviewStatusRpc,
+  WsGitListCommitsRpc,
+  WsGitGetCommitFilesRpc,
+  WsGitGetFileDiffRpc,
   WsGitCreateWorktreeRpc,
   WsGitRemoveWorktreeRpc,
   WsGitCreateBranchRpc,

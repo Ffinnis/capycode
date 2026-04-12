@@ -5,20 +5,38 @@ vi.mock("../environmentApi", () => ({
   ensureEnvironmentApi: vi.fn(),
 }));
 
-vi.mock("../wsRpcClient", () => ({
-  getWsRpcClient: vi.fn(),
-  getWsRpcClientForEnvironment: vi.fn(),
+vi.mock("../environments/runtime", () => ({
+  requireEnvironmentConnection: vi.fn(() => ({
+    client: {
+      git: {
+        runStackedAction: vi.fn(),
+      },
+    },
+  })),
 }));
 
 import type { InfiniteData } from "@tanstack/react-query";
-import { EnvironmentId, type GitListBranchesResult } from "@capycode/contracts";
+import {
+  EnvironmentId,
+  type GitGetCommitFilesResult,
+  type GitGetFileDiffResult,
+  type GitListBranchesResult,
+  type GitListCommitsResult,
+  type GitReviewStatusResult,
+} from "@capycode/contracts";
+import { ensureEnvironmentApi } from "../environmentApi";
 
 import {
   gitBranchSearchInfiniteQueryOptions,
+  gitCommitFilesQueryOptions,
+  gitFileDiffQueryOptions,
+  gitListCommitsQueryOptions,
   gitMutationKeys,
   gitPreparePullRequestThreadMutationOptions,
   gitPullMutationOptions,
+  gitReviewStatusQueryOptions,
   gitRunStackedActionMutationOptions,
+  gitQueryKeys,
   invalidateGitQueries,
 } from "./gitReactQuery";
 
@@ -36,6 +54,29 @@ const BRANCH_SEARCH_RESULT: InfiniteData<GitListBranchesResult, number> = {
 };
 const ENVIRONMENT_A = EnvironmentId.make("environment-a");
 const ENVIRONMENT_B = EnvironmentId.make("environment-b");
+
+const REVIEW_STATUS_RESULT: GitReviewStatusResult = {
+  isRepo: true,
+  branch: "feature/diff-panel",
+  baseBranch: "main",
+  baseBranchOptions: ["main"],
+  againstBase: [],
+  staged: [],
+  unstaged: [],
+};
+
+const COMMITS_RESULT: GitListCommitsResult = {
+  baseBranch: "main",
+  commits: [],
+};
+
+const COMMIT_FILES_RESULT: GitGetCommitFilesResult = {
+  files: [],
+};
+
+const FILE_DIFF_RESULT: GitGetFileDiffResult = {
+  patch: "",
+};
 
 describe("gitMutationKeys", () => {
   it("scopes stacked action keys by cwd", () => {
@@ -130,6 +171,75 @@ describe("invalidateGitQueries", () => {
           query: "feature",
         }).queryKey,
       )?.isInvalidated,
+    ).toBe(false);
+  });
+});
+
+describe("git review query options", () => {
+  it("calls the environment API for review status, commits, files, and file diffs", async () => {
+    vi.mocked(ensureEnvironmentApi).mockReturnValue({
+      git: {
+        getReviewStatus: vi.fn().mockResolvedValue(REVIEW_STATUS_RESULT),
+        listCommits: vi.fn().mockResolvedValue(COMMITS_RESULT),
+        getCommitFiles: vi.fn().mockResolvedValue(COMMIT_FILES_RESULT),
+        getFileDiff: vi.fn().mockResolvedValue(FILE_DIFF_RESULT),
+      },
+    } as never);
+
+    const reviewOptions = gitReviewStatusQueryOptions({
+      environmentId: ENVIRONMENT_A,
+      cwd: "/repo/a",
+      baseBranch: "main",
+    });
+    const commitsOptions = gitListCommitsQueryOptions({
+      environmentId: ENVIRONMENT_A,
+      cwd: "/repo/a",
+      baseBranch: "main",
+    });
+    const commitFilesOptions = gitCommitFilesQueryOptions({
+      environmentId: ENVIRONMENT_A,
+      cwd: "/repo/a",
+      commitHash: "abc123",
+    });
+    const fileDiffOptions = gitFileDiffQueryOptions({
+      environmentId: ENVIRONMENT_A,
+      cwd: "/repo/a",
+      path: "src/DiffPanel.tsx",
+      category: "staged",
+    });
+
+    await expect(reviewOptions.queryFn!({} as never)).resolves.toEqual(REVIEW_STATUS_RESULT);
+    await expect(commitsOptions.queryFn!({} as never)).resolves.toEqual(COMMITS_RESULT);
+    await expect(commitFilesOptions.queryFn!({} as never)).resolves.toEqual(COMMIT_FILES_RESULT);
+    await expect(fileDiffOptions.queryFn!({} as never)).resolves.toEqual(FILE_DIFF_RESULT);
+  });
+
+  it("invalidates git review queries for a single repo scope", async () => {
+    const queryClient = new QueryClient();
+
+    queryClient.setQueryData(
+      gitQueryKeys.reviewStatus(ENVIRONMENT_A, "/repo/a", "main"),
+      REVIEW_STATUS_RESULT,
+    );
+    queryClient.setQueryData(gitQueryKeys.commits(ENVIRONMENT_A, "/repo/a", "main"), COMMITS_RESULT);
+    queryClient.setQueryData(
+      gitQueryKeys.reviewStatus(ENVIRONMENT_B, "/repo/b", "main"),
+      REVIEW_STATUS_RESULT,
+    );
+
+    await invalidateGitQueries(queryClient, { environmentId: ENVIRONMENT_A, cwd: "/repo/a" });
+
+    expect(
+      queryClient.getQueryState(gitQueryKeys.reviewStatus(ENVIRONMENT_A, "/repo/a", "main"))
+        ?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(gitQueryKeys.commits(ENVIRONMENT_A, "/repo/a", "main"))
+        ?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(gitQueryKeys.reviewStatus(ENVIRONMENT_B, "/repo/b", "main"))
+        ?.isInvalidated,
     ).toBe(false);
   });
 });

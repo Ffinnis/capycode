@@ -98,6 +98,11 @@ const TIMESTAMP_FORMAT_LABELS = {
   "24-hour": "24-hour",
 } as const;
 
+const DIFF_PANEL_MODE_LABELS = {
+  iterations: "Iterations",
+  git: "Git",
+} as const;
+
 type InstallProviderSettings = {
   provider: ProviderKind;
   title: string;
@@ -152,7 +157,7 @@ function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ?? "This provider is installed but disabled for new sessions in Capycode.",
     };
   }
   if (!provider.installed) {
@@ -368,8 +373,14 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Time format"]
         : []),
+      ...(settings.diffPanelMode !== DEFAULT_UNIFIED_SETTINGS.diffPanelMode
+        ? ["Diff panel mode"]
+        : []),
       ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
         ? ["Diff line wrapping"]
+        : []),
+      ...(settings.extendedTraceMode !== DEFAULT_UNIFIED_SETTINGS.extendedTraceMode
+        ? ["Extended trace mode"]
         : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
@@ -392,7 +403,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.defaultThreadEnvMode,
+      settings.diffPanelMode,
       settings.diffWordWrap,
+      settings.extendedTraceMode,
       settings.enableAssistantStreaming,
       settings.timestampFormat,
       theme,
@@ -687,7 +700,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection title="General">
         <SettingsRow
           title="Theme"
-          description="Choose how T3 Code looks across the app."
+          description="Choose how Capycode looks across the app."
           resetAction={
             theme !== "system" ? (
               <SettingResetButton label="theme" onClick={() => setTheme("system")} />
@@ -761,6 +774,45 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Diff panel mode"
+          description="Choose which diff view opens by default in the right-side panel."
+          resetAction={
+            settings.diffPanelMode !== DEFAULT_UNIFIED_SETTINGS.diffPanelMode ? (
+              <SettingResetButton
+                label="diff panel mode"
+                onClick={() =>
+                  updateSettings({
+                    diffPanelMode: DEFAULT_UNIFIED_SETTINGS.diffPanelMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.diffPanelMode}
+              onValueChange={(value) => {
+                if (value === "iterations" || value === "git") {
+                  updateSettings({ diffPanelMode: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Default diff panel mode">
+                <SelectValue>{DIFF_PANEL_MODE_LABELS[settings.diffPanelMode]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="iterations">
+                  {DIFF_PANEL_MODE_LABELS.iterations}
+                </SelectItem>
+                <SelectItem hideIndicator value="git">
+                  {DIFF_PANEL_MODE_LABELS.git}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
           title="Diff line wrapping"
           description="Set the default wrap state when the diff panel opens."
           resetAction={
@@ -780,6 +832,20 @@ export function GeneralSettingsPanel() {
               checked={settings.diffWordWrap}
               onCheckedChange={(checked) => updateSettings({ diffWordWrap: Boolean(checked) })}
               aria-label="Wrap diff lines by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Extended trace mode"
+          description="Show full tool lifecycle and reasoning traces in chat history when providers emit them."
+          control={
+            <Switch
+              checked={settings.extendedTraceMode}
+              onCheckedChange={(checked) =>
+                updateSettings({ extendedTraceMode: Boolean(checked) })
+              }
+              aria-label="Show extended trace mode"
             />
           }
         />

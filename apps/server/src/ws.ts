@@ -2153,6 +2153,42 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.gitListBranches, git.listBranches(input), {
             "rpc.aggregate": "git",
           }),
+        [WS_METHODS.gitGetReviewStatus]: (input) =>
+          observeRpcEffect(WS_METHODS.gitGetReviewStatus, git.getReviewStatus(input), {
+            "rpc.aggregate": "git",
+          }),
+        [WS_METHODS.gitListCommits]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.gitListCommits,
+            git.listCommitsAheadOfBase(input.cwd, input.baseBranch),
+            {
+              "rpc.aggregate": "git",
+            },
+          ),
+        [WS_METHODS.gitGetCommitFiles]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.gitGetCommitFiles,
+            git.getCommitFiles(input.cwd, input.commitHash).pipe(
+              Effect.map((files) => ({
+                files: [...files],
+              })),
+            ),
+            {
+              "rpc.aggregate": "git",
+            },
+          ),
+        [WS_METHODS.gitGetFileDiff]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.gitGetFileDiff,
+            git.getFileDiff(input).pipe(
+              Effect.map((patch) => ({
+                patch,
+              })),
+            ),
+            {
+              "rpc.aggregate": "git",
+            },
+          ),
         [WS_METHODS.gitCreateWorktree]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitCreateWorktree,

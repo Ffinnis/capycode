@@ -2267,6 +2267,141 @@ describe("ProviderRuntimeIngestion", () => {
     ).toBe("# Plan title");
   });
 
+  it("coalesces reasoning deltas into a single persisted activity", async () => {
+    const harness = await createHarness();
+    const createdAtA = "2026-02-23T00:00:01.000Z";
+    const createdAtB = "2026-02-23T00:00:02.000Z";
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-1"),
+      provider: "codex",
+      createdAt: createdAtA,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-reasoning-1"),
+      itemId: asItemId("item-reasoning-1"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Read files first.\n",
+      },
+    });
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-2"),
+      provider: "codex",
+      createdAt: createdAtB,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-reasoning-1"),
+      itemId: asItemId("item-reasoning-1"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Then compare the adapter path.",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+        ),
+    );
+
+    const reasoningActivities = thread.activities.filter(
+      (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+    );
+    expect(reasoningActivities).toHaveLength(1);
+    expect(reasoningActivities[0]?.createdAt).toBe(createdAtA);
+    expect(reasoningActivities[0]?.id).toBe("reasoning:thread-1:item:item-reasoning-1:main");
+
+    const payload =
+      reasoningActivities[0]?.payload && typeof reasoningActivities[0].payload === "object"
+        ? (reasoningActivities[0].payload as Record<string, unknown>)
+        : null;
+
+    expect(payload?.detail).toBe("Read files first.\nThen compare the adapter path.");
+    expect(payload?.streamKind).toBe("reasoning_text");
+  });
+
+  it("coalesces reasoning deltas by raw task identity when item ids are absent", async () => {
+    const harness = await createHarness();
+    const createdAtA = "2026-02-23T00:01:01.000Z";
+    const createdAtB = "2026-02-23T00:01:02.000Z";
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-raw-1"),
+      provider: "codex",
+      createdAt: createdAtA,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-reasoning-raw"),
+      raw: {
+        source: "codex.app-server.notification",
+        method: "codex/event/reasoning_content_delta",
+        payload: {
+          id: "task-reasoning-raw",
+          msg: {
+            turn_id: "turn-reasoning-raw",
+            delta: "Inspect the merge boundary.\n",
+          },
+        },
+      },
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Inspect the merge boundary.\n",
+      },
+    });
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-raw-2"),
+      provider: "codex",
+      createdAt: createdAtB,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-reasoning-raw"),
+      raw: {
+        source: "codex.app-server.notification",
+        method: "codex/event/reasoning_content_delta",
+        payload: {
+          id: "task-reasoning-raw",
+          msg: {
+            turn_id: "turn-reasoning-raw",
+            delta: "Then check the shared event mapping.",
+          },
+        },
+      },
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Then check the shared event mapping.",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+        ),
+    );
+
+    const reasoningActivities = thread.activities.filter(
+      (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+    );
+    expect(reasoningActivities).toHaveLength(1);
+    expect(reasoningActivities[0]?.createdAt).toBe(createdAtA);
+    expect(reasoningActivities[0]?.id).toBe("reasoning:thread-1:task:task-reasoning-raw:main");
+
+    const payload =
+      reasoningActivities[0]?.payload && typeof reasoningActivities[0].payload === "object"
+        ? (reasoningActivities[0].payload as Record<string, unknown>)
+        : null;
+
+    expect(payload?.detail).toBe(
+      "Inspect the merge boundary.\nThen check the shared event mapping.",
+    );
+  });
+
   it("projects structured user input request and resolution as thread activities", async () => {
     const harness = await createHarness();
     const now = new Date().toISOString();

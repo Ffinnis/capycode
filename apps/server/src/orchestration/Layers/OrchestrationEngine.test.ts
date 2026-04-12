@@ -113,6 +113,8 @@ describe("OrchestrationEngine", () => {
           deletedAt: null,
         },
       ],
+      workspaces: [],
+      workspaceSections: [],
       threads: [
         {
           id: ThreadId.make("thread-bootstrap"),
@@ -124,6 +126,7 @@ describe("OrchestrationEngine", () => {
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "full-access" as const,
+          workspaceId: null,
           branch: null,
           worktreePath: null,
           latestTurn: null,

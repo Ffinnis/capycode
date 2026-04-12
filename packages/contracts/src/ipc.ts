@@ -2,6 +2,13 @@ import type {
   GitCheckoutInput,
   GitCheckoutResult,
   GitCreateBranchInput,
+  GitCreateBranchResult,
+  GitGetCommitFilesInput,
+  GitGetCommitFilesResult,
+  GitGetFileDiffInput,
+  GitGetFileDiffResult,
+  GitListCommitsInput,
+  GitListCommitsResult,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitPullRequestRefInput,
@@ -13,10 +20,11 @@ import type {
   GitPullInput,
   GitPullResult,
   GitRemoveWorktreeInput,
+  GitReviewStatusInput,
+  GitReviewStatusResult,
   GitResolvePullRequestResult,
   GitStatusInput,
   GitStatusResult,
-  GitCreateBranchResult,
 } from "./git";
 import type {
   ProjectSearchEntriesInput,
@@ -279,6 +287,10 @@ export interface EnvironmentApi {
   };
   git: {
     listBranches: (input: GitListBranchesInput) => Promise<GitListBranchesResult>;
+    getReviewStatus: (input: GitReviewStatusInput) => Promise<GitReviewStatusResult>;
+    listCommits: (input: GitListCommitsInput) => Promise<GitListCommitsResult>;
+    getCommitFiles: (input: GitGetCommitFilesInput) => Promise<GitGetCommitFilesResult>;
+    getFileDiff: (input: GitGetFileDiffInput) => Promise<GitGetFileDiffResult>;
     createWorktree: (input: GitCreateWorktreeInput) => Promise<GitCreateWorktreeResult>;
     removeWorktree: (input: GitRemoveWorktreeInput) => Promise<void>;
     createBranch: (input: GitCreateBranchInput) => Promise<GitCreateBranchResult>;

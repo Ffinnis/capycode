@@ -83,6 +83,10 @@ const rpcClientMock = {
     ),
     runStackedAction: vi.fn(),
     listBranches: vi.fn(),
+    getReviewStatus: vi.fn(),
+    listCommits: vi.fn(),
+    getCommitFiles: vi.fn(),
+    getFileDiff: vi.fn(),
     createWorktree: vi.fn(),
     removeWorktree: vi.fn(),
     createBranch: vi.fn(),
@@ -391,6 +395,51 @@ describe("wsApi", () => {
     expect(rpcClientMock.git.refreshStatus).toHaveBeenCalledWith({ cwd: "/repo" });
   });
 
+  it("forwards git review RPCs directly to the environment API", async () => {
+    rpcClientMock.git.getReviewStatus.mockResolvedValue({
+      isRepo: true,
+      branch: "feature/diff-panel",
+      baseBranch: "main",
+      baseBranchOptions: ["main"],
+      againstBase: [],
+      staged: [],
+      unstaged: [],
+    });
+    rpcClientMock.git.listCommits.mockResolvedValue({
+      baseBranch: "main",
+      commits: [],
+    });
+    rpcClientMock.git.getCommitFiles.mockResolvedValue({
+      files: [],
+    });
+    rpcClientMock.git.getFileDiff.mockResolvedValue({
+      patch: "",
+    });
+    const { createEnvironmentApi } = await import("./environmentApi");
+
+    const api = createEnvironmentApi(rpcClientMock as never);
+
+    await api.git.getReviewStatus({ cwd: "/repo" });
+    await api.git.listCommits({ cwd: "/repo", baseBranch: "main" });
+    await api.git.getCommitFiles({ cwd: "/repo", commitHash: "abc123" });
+    await api.git.getFileDiff({ cwd: "/repo", path: "src/DiffPanel.tsx", category: "staged" });
+
+    expect(rpcClientMock.git.getReviewStatus).toHaveBeenCalledWith({ cwd: "/repo" });
+    expect(rpcClientMock.git.listCommits).toHaveBeenCalledWith({
+      cwd: "/repo",
+      baseBranch: "main",
+    });
+    expect(rpcClientMock.git.getCommitFiles).toHaveBeenCalledWith({
+      cwd: "/repo",
+      commitHash: "abc123",
+    });
+    expect(rpcClientMock.git.getFileDiff).toHaveBeenCalledWith({
+      cwd: "/repo",
+      path: "src/DiffPanel.tsx",
+      category: "staged",
+    });
+  });
+
   it("forwards orchestration stream subscription options to the RPC client", async () => {
     const { createEnvironmentApi } = await import("./environmentApi");
 
@@ -524,6 +573,7 @@ describe("wsApi", () => {
     const getClientSettings = vi.fn().mockResolvedValue({
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      diffPanelMode: "git",
       diffWordWrap: true,
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
@@ -550,8 +600,10 @@ describe("wsApi", () => {
 
     await api.persistence.getClientSettings();
     await api.persistence.setClientSettings({
+      extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      diffPanelMode: "git",
       diffWordWrap: true,
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
@@ -568,8 +620,10 @@ describe("wsApi", () => {
 
     expect(getClientSettings).toHaveBeenCalledWith();
     expect(setClientSettings).toHaveBeenCalledWith({
+      extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      diffPanelMode: "git",
       diffWordWrap: true,
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
@@ -587,8 +641,10 @@ describe("wsApi", () => {
     const api = createLocalApi(rpcClientMock as never);
 
     await api.persistence.setClientSettings({
+      extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      diffPanelMode: "git",
       diffWordWrap: true,
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
@@ -610,8 +666,10 @@ describe("wsApi", () => {
     );
 
     await expect(api.persistence.getClientSettings()).resolves.toEqual({
+      extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      diffPanelMode: "git",
       diffWordWrap: true,
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",

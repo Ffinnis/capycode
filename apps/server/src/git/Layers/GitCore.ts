@@ -18,7 +18,15 @@ import {
 } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { GitCommandError, type GitBranch } from "@capycode/contracts";
+import {
+  GitCommandError,
+  type GitBranch,
+  type GitChangedFile,
+  type GitChangedFileStatus,
+  type GitCommitSummary,
+  type GitGetFileDiffInput,
+  type GitReviewStatusInput,
+} from "@capycode/contracts";
 import { dedupeRemoteBranchesWithLocalMatches } from "@capycode/shared/git";
 import { compactTraceAttributes } from "../../observability/Attributes.ts";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../../observability/Metrics.ts";
@@ -126,6 +134,113 @@ function parseNumstatEntries(
     });
   }
   return entries;
+}
+
+function parseChangedFileStatus(rawStatus: string): GitChangedFileStatus {
+  switch (rawStatus[0]) {
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "?":
+      return "untracked";
+    default:
+      return "modified";
+  }
+}
+
+function parseNameStatusEntries(stdout: string): Array<{
+  path: string;
+  oldPath?: string;
+  status: GitChangedFileStatus;
+}> {
+  const entries: Array<{
+    path: string;
+    oldPath?: string;
+    status: GitChangedFileStatus;
+  }> = [];
+
+  for (const line of stdout.split(/\r?\n/g)) {
+    if (line.trim().length === 0) continue;
+    const [rawStatus = "", firstPath = "", secondPath = ""] = line.split("\t");
+    const status = parseChangedFileStatus(rawStatus);
+    if (status === "renamed" || status === "copied") {
+      const path = secondPath.trim();
+      const oldPath = firstPath.trim();
+      if (path.length === 0) continue;
+      entries.push({
+        path,
+        ...(oldPath.length > 0 ? { oldPath } : {}),
+        status,
+      });
+      continue;
+    }
+
+    const path = firstPath.trim();
+    if (path.length === 0) continue;
+    entries.push({ path, status });
+  }
+
+  return entries;
+}
+
+function buildChangedFiles(input: {
+  nameStatusEntries: ReadonlyArray<{
+    path: string;
+    oldPath?: string;
+    status: GitChangedFileStatus;
+  }>;
+  numstatEntries?: ReadonlyArray<{ path: string; insertions: number; deletions: number }>;
+  extraFiles?: ReadonlyArray<{
+    path: string;
+    oldPath?: string;
+    status: GitChangedFileStatus;
+    additions?: number;
+    deletions?: number;
+  }>;
+}): ReadonlyArray<GitChangedFile> {
+  const files = new Map<string, GitChangedFile>();
+  const numstatByPath = new Map<string, { insertions: number; deletions: number }>();
+
+  for (const entry of input.numstatEntries ?? []) {
+    numstatByPath.set(entry.path, {
+      insertions: entry.insertions,
+      deletions: entry.deletions,
+    });
+  }
+
+  for (const entry of input.nameStatusEntries) {
+    const stats = numstatByPath.get(entry.path) ?? { insertions: 0, deletions: 0 };
+    files.set(entry.path, {
+      path: entry.path,
+      ...(entry.oldPath ? { oldPath: entry.oldPath } : {}),
+      status: entry.status,
+      additions: stats.insertions,
+      deletions: stats.deletions,
+    });
+  }
+
+  for (const entry of input.extraFiles ?? []) {
+    files.set(entry.path, {
+      path: entry.path,
+      ...(entry.oldPath ? { oldPath: entry.oldPath } : {}),
+      status: entry.status,
+      additions: entry.additions ?? 0,
+      deletions: entry.deletions ?? 0,
+    });
+  }
+
+  return [...files.values()].toSorted((left, right) =>
+    left.path.localeCompare(right.path, undefined, { numeric: true, sensitivity: "base" }),
+  );
+}
+
+function dedupeStrings(values: ReadonlyArray<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value && value.length > 0)))];
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -1169,6 +1284,372 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
   });
 
+  const resolveReviewBaseBranch = Effect.fn("resolveReviewBaseBranch")(function* (
+    cwd: string,
+    branch: string | null,
+    requestedBaseBranch?: string,
+  ) {
+    if (requestedBaseBranch && requestedBaseBranch.trim().length > 0) {
+      return requestedBaseBranch.trim();
+    }
+    if (!branch) {
+      return null;
+    }
+    return yield* resolveBaseBranchForNoUpstream(cwd, branch);
+  });
+
+  const listReviewBaseBranchOptions = Effect.fn("listReviewBaseBranchOptions")(function* (
+    cwd: string,
+    branch: string | null,
+    baseBranch: string | null,
+    requestedBaseBranch?: string,
+  ) {
+    const localBranchesStdout = yield* runGitStdout(
+      "GitCore.listReviewBaseBranchOptions.localBranches",
+      cwd,
+      ["branch", "--list", "--format=%(refname:short)"],
+      true,
+    ).pipe(Effect.map((stdout) => stdout.trim()));
+
+    const primaryRemoteName = yield* resolvePrimaryRemoteName(cwd).pipe(
+      Effect.catch(() => Effect.succeed(null)),
+    );
+    const defaultRemoteBranch =
+      primaryRemoteName === null
+        ? null
+        : yield* resolveDefaultBranchName(cwd, primaryRemoteName).pipe(
+            Effect.catch(() => Effect.succeed(null)),
+          );
+
+    const localBranches = localBranchesStdout
+      .split(/\r?\n/g)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0 && value !== branch);
+
+    return dedupeStrings([
+      requestedBaseBranch,
+      baseBranch,
+      defaultRemoteBranch,
+      ...DEFAULT_BASE_BRANCH_CANDIDATES,
+      ...localBranches,
+    ]);
+  });
+
+  const readChangedFilesFromArgs = Effect.fn("readChangedFilesFromArgs")(function* (
+    operation: string,
+    cwd: string,
+    nameStatusArgs: ReadonlyArray<string>,
+    numstatArgs: ReadonlyArray<string>,
+    extraFiles?: ReadonlyArray<{
+      path: string;
+      oldPath?: string;
+      status: GitChangedFileStatus;
+      additions?: number;
+      deletions?: number;
+    }>,
+  ) {
+    const [nameStatusStdout, numstatStdout] = yield* Effect.all(
+      [
+        runGitStdout(`${operation}.nameStatus`, cwd, [...nameStatusArgs]),
+        runGitStdout(`${operation}.numstat`, cwd, [...numstatArgs]),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    return buildChangedFiles({
+      nameStatusEntries: parseNameStatusEntries(nameStatusStdout),
+      numstatEntries: parseNumstatEntries(numstatStdout),
+      ...(extraFiles ? { extraFiles } : {}),
+    });
+  });
+
+  const listUntrackedFiles = Effect.fn("listUntrackedFiles")(function* (cwd: string) {
+    const result = yield* executeGit(
+      "GitCore.listUntrackedFiles",
+      cwd,
+      ["ls-files", "--others", "--exclude-standard", "-z"],
+      {
+        allowNonZeroExit: true,
+      },
+    );
+
+    if (result.code !== 0) {
+      return yield* createGitCommandError(
+        "GitCore.listUntrackedFiles",
+        cwd,
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+        result.stderr.trim().length > 0 ? result.stderr.trim() : "git ls-files failed",
+      );
+    }
+
+    return splitNullSeparatedPaths(result.stdout, result.stdoutTruncated);
+  });
+
+  const readPatchOutput = Effect.fn("readPatchOutput")(function* (
+    operation: string,
+    cwd: string,
+    args: ReadonlyArray<string>,
+    acceptableExitCodes: ReadonlyArray<number> = [0],
+  ) {
+    const result = yield* executeGit(operation, cwd, [...args], {
+      allowNonZeroExit: true,
+      maxOutputBytes: RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES,
+      truncateOutputAtMaxBytes: true,
+    });
+    if (acceptableExitCodes.includes(result.code)) {
+      return result.stdout;
+    }
+
+    return yield* createGitCommandError(
+      operation,
+      cwd,
+      [...args],
+      result.stderr.trim().length > 0 ? result.stderr.trim() : "git patch generation failed",
+    );
+  });
+
+  const getReviewStatus: GitCoreShape["getReviewStatus"] = Effect.fn("getReviewStatus")(
+    function* (input: GitReviewStatusInput) {
+      const details = yield* statusDetailsLocal(input.cwd);
+      if (!details.isRepo) {
+        return {
+          isRepo: false,
+          branch: null,
+          baseBranch: null,
+          baseBranchOptions: [],
+          againstBase: [],
+          staged: [],
+          unstaged: [],
+        };
+      }
+
+      const baseBranch = yield* resolveReviewBaseBranch(
+        input.cwd,
+        details.branch,
+        input.baseBranch,
+      );
+      const baseBranchOptions = yield* listReviewBaseBranchOptions(
+        input.cwd,
+        details.branch,
+        baseBranch,
+        input.baseBranch,
+      );
+      const untrackedFiles = yield* listUntrackedFiles(input.cwd);
+
+      const [againstBase, staged, unstagedTracked] = yield* Effect.all(
+        [
+          baseBranch
+            ? readChangedFilesFromArgs(
+                "GitCore.getReviewStatus.againstBase",
+                input.cwd,
+                [
+                  "diff",
+                  "--name-status",
+                  "--find-renames",
+                  "--find-copies-harder",
+                  `${baseBranch}...HEAD`,
+                ],
+                ["diff", "--numstat", `${baseBranch}...HEAD`],
+              )
+            : Effect.succeed([] as ReadonlyArray<GitChangedFile>),
+          readChangedFilesFromArgs(
+            "GitCore.getReviewStatus.staged",
+            input.cwd,
+            ["diff", "--cached", "--name-status", "--find-renames", "--find-copies-harder"],
+            ["diff", "--cached", "--numstat"],
+          ),
+          readChangedFilesFromArgs(
+            "GitCore.getReviewStatus.unstaged",
+            input.cwd,
+            ["diff", "--name-status", "--find-renames", "--find-copies-harder"],
+            ["diff", "--numstat"],
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      const unstaged = buildChangedFiles({
+        nameStatusEntries: unstagedTracked.map((file) => ({
+          path: file.path,
+          ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+          status: file.status,
+        })),
+        numstatEntries: unstagedTracked.map((file) => ({
+          path: file.path,
+          insertions: file.additions,
+          deletions: file.deletions,
+        })),
+        extraFiles: untrackedFiles.map((path) => ({
+          path,
+          status: "untracked" as const,
+        })),
+      });
+
+      return {
+        isRepo: true,
+        branch: details.branch,
+        baseBranch,
+        baseBranchOptions,
+        againstBase: [...againstBase],
+        staged: [...staged],
+        unstaged: [...unstaged],
+      };
+    },
+  );
+
+  const listCommitsAheadOfBase: GitCoreShape["listCommitsAheadOfBase"] = Effect.fn(
+    "listCommitsAheadOfBase",
+  )(function* (cwd, requestedBaseBranch) {
+    const details = yield* statusDetailsLocal(cwd);
+    if (!details.isRepo) {
+      return {
+        baseBranch: null,
+        commits: [],
+      };
+    }
+
+    const baseBranch = yield* resolveReviewBaseBranch(cwd, details.branch, requestedBaseBranch);
+    if (!baseBranch) {
+      return {
+        baseBranch: null,
+        commits: [],
+      };
+    }
+
+    const stdout = yield* runGitStdout("GitCore.listCommitsAheadOfBase", cwd, [
+      "log",
+      "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1e",
+      `${baseBranch}..HEAD`,
+    ]);
+
+    const commits = stdout
+      .split("\x1e")
+      .map((record) => record.trim())
+      .filter((record) => record.length > 0)
+      .flatMap((record): GitCommitSummary[] => {
+        const [hash = "", shortHash = "", author = "", date = "", message = ""] =
+          record.split("\x1f");
+        if (!hash || !shortHash || !date) {
+          return [];
+        }
+        return [
+          {
+            hash,
+            shortHash,
+            author,
+            date,
+            message,
+          },
+        ];
+      });
+
+    return {
+      baseBranch,
+      commits,
+    };
+  });
+
+  const getCommitFiles: GitCoreShape["getCommitFiles"] = Effect.fn("getCommitFiles")(function* (
+    cwd,
+    commitHash,
+  ) {
+    return yield* readChangedFilesFromArgs(
+      "GitCore.getCommitFiles",
+      cwd,
+      [
+        "show",
+        "--format=",
+        "--name-status",
+        "--find-renames",
+        "--find-copies-harder",
+        commitHash,
+      ],
+      ["show", "--format=", "--numstat", commitHash],
+    );
+  });
+
+  const getFileDiff: GitCoreShape["getFileDiff"] = Effect.fn("getFileDiff")(function* (
+    input: GitGetFileDiffInput,
+  ) {
+    const details = yield* statusDetailsLocal(input.cwd);
+    if (!details.isRepo) {
+      return "";
+    }
+
+    const fileArgs = ["--", ...dedupeStrings([input.oldPath, input.path])];
+
+    switch (input.category) {
+      case "against-base": {
+        const baseBranch = yield* resolveReviewBaseBranch(
+          input.cwd,
+          details.branch,
+          input.baseBranch,
+        );
+        if (!baseBranch) {
+          return "";
+        }
+        return yield* readPatchOutput("GitCore.getFileDiff.againstBase", input.cwd, [
+          "diff",
+          "--patch",
+          "--minimal",
+          "--find-renames",
+          "--find-copies-harder",
+          `${baseBranch}...HEAD`,
+          ...fileArgs,
+        ]);
+      }
+      case "staged":
+        return yield* readPatchOutput("GitCore.getFileDiff.staged", input.cwd, [
+          "diff",
+          "--cached",
+          "--patch",
+          "--minimal",
+          "--find-renames",
+          "--find-copies-harder",
+          ...fileArgs,
+        ]);
+      case "unstaged": {
+        const patch = yield* readPatchOutput("GitCore.getFileDiff.unstaged", input.cwd, [
+          "diff",
+          "--patch",
+          "--minimal",
+          "--find-renames",
+          "--find-copies-harder",
+          ...fileArgs,
+        ]);
+        if (patch.trim().length > 0) {
+          return patch;
+        }
+
+        const untrackedFiles = yield* listUntrackedFiles(input.cwd);
+        if (!untrackedFiles.includes(input.path)) {
+          return patch;
+        }
+
+        return yield* readPatchOutput(
+          "GitCore.getFileDiff.untracked",
+          input.cwd,
+          ["diff", "--no-index", "--patch", "--minimal", "--", "/dev/null", `./${input.path}`],
+          [0, 1],
+        );
+      }
+      case "committed":
+        if (!input.commitHash) {
+          return "";
+        }
+        return yield* readPatchOutput("GitCore.getFileDiff.committed", input.cwd, [
+          "show",
+          "--format=",
+          "--patch",
+          "--minimal",
+          "--find-renames",
+          "--find-copies-harder",
+          input.commitHash,
+          ...fileArgs,
+        ]);
+    }
+  });
+
   const readBranchRecency = Effect.fn("readBranchRecency")(function* (cwd: string) {
     const branchRecency = yield* executeGit(
       "GitCore.readBranchRecency",
@@ -2198,6 +2679,10 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     listWorkspaceFiles,
     filterIgnoredPaths,
     listBranches,
+    getReviewStatus,
+    listCommitsAheadOfBase,
+    getCommitFiles,
+    getFileDiff,
     createWorktree,
     fetchPullRequestBranch,
     ensureRemote,

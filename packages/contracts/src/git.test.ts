@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 
 import {
+  GitGetCommitFilesResult,
+  GitGetFileDiffResult,
+  GitListCommitsResult,
+  GitReviewStatusResult,
   GitCreateWorktreeInput,
   GitPreparePullRequestThreadInput,
   GitRunStackedActionResult,
@@ -16,6 +20,10 @@ const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const decodeReviewStatusResult = Schema.decodeUnknownSync(GitReviewStatusResult);
+const decodeListCommitsResult = Schema.decodeUnknownSync(GitListCommitsResult);
+const decodeGetCommitFilesResult = Schema.decodeUnknownSync(GitGetCommitFilesResult);
+const decodeGetFileDiffResult = Schema.decodeUnknownSync(GitGetFileDiffResult);
 
 describe("GitCreateWorktreeInput", () => {
   it("accepts omitted newBranch for existing-branch worktrees", () => {
@@ -112,5 +120,76 @@ describe("GitRunStackedActionResult", () => {
     if (parsed.toast.cta.kind === "run_action") {
       expect(parsed.toast.cta.action.kind).toBe("create_pr");
     }
+  });
+});
+
+describe("Git review contracts", () => {
+  it("decodes git review status results", () => {
+    const parsed = decodeReviewStatusResult({
+      isRepo: true,
+      branch: "feature/diff-panel",
+      baseBranch: "main",
+      baseBranchOptions: ["main", "release"],
+      againstBase: [
+        {
+          path: "src/DiffPanel.tsx",
+          status: "modified",
+          additions: 120,
+          deletions: 24,
+        },
+      ],
+      staged: [
+        {
+          path: "src/git.ts",
+          status: "added",
+          additions: 12,
+          deletions: 0,
+        },
+      ],
+      unstaged: [
+        {
+          path: "src/untracked.ts",
+          status: "untracked",
+          additions: 0,
+          deletions: 0,
+        },
+      ],
+    });
+
+    expect(parsed.baseBranchOptions).toContain("main");
+    expect(parsed.unstaged[0]?.status).toBe("untracked");
+  });
+
+  it("decodes commit listings and file diff payloads", () => {
+    const commits = decodeListCommitsResult({
+      baseBranch: "main",
+      commits: [
+        {
+          hash: "1234567890abcdef",
+          shortHash: "1234567",
+          message: "feat: add git diff panel",
+          author: "Capy Coder",
+          date: "2026-04-12T10:00:00.000Z",
+        },
+      ],
+    });
+    const files = decodeGetCommitFilesResult({
+      files: [
+        {
+          path: "src/DiffPanel.tsx",
+          oldPath: "src/LegacyDiffPanel.tsx",
+          status: "renamed",
+          additions: 42,
+          deletions: 8,
+        },
+      ],
+    });
+    const diff = decodeGetFileDiffResult({
+      patch: "diff --git a/src/DiffPanel.tsx b/src/DiffPanel.tsx\n",
+    });
+
+    expect(commits.commits[0]?.shortHash).toBe("1234567");
+    expect(files.files[0]?.oldPath).toBe("src/LegacyDiffPanel.tsx");
+    expect(diff.patch).toContain("diff --git");
   });
 });

@@ -568,6 +568,26 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
+  it("includes tool started entries in extended mode", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Tool call",
+        kind: "tool.started",
+      }),
+      makeActivity({
+        id: "tool-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        summary: "Tool call complete",
+        kind: "tool.completed",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, "extended");
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-start", "tool-complete"]);
+  });
+
   it("omits task start and completion lifecycle entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -611,6 +631,26 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities, TurnId.make("turn-2"));
     expect(entries.map((entry) => entry.id)).toEqual(["turn-2"]);
+  });
+
+  it("keeps activities from earlier turns in extended mode", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "turn-1-complete",
+        turnId: "turn-1",
+        summary: "Earlier tool complete",
+        kind: "tool.completed",
+      }),
+      makeActivity({
+        id: "turn-2-complete",
+        turnId: "turn-2",
+        summary: "Latest tool complete",
+        kind: "tool.completed",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-2"), "extended");
+    expect(entries.map((entry) => entry.id)).toEqual(["turn-1-complete", "turn-2-complete"]);
   });
 
   it("omits checkpoint captured info entries", () => {
@@ -920,6 +960,36 @@ describe("deriveWorkLogEntries", () => {
     });
   });
 
+  it("does not collapse repeated lifecycle updates in extended mode", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-update-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail: 'Read: {"file_path":"/tmp/app.ts"}',
+        },
+      }),
+      makeActivity({
+        id: "tool-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Tool call completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail: 'Read: {"file_path":"/tmp/app.ts"}',
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, "extended");
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-update-1", "tool-complete"]);
+  });
+
   it("keeps separate tool entries when an identical call starts after the prior one completed", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1135,6 +1205,29 @@ describe("deriveWorkLogEntries context window handling", () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.label).toBe("Context compacted");
+  });
+
+  it("marks reasoning activities as thinking entries", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "reasoning-1",
+          turnId: "turn-1",
+          kind: "reasoning.updated",
+          summary: "Reasoning",
+          tone: "info",
+          payload: {
+            detail: "Read files first.",
+          },
+        }),
+      ],
+      TurnId.make("turn-1"),
+      "extended",
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.tone).toBe("thinking");
+    expect(entries[0]?.detail).toBe("Read files first.");
   });
 });
 

@@ -17,7 +17,11 @@ import {
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { readEnvironmentApi } from "../environmentApi";
-import { gitBranchSearchInfiniteQueryOptions, gitQueryKeys } from "../lib/gitReactQuery";
+import {
+  gitBranchSearchInfiniteQueryOptions,
+  gitQueryKeys,
+  invalidateGitQueries,
+} from "../lib/gitReactQuery";
 import { useGitStatus } from "../lib/gitStatusState";
 import { newCommandId } from "../lib/utils";
 import { parsePullRequestReference } from "../pullRequestReference";
@@ -331,6 +335,10 @@ export function BranchToolbarBranchSelector({
           cwd: selectionTarget.checkoutCwd,
           branch: branch.name,
         });
+        await invalidateGitQueries(queryClient, {
+          environmentId,
+          cwd: selectionTarget.checkoutCwd,
+        });
         const nextBranchName = branch.isRemote
           ? (checkoutResult.branch ?? selectedBranchName)
           : selectedBranchName;
@@ -363,6 +371,10 @@ export function BranchToolbarBranchSelector({
           cwd: branchCwd,
           branch: name,
           checkout: true,
+        });
+        await invalidateGitQueries(queryClient, {
+          environmentId,
+          cwd: branchCwd,
         });
         setOptimisticBranch(createBranchResult.branch);
         setThreadBranch(createBranchResult.branch, activeWorktreePath);

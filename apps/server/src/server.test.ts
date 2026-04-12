@@ -137,6 +137,8 @@ const makeDefaultOrchestrationReadModel = () => {
         deletedAt: null,
       },
     ],
+    workspaces: [],
+    workspaceSections: [],
     threads: [
       {
         id: defaultThreadId,
@@ -145,6 +147,7 @@ const makeDefaultOrchestrationReadModel = () => {
         modelSelection: defaultModelSelection,
         interactionMode: "default" as const,
         runtimeMode: "full-access" as const,
+        workspaceId: null,
         branch: null,
         worktreePath: null,
         createdAt: now,
@@ -470,6 +473,7 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.repositoryIdentityResolver,
         }),
       ),
+      Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(authTestLayer),
       Layer.provide(workspaceAndProjectServicesLayer),
       Layer.provideMerge(FetchHttpClient.layer),
@@ -2703,6 +2707,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             modelSelection: defaultModelSelection,
             interactionMode: "default" as const,
             runtimeMode: "full-access" as const,
+            workspaceId: null,
             branch: null,
             worktreePath: null,
             createdAt: now,
@@ -2717,6 +2722,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             deletedAt: null,
           },
         ],
+        workspaces: [],
+        workspaceSections: [],
       };
 
       yield* buildAppUnderTest({

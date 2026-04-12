@@ -19,10 +19,47 @@ const GIT_BRANCHES_PAGE_SIZE = 100;
 
 export const gitQueryKeys = {
   all: ["git"] as const,
+  scope: (environmentId: EnvironmentId | null, cwd: string | null) =>
+    ["git", environmentId ?? null, cwd] as const,
   branches: (environmentId: EnvironmentId | null, cwd: string | null) =>
-    ["git", "branches", environmentId ?? null, cwd] as const,
+    [...gitQueryKeys.scope(environmentId, cwd), "branches"] as const,
   branchSearch: (environmentId: EnvironmentId | null, cwd: string | null, query: string) =>
-    ["git", "branches", environmentId ?? null, cwd, "search", query] as const,
+    [...gitQueryKeys.branches(environmentId, cwd), "search", query] as const,
+  reviewStatus: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    baseBranch: string | null,
+  ) => [...gitQueryKeys.scope(environmentId, cwd), "review-status", baseBranch] as const,
+  commits: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    baseBranch: string | null,
+  ) => [...gitQueryKeys.scope(environmentId, cwd), "commits", baseBranch] as const,
+  commitFiles: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    commitHash: string | null,
+  ) => [...gitQueryKeys.scope(environmentId, cwd), "commit-files", commitHash] as const,
+  fileDiff: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    params: {
+      path: string | null;
+      oldPath: string | null;
+      category: string | null;
+      baseBranch: string | null;
+      commitHash: string | null;
+    },
+  ) =>
+    [
+      ...gitQueryKeys.scope(environmentId, cwd),
+      "file-diff",
+      params.category,
+      params.baseBranch,
+      params.commitHash,
+      params.oldPath,
+      params.path,
+    ] as const,
 };
 
 export const gitMutationKeys = {
@@ -45,22 +82,10 @@ export function invalidateGitQueries(
   const environmentId = input?.environmentId ?? null;
   const cwd = input?.cwd ?? null;
   if (cwd !== null) {
-    return queryClient.invalidateQueries({ queryKey: gitQueryKeys.branches(environmentId, cwd) });
+    return queryClient.invalidateQueries({ queryKey: gitQueryKeys.scope(environmentId, cwd) });
   }
 
   return queryClient.invalidateQueries({ queryKey: gitQueryKeys.all });
-}
-
-function invalidateGitBranchQueries(
-  queryClient: QueryClient,
-  environmentId: EnvironmentId | null,
-  cwd: string | null,
-) {
-  if (cwd === null) {
-    return Promise.resolve();
-  }
-
-  return queryClient.invalidateQueries({ queryKey: gitQueryKeys.branches(environmentId, cwd) });
 }
 
 export function gitBranchSearchInfiniteQueryOptions(input: {
@@ -101,10 +126,8 @@ export function gitResolvePullRequestQueryOptions(input: {
 }) {
   return queryOptions({
     queryKey: [
-      "git",
+      ...gitQueryKeys.scope(input.environmentId, input.cwd),
       "pull-request",
-      input.environmentId ?? null,
-      input.cwd,
       input.reference,
     ] as const,
     queryFn: async () => {
@@ -121,6 +144,129 @@ export function gitResolvePullRequestQueryOptions(input: {
   });
 }
 
+export function gitReviewStatusQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  baseBranch: string | null;
+  enabled?: boolean;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.reviewStatus(input.environmentId, input.cwd, input.baseBranch),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId) {
+        throw new Error("Git review status is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.git.getReviewStatus({
+        cwd: input.cwd,
+        ...(input.baseBranch ? { baseBranch: input.baseBranch } : {}),
+      });
+    },
+    enabled: input.environmentId !== null && input.cwd !== null && (input.enabled ?? true),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+export function gitListCommitsQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  baseBranch: string | null;
+  enabled?: boolean;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.commits(input.environmentId, input.cwd, input.baseBranch),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId) {
+        throw new Error("Git commit history is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.git.listCommits({
+        cwd: input.cwd,
+        ...(input.baseBranch ? { baseBranch: input.baseBranch } : {}),
+      });
+    },
+    enabled: input.environmentId !== null && input.cwd !== null && (input.enabled ?? true),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+export function gitCommitFilesQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  commitHash: string | null;
+  enabled?: boolean;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.commitFiles(input.environmentId, input.cwd, input.commitHash),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId || !input.commitHash) {
+        throw new Error("Commit files are unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.git.getCommitFiles({
+        cwd: input.cwd,
+        commitHash: input.commitHash,
+      });
+    },
+    enabled:
+      input.environmentId !== null &&
+      input.cwd !== null &&
+      input.commitHash !== null &&
+      (input.enabled ?? true),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
+}
+
+export function gitFileDiffQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  path: string | null;
+  oldPath?: string | null;
+  category: "against-base" | "staged" | "unstaged" | "committed" | null;
+  baseBranch?: string | null;
+  commitHash?: string | null;
+  enabled?: boolean;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.fileDiff(input.environmentId, input.cwd, {
+      path: input.path,
+      oldPath: input.oldPath ?? null,
+      category: input.category,
+      baseBranch: input.baseBranch ?? null,
+      commitHash: input.commitHash ?? null,
+    }),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId || !input.path || !input.category) {
+        throw new Error("File diff is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.git.getFileDiff({
+        cwd: input.cwd,
+        path: input.path,
+        ...(input.oldPath ? { oldPath: input.oldPath } : {}),
+        category: input.category,
+        ...(input.baseBranch ? { baseBranch: input.baseBranch } : {}),
+        ...(input.commitHash ? { commitHash: input.commitHash } : {}),
+      });
+    },
+    enabled:
+      input.environmentId !== null &&
+      input.cwd !== null &&
+      input.path !== null &&
+      input.category !== null &&
+      (input.enabled ?? true),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
+}
+
 export function gitInitMutationOptions(input: {
   environmentId: EnvironmentId | null;
   cwd: string | null;
@@ -134,7 +280,10 @@ export function gitInitMutationOptions(input: {
       return api.git.init({ cwd: input.cwd });
     },
     onSettled: async () => {
-      await invalidateGitBranchQueries(input.queryClient, input.environmentId, input.cwd);
+      await invalidateGitQueries(input.queryClient, {
+        environmentId: input.environmentId,
+        cwd: input.cwd,
+      });
     },
   });
 }
@@ -152,7 +301,10 @@ export function gitCheckoutMutationOptions(input: {
       return api.git.checkout({ cwd: input.cwd, branch });
     },
     onSettled: async () => {
-      await invalidateGitBranchQueries(input.queryClient, input.environmentId, input.cwd);
+      await invalidateGitQueries(input.queryClient, {
+        environmentId: input.environmentId,
+        cwd: input.cwd,
+      });
     },
   });
 }
@@ -193,7 +345,10 @@ export function gitRunStackedActionMutationOptions(input: {
       );
     },
     onSuccess: async () => {
-      await invalidateGitBranchQueries(input.queryClient, input.environmentId, input.cwd);
+      await invalidateGitQueries(input.queryClient, {
+        environmentId: input.environmentId,
+        cwd: input.cwd,
+      });
     },
   });
 }
@@ -211,7 +366,10 @@ export function gitPullMutationOptions(input: {
       return api.git.pull({ cwd: input.cwd });
     },
     onSuccess: async () => {
-      await invalidateGitBranchQueries(input.queryClient, input.environmentId, input.cwd);
+      await invalidateGitQueries(input.queryClient, {
+        environmentId: input.environmentId,
+        cwd: input.cwd,
+      });
     },
   });
 }
@@ -280,7 +438,10 @@ export function gitPreparePullRequestThreadMutationOptions(input: {
       });
     },
     onSuccess: async () => {
-      await invalidateGitBranchQueries(input.queryClient, input.environmentId, input.cwd);
+      await invalidateGitQueries(input.queryClient, {
+        environmentId: input.environmentId,
+        cwd: input.cwd,
+      });
     },
   });
 }
