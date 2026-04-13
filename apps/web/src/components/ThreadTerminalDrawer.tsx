@@ -94,6 +94,7 @@ function normalizeComputedColor(value: string | null | undefined, fallback: stri
 
 function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
   const isDark = document.documentElement.classList.contains("dark");
+  const isCapybara = document.documentElement.getAttribute("data-theme") === "capybara";
   const fallbackBackground = isDark ? "rgb(14, 18, 24)" : "rgb(255, 255, 255)";
   const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)";
   const drawerSurface =
@@ -112,7 +113,7 @@ function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
   );
 
   if (isDark) {
-    return {
+    const baseTheme: ITheme = {
       background,
       foreground,
       cursor: "rgb(180, 203, 255)",
@@ -137,9 +138,10 @@ function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
       brightCyan: "rgb(167, 244, 247)",
       brightWhite: "rgb(244, 247, 252)",
     };
+    return isCapybara ? { ...baseTheme, ...capybaraTerminalColors(true) } : baseTheme;
   }
 
-  return {
+  const baseTheme: ITheme = {
     background,
     foreground,
     cursor: "rgb(38, 56, 78)",
@@ -163,6 +165,59 @@ function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
     brightMagenta: "rgb(153, 107, 172)",
     brightCyan: "rgb(70, 149, 164)",
     brightWhite: "rgb(236, 240, 246)",
+  };
+  return isCapybara ? { ...baseTheme, ...capybaraTerminalColors(false) } : baseTheme;
+}
+
+function capybaraTerminalColors(isDark: boolean): Partial<ITheme> {
+  if (isDark) {
+    return {
+      cursor: "rgb(196, 169, 125)",
+      selectionBackground: "rgba(196, 169, 125, 0.25)",
+      scrollbarSliderBackground: "rgba(196, 169, 125, 0.1)",
+      scrollbarSliderHoverBackground: "rgba(196, 169, 125, 0.18)",
+      scrollbarSliderActiveBackground: "rgba(196, 169, 125, 0.22)",
+      black: "rgb(26, 19, 13)",
+      red: "rgb(224, 112, 112)",
+      green: "rgb(130, 184, 114)",
+      yellow: "rgb(224, 168, 32)",
+      blue: "rgb(140, 170, 210)",
+      magenta: "rgb(200, 155, 170)",
+      cyan: "rgb(112, 180, 180)",
+      white: "rgb(232, 221, 208)",
+      brightBlack: "rgb(122, 107, 90)",
+      brightRed: "rgb(240, 140, 140)",
+      brightGreen: "rgb(160, 210, 145)",
+      brightYellow: "rgb(240, 190, 80)",
+      brightBlue: "rgb(170, 195, 230)",
+      brightMagenta: "rgb(225, 180, 195)",
+      brightCyan: "rgb(145, 210, 210)",
+      brightWhite: "rgb(250, 244, 236)",
+    };
+  }
+
+  return {
+    cursor: "rgb(139, 105, 20)",
+    selectionBackground: "rgba(139, 105, 20, 0.2)",
+    scrollbarSliderBackground: "rgba(139, 105, 20, 0.15)",
+    scrollbarSliderHoverBackground: "rgba(139, 105, 20, 0.25)",
+    scrollbarSliderActiveBackground: "rgba(139, 105, 20, 0.3)",
+    black: "rgb(61, 43, 31)",
+    red: "rgb(191, 70, 70)",
+    green: "rgb(80, 130, 70)",
+    yellow: "rgb(160, 120, 20)",
+    blue: "rgb(90, 110, 150)",
+    magenta: "rgb(140, 90, 100)",
+    cyan: "rgb(70, 130, 130)",
+    white: "rgb(210, 200, 185)",
+    brightBlack: "rgb(156, 139, 122)",
+    brightRed: "rgb(212, 80, 80)",
+    brightGreen: "rgb(107, 155, 90)",
+    brightYellow: "rgb(180, 140, 30)",
+    brightBlue: "rgb(110, 135, 175)",
+    brightMagenta: "rgb(165, 115, 125)",
+    brightCyan: "rgb(90, 150, 150)",
+    brightWhite: "rgb(245, 238, 228)",
   };
 }
 
