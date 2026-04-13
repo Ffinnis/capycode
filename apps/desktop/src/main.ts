@@ -11,6 +11,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  Notification,
   nativeImage,
   nativeTheme,
   protocol,
@@ -20,14 +21,19 @@ import {
 import type { MenuItemConstructorOptions } from "electron";
 import type {
   ClientSettings,
+  DesktopNotificationAction,
+  DesktopNotificationRequest,
   DesktopTheme,
   DesktopServerExposureMode,
   DesktopServerExposureState,
+  CustomNotificationSoundImportResult,
+  NotificationSoundId,
   PersistedSavedEnvironmentRecord,
   DesktopUpdateActionResult,
   DesktopUpdateCheckResult,
   DesktopUpdateState,
 } from "@capycode/contracts";
+import { DEFAULT_CLIENT_SETTINGS, CUSTOM_NOTIFICATION_SOUND_ID } from "@capycode/contracts";
 import { autoUpdater } from "electron-updater";
 
 import type { ContextMenuItem } from "@capycode/contracts";
@@ -51,6 +57,13 @@ import {
 } from "./clientPersistence";
 import { isBackendReadinessAborted, waitForHttpReady } from "./backendReadiness";
 import { showDesktopConfirmDialog } from "./confirmDialog";
+import { DesktopNotificationManager } from "./desktopNotifications";
+import {
+  NotificationSoundPreviewController,
+  importCustomNotificationSoundFromPath,
+  playSoundFile,
+  resolveNotificationSoundPath,
+} from "./notificationAudio";
 import { resolveDesktopServerExposure } from "./serverExposure";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
@@ -91,6 +104,11 @@ const SET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:set-saved-environment-secr
 const REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:remove-saved-environment-secret";
 const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";
 const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
+const SHOW_DESKTOP_NOTIFICATION_CHANNEL = "desktop:show-notification";
+const NOTIFICATION_ACTION_CHANNEL = "desktop:notification-action";
+const PREVIEW_NOTIFICATION_SOUND_CHANNEL = "desktop:preview-notification-sound";
+const STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL = "desktop:stop-notification-sound-preview";
+const IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL = "desktop:import-custom-notification-sound";
 const BASE_DIR =
   process.env.CAPYCODE_HOME?.trim() ||
   process.env.T3CODE_HOME?.trim() ||
@@ -234,6 +252,44 @@ function getDesktopSecretStorage() {
     encryptString: (value: string) => safeStorage.encryptString(value),
     decryptString: (value: Buffer) => safeStorage.decryptString(value),
   } as const;
+}
+
+function readDesktopClientSettings(): ClientSettings {
+  return readClientSettings(CLIENT_SETTINGS_PATH) ?? DEFAULT_CLIENT_SETTINGS;
+}
+
+function writeDesktopClientSettings(settings: ClientSettings): void {
+  writeClientSettings(CLIENT_SETTINGS_PATH, settings);
+}
+
+function resolveNotificationSoundFile(soundId: NotificationSoundId): string | null {
+  const settings = readDesktopClientSettings();
+  return resolveNotificationSoundPath({
+    stateDir: STATE_DIR,
+    soundId,
+    customSound: settings.customNotificationSound,
+    resolveResourcePath,
+  });
+}
+
+function playSelectedNotificationSound(): void {
+  const settings = readDesktopClientSettings();
+  if (settings.notificationSoundsMuted) {
+    return;
+  }
+
+  const soundPath = resolveNotificationSoundPath({
+    stateDir: STATE_DIR,
+    soundId: settings.selectedNotificationSoundId,
+    customSound: settings.customNotificationSound,
+    resolveResourcePath,
+  });
+
+  if (!soundPath) {
+    return;
+  }
+
+  playSoundFile(soundPath, settings.notificationVolume);
 }
 
 function resolveAdvertisedHostOverride(): string | undefined {
@@ -498,6 +554,23 @@ let updateDownloadInFlight = false;
 let updateInstallInFlight = false;
 let updaterConfigured = false;
 let updateState: DesktopUpdateState = initialUpdateState();
+const notificationSoundPreviewController = new NotificationSoundPreviewController();
+const desktopNotificationManager = new DesktopNotificationManager({
+  onAction: (action) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send(NOTIFICATION_ACTION_CHANNEL, action);
+  },
+  playSound: () => {
+    playSelectedNotificationSound();
+  },
+});
 
 function resolveUpdaterErrorContext(): DesktopUpdateErrorContext {
   if (updateInstallInFlight) return "install";
@@ -1382,7 +1455,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.removeHandler(GET_CLIENT_SETTINGS_CHANNEL);
-  ipcMain.handle(GET_CLIENT_SETTINGS_CHANNEL, async () => readClientSettings(CLIENT_SETTINGS_PATH));
+  ipcMain.handle(GET_CLIENT_SETTINGS_CHANNEL, async () => readDesktopClientSettings());
 
   ipcMain.removeHandler(SET_CLIENT_SETTINGS_CHANNEL);
   ipcMain.handle(SET_CLIENT_SETTINGS_CHANNEL, async (_event, rawSettings: unknown) => {
@@ -1390,7 +1463,7 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid client settings payload.");
     }
 
-    writeClientSettings(CLIENT_SETTINGS_PATH, rawSettings as ClientSettings);
+    writeDesktopClientSettings(rawSettings as ClientSettings);
   });
 
   ipcMain.removeHandler(GET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL);
@@ -1482,6 +1555,81 @@ function registerIpcHandlers(): void {
     relaunchDesktopApp(`serverExposureMode=${nextMode}`);
     return nextState;
   });
+
+  ipcMain.removeHandler(SHOW_DESKTOP_NOTIFICATION_CHANNEL);
+  ipcMain.handle(
+    SHOW_DESKTOP_NOTIFICATION_CHANNEL,
+    async (_event, input: DesktopNotificationRequest) => {
+      desktopNotificationManager.show(input);
+    },
+  );
+
+  ipcMain.removeHandler(PREVIEW_NOTIFICATION_SOUND_CHANNEL);
+  ipcMain.handle(
+    PREVIEW_NOTIFICATION_SOUND_CHANNEL,
+    async (_event, input: { soundId: NotificationSoundId; volume?: number }) => {
+      const soundPath = resolveNotificationSoundFile(input.soundId);
+      if (!soundPath) {
+        return;
+      }
+      notificationSoundPreviewController.play(soundPath, input.volume);
+    },
+  );
+
+  ipcMain.removeHandler(STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL);
+  ipcMain.handle(STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL, async () => {
+    notificationSoundPreviewController.stop();
+  });
+
+  ipcMain.removeHandler(IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL);
+  ipcMain.handle(
+    IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL,
+    async (): Promise<CustomNotificationSoundImportResult> => {
+      const owner = BrowserWindow.getFocusedWindow() ?? mainWindow;
+      const result = owner
+        ? await dialog.showOpenDialog(owner, {
+            properties: ["openFile"],
+            title: "Select Notification Sound",
+            filters: [
+              {
+                name: "Audio",
+                extensions: ["mp3", "wav", "ogg"],
+              },
+            ],
+          })
+        : await dialog.showOpenDialog({
+            properties: ["openFile"],
+            title: "Select Notification Sound",
+            filters: [
+              {
+                name: "Audio",
+                extensions: ["mp3", "wav", "ogg"],
+              },
+            ],
+          });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true, sound: null };
+      }
+
+      const sourcePath = result.filePaths[0];
+      if (!sourcePath) {
+        return { canceled: true, sound: null };
+      }
+
+      const sound = await importCustomNotificationSoundFromPath({
+        stateDir: STATE_DIR,
+        sourcePath,
+      });
+      const settings = readDesktopClientSettings();
+      writeDesktopClientSettings({
+        ...settings,
+        selectedNotificationSoundId: CUSTOM_NOTIFICATION_SOUND_ID,
+        customNotificationSound: sound,
+      });
+      return { canceled: false, sound };
+    },
+  );
 
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
   ipcMain.handle(PICK_FOLDER_CHANNEL, async () => {
@@ -1851,6 +1999,8 @@ app.on("before-quit", () => {
   writeDesktopLogHeader("before-quit received");
   clearUpdatePollTimer();
   cancelBackendReadinessWait();
+  notificationSoundPreviewController.stop();
+  desktopNotificationManager.dispose();
   stopBackend();
   restoreStdIoCapture?.();
 });

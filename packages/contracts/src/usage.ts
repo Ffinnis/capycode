@@ -12,6 +12,7 @@ export type UsageWindowKind = typeof UsageWindowKind.Type;
 
 export const ProviderRateWindowSource = Schema.Literals([
   "codex-app-server",
+  "codex-oauth-api",
   "claude-runtime",
   "claude-oauth-api",
 ]);

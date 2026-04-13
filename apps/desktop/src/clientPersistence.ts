@@ -1,7 +1,11 @@
 import * as FS from "node:fs";
 import * as Path from "node:path";
 
-import type { ClientSettings, PersistedSavedEnvironmentRecord } from "@capycode/contracts";
+import {
+  type ClientSettings,
+  type PersistedSavedEnvironmentRecord,
+  normalizeClientSettings,
+} from "@capycode/contracts";
 import { Predicate } from "effect";
 
 interface ClientSettingsDocument {
@@ -83,11 +87,14 @@ function toPersistedSavedEnvironmentRecord(
 }
 
 export function readClientSettings(settingsPath: string): ClientSettings | null {
-  return readJsonFile<ClientSettingsDocument>(settingsPath)?.settings ?? null;
+  const document = readJsonFile<ClientSettingsDocument>(settingsPath);
+  return document ? normalizeClientSettings(document.settings) : null;
 }
 
 export function writeClientSettings(settingsPath: string, settings: ClientSettings): void {
-  writeJsonFile(settingsPath, { settings } satisfies ClientSettingsDocument);
+  writeJsonFile(settingsPath, {
+    settings: normalizeClientSettings(settings),
+  } satisfies ClientSettingsDocument);
 }
 
 export function readSavedEnvironmentRegistry(

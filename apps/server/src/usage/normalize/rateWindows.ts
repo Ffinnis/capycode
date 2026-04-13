@@ -99,8 +99,13 @@ function readCodexRawWindow(value: unknown): RawRateWindow | null {
   const windowMinutes =
     asNumber(record.windowDurationMins) ??
     asNumber(record.window_minutes) ??
-    asNumber(record.windowMinutes);
-  const resetsAt = toIsoDateTime(record.resetsAt ?? record.resets_at);
+    asNumber(record.windowMinutes) ??
+    ((asNumber(record.limitWindowSeconds) ?? asNumber(record.limit_window_seconds)) !== undefined
+      ? (asNumber(record.limitWindowSeconds) ?? asNumber(record.limit_window_seconds))! / 60
+      : undefined);
+  const resetsAt = toIsoDateTime(
+    record.resetsAt ?? record.resets_at ?? record.resetAt ?? record.reset_at,
+  );
 
   if (usedPercent === undefined || windowMinutes === undefined) {
     return null;
@@ -115,12 +120,22 @@ function readCodexRawWindow(value: unknown): RawRateWindow | null {
 
 export function normalizeCodexRateWindows(
   payload: unknown,
-  input: { readonly stale: boolean; readonly now?: Date } = { stale: false },
+  input: {
+    readonly stale: boolean;
+    readonly now?: Date;
+    readonly source?: ProviderRateWindow["source"];
+  } = { stale: false },
 ): ReadonlyArray<ProviderRateWindow> {
   const now = input.now ?? new Date();
   const record = asObject(payload);
-  const rateLimits = asObject(record?.rateLimits) ?? record;
-  const rawWindows = [rateLimits?.primary, rateLimits?.secondary]
+  const rateLimits =
+    asObject(record?.rateLimits) ?? asObject(record?.rate_limit) ?? record;
+  const rawWindows = [
+    rateLimits?.primary,
+    rateLimits?.secondary,
+    rateLimits?.primary_window,
+    rateLimits?.secondary_window,
+  ]
     .map(readCodexRawWindow)
     .filter((value): value is RawRateWindow => value !== null);
   const windowsByKind = new Map<UsageWindowKind, ProviderRateWindow>();
@@ -132,7 +147,7 @@ export function normalizeCodexRateWindows(
       kind,
       toProviderRateWindow(rawWindow, {
         kind,
-        source: "codex-app-server",
+        source: input.source ?? "codex-app-server",
         stale: input.stale,
         now,
       }),

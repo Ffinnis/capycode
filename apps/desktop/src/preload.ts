@@ -22,6 +22,11 @@ const SET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:set-saved-environment-secr
 const REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:remove-saved-environment-secret";
 const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";
 const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
+const SHOW_DESKTOP_NOTIFICATION_CHANNEL = "desktop:show-notification";
+const NOTIFICATION_ACTION_CHANNEL = "desktop:notification-action";
+const PREVIEW_NOTIFICATION_SOUND_CHANNEL = "desktop:preview-notification-sound";
+const STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL = "desktop:stop-notification-sound-preview";
+const IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL = "desktop:import-custom-notification-sound";
 
 contextBridge.exposeInMainWorld("desktopBridge", {
   getLocalEnvironmentBootstrap: () => {
@@ -75,4 +80,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, wrappedListener);
     };
   },
+  showDesktopNotification: (input) => ipcRenderer.invoke(SHOW_DESKTOP_NOTIFICATION_CHANNEL, input),
+  onDesktopNotificationAction: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, action: unknown) => {
+      if (typeof action !== "object" || action === null) return;
+      listener(action as Parameters<typeof listener>[0]);
+    };
+
+    ipcRenderer.on(NOTIFICATION_ACTION_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(NOTIFICATION_ACTION_CHANNEL, wrappedListener);
+    };
+  },
+  previewNotificationSound: (input) => ipcRenderer.invoke(PREVIEW_NOTIFICATION_SOUND_CHANNEL, input),
+  stopNotificationSoundPreview: () => ipcRenderer.invoke(STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL),
+  importCustomNotificationSound: () => ipcRenderer.invoke(IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL),
 } satisfies DesktopBridge);

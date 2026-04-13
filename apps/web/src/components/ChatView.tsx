@@ -133,6 +133,7 @@ import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import { OpenSurfaceTabs } from "./OpenSurfaceTabs";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { resolveEffectiveEnvMode, resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
@@ -167,6 +168,11 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
+import {
+  getWorkspaceDockScopeKey,
+  getWorkspaceDockScopeState,
+  useWorkspaceDockStore,
+} from "~/workspaceDockStore";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -795,6 +801,8 @@ export default function ChatView(props: ChatViewProps) {
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const diffOpen = rawSearch.diff === "1";
+  const filesOpen = rawSearch.files === "1";
+  const activeWorkspaceFilePath = rawSearch.file;
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadRef = useMemo(
     () => (activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null),
@@ -1487,6 +1495,30 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = effectiveGitContext.worktreePath;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const workspaceDockScopeKey = useMemo(
+    () =>
+      isServerThread && activeWorkspaceRoot
+        ? getWorkspaceDockScopeKey({
+            environmentId,
+            threadId,
+            cwd: activeWorkspaceRoot,
+          })
+        : null,
+    [activeWorkspaceRoot, environmentId, isServerThread, threadId],
+  );
+  const workspaceDockState = useWorkspaceDockStore(
+    useMemo(
+      () => (state) => getWorkspaceDockScopeState(state, workspaceDockScopeKey),
+      [workspaceDockScopeKey],
+    ),
+  );
+  const syncWorkspaceDockRouteState = useWorkspaceDockStore((state) => state.syncRouteState);
+  const setWorkspaceDockFilesOpen = useWorkspaceDockStore((state) => state.setFilesOpen);
+  const selectWorkspaceDockChatTab = useWorkspaceDockStore((state) => state.selectChatTab);
+  const selectWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.selectFileTab);
+  const closeWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.closeFileTab);
+  const showWorkspaceDockDiffContext = useWorkspaceDockStore((state) => state.showDiffContext);
+  const filesAvailable = isServerThread && activeWorkspaceRoot !== undefined;
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -1531,12 +1563,74 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
+  useEffect(() => {
+    if (!workspaceDockScopeKey) {
+      return;
+    }
+    syncWorkspaceDockRouteState(workspaceDockScopeKey, {
+      filesOpen,
+      diffOpen,
+      filePath: activeWorkspaceFilePath,
+    });
+  }, [
+    activeWorkspaceFilePath,
+    diffOpen,
+    filesOpen,
+    syncWorkspaceDockRouteState,
+    workspaceDockScopeKey,
+  ]);
+  const updateWorkspaceSearch = useCallback(
+    (
+      previous: Record<string, unknown>,
+      overrides: Partial<{
+        diff: "1" | undefined;
+        diffTurnId: TurnId | undefined;
+        diffFilePath: string | undefined;
+        files: "1" | undefined;
+        file: string | undefined;
+      }>,
+    ) => {
+      const current = parseDiffRouteSearch(previous);
+      const nextDiff = Object.prototype.hasOwnProperty.call(overrides, "diff")
+        ? overrides.diff
+        : current.diff;
+      const nextFiles = Object.prototype.hasOwnProperty.call(overrides, "files")
+        ? overrides.files
+        : current.files;
+      const nextFile = Object.prototype.hasOwnProperty.call(overrides, "file")
+        ? overrides.file
+        : current.file;
+      const nextDiffTurnId = nextDiff
+        ? Object.prototype.hasOwnProperty.call(overrides, "diffTurnId")
+          ? overrides.diffTurnId
+          : current.diffTurnId
+        : undefined;
+      const nextDiffFilePath = nextDiff
+        ? Object.prototype.hasOwnProperty.call(overrides, "diffFilePath")
+          ? overrides.diffFilePath
+          : current.diffFilePath
+        : undefined;
+      const rest = stripDiffSearchParams(previous);
+      return {
+        ...rest,
+        ...(nextDiff ? { diff: nextDiff } : {}),
+        ...(nextFiles ? { files: nextFiles } : {}),
+        ...(nextDiffTurnId ? { diffTurnId: nextDiffTurnId } : {}),
+        ...(nextDiffFilePath ? { diffFilePath: nextDiffFilePath } : {}),
+        ...(nextFile ? { file: nextFile } : {}),
+      };
+    },
+    [],
+  );
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
       return;
     }
     if (!diffOpen) {
       onDiffPanelOpen?.();
+      if (workspaceDockScopeKey) {
+        showWorkspaceDockDiffContext(workspaceDockScopeKey);
+      }
     }
     void navigate({
       to: "/$environmentId/$threadId",
@@ -1545,12 +1639,46 @@ export default function ChatView(props: ChatViewProps) {
         threadId,
       },
       replace: true,
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return diffOpen ? { ...rest, diff: undefined } : { ...rest, diff: "1" };
-      },
+      search: (previous) =>
+        updateWorkspaceSearch(previous, diffOpen ? { diff: undefined } : { diff: "1" }),
     });
-  }, [diffOpen, environmentId, isServerThread, navigate, onDiffPanelOpen, threadId]);
+  }, [
+    diffOpen,
+    environmentId,
+    isServerThread,
+    navigate,
+    onDiffPanelOpen,
+    showWorkspaceDockDiffContext,
+    threadId,
+    updateWorkspaceSearch,
+    workspaceDockScopeKey,
+  ]);
+  const onToggleFiles = useCallback(() => {
+    if (!isServerThread || !workspaceDockScopeKey) {
+      return;
+    }
+    const nextFilesOpen = !filesOpen;
+    setWorkspaceDockFilesOpen(workspaceDockScopeKey, nextFilesOpen);
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: {
+        environmentId,
+        threadId,
+      },
+      replace: true,
+      search: (previous) =>
+        updateWorkspaceSearch(previous, nextFilesOpen ? { files: "1" } : { files: undefined, file: undefined }),
+    });
+  }, [
+    environmentId,
+    filesOpen,
+    isServerThread,
+    navigate,
+    setWorkspaceDockFilesOpen,
+    threadId,
+    updateWorkspaceSearch,
+    workspaceDockScopeKey,
+  ]);
 
   const envLocked = Boolean(
     activeThread &&
@@ -3319,21 +3447,117 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       onDiffPanelOpen?.();
+      if (workspaceDockScopeKey) {
+        showWorkspaceDockDiffContext(workspaceDockScopeKey);
+      }
       void navigate({
         to: "/$environmentId/$threadId",
         params: {
           environmentId,
           threadId,
         },
-        search: (previous) => {
-          const rest = stripDiffSearchParams(previous);
-          return filePath
-            ? { ...rest, diff: "1", diffTurnId: turnId, diffFilePath: filePath }
-            : { ...rest, diff: "1", diffTurnId: turnId };
-        },
+        search: (previous) =>
+          updateWorkspaceSearch(
+            previous,
+            filePath
+              ? { diff: "1", diffTurnId: turnId, diffFilePath: filePath }
+              : { diff: "1", diffTurnId: turnId, diffFilePath: undefined },
+          ),
       });
     },
-    [environmentId, isServerThread, navigate, onDiffPanelOpen, threadId],
+    [
+      environmentId,
+      isServerThread,
+      navigate,
+      onDiffPanelOpen,
+      showWorkspaceDockDiffContext,
+      threadId,
+      updateWorkspaceSearch,
+      workspaceDockScopeKey,
+    ],
+  );
+  const onSelectChatSurfaceTab = useCallback(() => {
+    if (!isServerThread || !workspaceDockScopeKey) {
+      return;
+    }
+    selectWorkspaceDockChatTab(workspaceDockScopeKey);
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: {
+        environmentId,
+        threadId,
+      },
+      replace: true,
+      search: (previous) => updateWorkspaceSearch(previous, { file: undefined }),
+    });
+  }, [
+    environmentId,
+    isServerThread,
+    navigate,
+    selectWorkspaceDockChatTab,
+    threadId,
+    updateWorkspaceSearch,
+    workspaceDockScopeKey,
+  ]);
+  const onSelectWorkspaceFileTab = useCallback(
+    (relativePath: string) => {
+      if (!isServerThread || !workspaceDockScopeKey) {
+        return;
+      }
+      selectWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) => updateWorkspaceSearch(previous, { files: "1", file: relativePath }),
+      });
+    },
+    [
+      environmentId,
+      isServerThread,
+      navigate,
+      selectWorkspaceDockFileTab,
+      threadId,
+      updateWorkspaceSearch,
+      workspaceDockScopeKey,
+    ],
+  );
+  const onCloseWorkspaceFileTab = useCallback(
+    (relativePath: string) => {
+      if (!isServerThread || !workspaceDockScopeKey) {
+        return;
+      }
+      const remainingTabs = workspaceDockState.openFileTabs.filter((path) => path !== relativePath);
+      closeWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
+      const nextActiveTab =
+        workspaceDockState.activeTab === relativePath ? (remainingTabs.at(-1) ?? "chat") : workspaceDockState.activeTab;
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(previous, {
+            file: nextActiveTab === "chat" ? undefined : nextActiveTab,
+          }),
+      });
+    },
+    [
+      closeWorkspaceDockFileTab,
+      environmentId,
+      isServerThread,
+      navigate,
+      threadId,
+      updateWorkspaceSearch,
+      workspaceDockScopeKey,
+      workspaceDockState.activeTab,
+      workspaceDockState.openFileTabs,
+    ],
   );
   const onRevertUserMessage = useCallback(
     (messageId: MessageId) => {
@@ -3378,6 +3602,8 @@ export default function ChatView(props: ChatViewProps) {
           terminalOpen={terminalState.terminalOpen}
           terminalToggleShortcutLabel={terminalToggleShortcutLabel}
           diffToggleShortcutLabel={diffPanelShortcutLabel}
+          filesAvailable={filesAvailable}
+          filesOpen={filesOpen}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
           onRunProjectScript={runProjectScript}
@@ -3385,9 +3611,20 @@ export default function ChatView(props: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
+          onToggleFiles={onToggleFiles}
           onToggleDiff={onToggleDiff}
         />
       </header>
+      {filesOpen || workspaceDockState.openFileTabs.length > 0 ? (
+        <OpenSurfaceTabs
+          openFileTabs={workspaceDockState.openFileTabs}
+          activeTab={workspaceDockState.activeTab}
+          resolvedTheme={resolvedTheme}
+          onSelectChat={onSelectChatSurfaceTab}
+          onSelectFile={onSelectWorkspaceFileTab}
+          onCloseFile={onCloseWorkspaceFileTab}
+        />
+      ) : null}
 
       {/* Error banner */}
       <ProviderStatusBanner status={activeProviderStatus} />

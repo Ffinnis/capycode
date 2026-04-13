@@ -1,7 +1,15 @@
 import type { ComponentType } from "react";
-import { ArchiveIcon, ArrowLeftIcon, BarChart3Icon, Link2Icon, Settings2Icon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  BarChart3Icon,
+  BellIcon,
+  Link2Icon,
+  Settings2Icon,
+} from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { isElectron } from "../../env";
 import {
   SidebarContent,
   SidebarFooter,
@@ -16,15 +24,19 @@ export type SettingsSectionPath =
   | "/settings/general"
   | "/settings/connections"
   | "/settings/usage"
-  | "/settings/archived";
+  | "/settings/archived"
+  | "/settings/notifications";
 
-export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
+const BASE_SETTINGS_NAV_ITEMS: ReadonlyArray<{
   label: string;
   to: SettingsSectionPath;
   icon: ComponentType<{ className?: string }>;
 }> = [
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Connections", to: "/settings/connections", icon: Link2Icon },
+  ...(isElectron
+    ? ([{ label: "Notifications", to: "/settings/notifications", icon: BellIcon }] as const)
+    : []),
   { label: "Usage", to: "/settings/usage", icon: BarChart3Icon },
   { label: "Archive", to: "/settings/archived", icon: ArchiveIcon },
 ];
@@ -37,7 +49,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup className="px-2 py-3">
           <SidebarMenu>
-            {SETTINGS_NAV_ITEMS.map((item) => {
+            {BASE_SETTINGS_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.to;
               return (

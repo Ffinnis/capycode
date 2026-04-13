@@ -4,6 +4,7 @@ import {
   type ClientSettings,
   type EnvironmentId as EnvironmentIdValue,
   type PersistedSavedEnvironmentRecord,
+  normalizeClientSettings,
 } from "@capycode/contracts";
 import * as Schema from "effect/Schema";
 
@@ -53,7 +54,8 @@ export function readBrowserClientSettings(): ClientSettings | null {
   }
 
   try {
-    return getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
+    const settings = getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
+    return settings ? normalizeClientSettings(settings) : null;
   } catch {
     return null;
   }
@@ -64,7 +66,11 @@ export function writeBrowserClientSettings(settings: ClientSettings): void {
     return;
   }
 
-  setLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, settings, ClientSettingsSchema);
+  setLocalStorageItem(
+    CLIENT_SETTINGS_STORAGE_KEY,
+    normalizeClientSettings(settings),
+    ClientSettingsSchema,
+  );
 }
 
 function readBrowserSavedEnvironmentRegistryDocument(): BrowserSavedEnvironmentRegistryDocument {

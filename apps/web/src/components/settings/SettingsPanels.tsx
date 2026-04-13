@@ -394,6 +394,16 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
+      ...(settings.notificationSoundsMuted !== DEFAULT_UNIFIED_SETTINGS.notificationSoundsMuted ||
+      settings.notificationVolume !== DEFAULT_UNIFIED_SETTINGS.notificationVolume ||
+      settings.selectedNotificationSoundId !==
+        DEFAULT_UNIFIED_SETTINGS.selectedNotificationSoundId ||
+      !Equal.equals(
+        settings.customNotificationSound,
+        DEFAULT_UNIFIED_SETTINGS.customNotificationSound,
+      )
+        ? ["Notifications"]
+        : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
       ...(areProviderSettingsDirty ? ["Providers"] : []),
     ],
@@ -407,6 +417,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffWordWrap,
       settings.extendedTraceMode,
       settings.enableAssistantStreaming,
+      settings.customNotificationSound,
+      settings.notificationSoundsMuted,
+      settings.notificationVolume,
+      settings.selectedNotificationSoundId,
       settings.timestampFormat,
       theme,
     ],

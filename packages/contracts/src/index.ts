@@ -7,6 +7,7 @@ export * from "./provider";
 export * from "./providerRuntime";
 export * from "./model";
 export * from "./keybindings";
+export * from "./notificationSounds";
 export * from "./server";
 export * from "./settings";
 export * from "./git";

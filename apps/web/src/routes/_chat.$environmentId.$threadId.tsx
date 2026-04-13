@@ -1,3 +1,4 @@
+import { scopeProjectRef } from "@capycode/client-runtime";
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
@@ -10,6 +11,9 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
+import { FilePreviewPanel } from "../components/files/FilePreviewPanel";
+import { FileTreePanel } from "../components/files/FileTreePanel";
+import { WorkspaceShell } from "../components/WorkspaceShell";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -17,44 +21,25 @@ import {
   stripDiffSearchParams,
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
-import { createThreadSelectorByRef } from "../storeSelectors";
+import { useTheme } from "../hooks/useTheme";
+import { resolveEffectiveGitContext } from "../lib/gitContext";
+import {
+  selectActiveWorkspaceForProjectRef,
+  selectEnvironmentState,
+  selectThreadExistsByRef,
+  useStore,
+} from "../store";
+import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
-import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { SidebarInset } from "~/components/ui/sidebar";
+import {
+  getWorkspaceDockScopeKey,
+  getWorkspaceDockScopeState,
+  useWorkspaceDockStore,
+} from "~/workspaceDockStore";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
-const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
-const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
-const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
-const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
-const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
-
-const DiffPanelSheet = (props: {
-  children: ReactNode;
-  diffOpen: boolean;
-  onCloseDiff: () => void;
-}) => {
-  return (
-    <Sheet
-      open={props.diffOpen}
-      onOpenChange={(open) => {
-        if (!open) {
-          props.onCloseDiff();
-        }
-      }}
-    >
-      <SheetPopup
-        side="right"
-        showCloseButton={false}
-        keepMounted
-        className="w-[min(88vw,820px)] max-w-[820px] p-0"
-      >
-        {props.children}
-      </SheetPopup>
-    </Sheet>
-  );
-};
+const WORKSPACE_SHEET_MEDIA_QUERY = "(max-width: 1180px)";
 
 const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
   return (
@@ -71,94 +56,6 @@ const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
         <DiffPanel mode={props.mode} />
       </Suspense>
     </DiffWorkerPoolProvider>
-  );
-};
-
-const DiffPanelInlineSidebar = (props: {
-  diffOpen: boolean;
-  onCloseDiff: () => void;
-  onOpenDiff: () => void;
-  renderDiffContent: boolean;
-}) => {
-  const { diffOpen, onCloseDiff, onOpenDiff, renderDiffContent } = props;
-  const onOpenChange = useCallback(
-    (open: boolean) => {
-      if (open) {
-        onOpenDiff();
-        return;
-      }
-      onCloseDiff();
-    },
-    [onCloseDiff, onOpenDiff],
-  );
-  const shouldAcceptInlineSidebarWidth = useCallback(
-    ({ nextWidth, wrapper }: { nextWidth: number; wrapper: HTMLElement }) => {
-      const composerForm = document.querySelector<HTMLElement>("[data-chat-composer-form='true']");
-      if (!composerForm) return true;
-      const composerViewport = composerForm.parentElement;
-      if (!composerViewport) return true;
-      const previousSidebarWidth = wrapper.style.getPropertyValue("--sidebar-width");
-      wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
-
-      const viewportStyle = window.getComputedStyle(composerViewport);
-      const viewportPaddingLeft = Number.parseFloat(viewportStyle.paddingLeft) || 0;
-      const viewportPaddingRight = Number.parseFloat(viewportStyle.paddingRight) || 0;
-      const viewportContentWidth = Math.max(
-        0,
-        composerViewport.clientWidth - viewportPaddingLeft - viewportPaddingRight,
-      );
-      const formRect = composerForm.getBoundingClientRect();
-      const composerFooter = composerForm.querySelector<HTMLElement>(
-        "[data-chat-composer-footer='true']",
-      );
-      const composerRightActions = composerForm.querySelector<HTMLElement>(
-        "[data-chat-composer-actions='right']",
-      );
-      const composerRightActionsWidth = composerRightActions?.getBoundingClientRect().width ?? 0;
-      const composerFooterGap = composerFooter
-        ? Number.parseFloat(window.getComputedStyle(composerFooter).columnGap) ||
-          Number.parseFloat(window.getComputedStyle(composerFooter).gap) ||
-          0
-        : 0;
-      const minimumComposerWidth =
-        COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX + composerRightActionsWidth + composerFooterGap;
-      const hasComposerOverflow = composerForm.scrollWidth > composerForm.clientWidth + 0.5;
-      const overflowsViewport = formRect.width > viewportContentWidth + 0.5;
-      const violatesMinimumComposerWidth = composerForm.clientWidth + 0.5 < minimumComposerWidth;
-
-      if (previousSidebarWidth.length > 0) {
-        wrapper.style.setProperty("--sidebar-width", previousSidebarWidth);
-      } else {
-        wrapper.style.removeProperty("--sidebar-width");
-      }
-
-      return !hasComposerOverflow && !overflowsViewport && !violatesMinimumComposerWidth;
-    },
-    [],
-  );
-
-  return (
-    <SidebarProvider
-      defaultOpen={false}
-      open={diffOpen}
-      onOpenChange={onOpenChange}
-      className="w-auto min-h-0 flex-none bg-transparent"
-      style={{ "--sidebar-width": DIFF_INLINE_DEFAULT_WIDTH } as React.CSSProperties}
-    >
-      <Sidebar
-        side="right"
-        collapsible="offcanvas"
-        className="border-l border-border bg-card text-foreground"
-        resizable={{
-          minWidth: DIFF_INLINE_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: shouldAcceptInlineSidebarWidth,
-          storageKey: DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        {renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
-        <SidebarRail className="overflow-visible [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-auto" />
-      </Sidebar>
-    </SidebarProvider>
   );
 };
 
@@ -192,16 +89,80 @@ function ChatThreadRouteView() {
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
   const diffOpen = search.diff === "1";
-  const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
+  const filesOpen = search.files === "1";
+  const activeFilePath = search.file ?? null;
+  const shouldUseSheet = useMediaQuery(WORKSPACE_SHEET_MEDIA_QUERY);
+  const { resolvedTheme } = useTheme();
   const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
   const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
     threadKey: currentThreadKey,
     hasOpenedDiff: diffOpen,
   }));
+  const activeProjectRef = serverThread
+    ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
+    : null;
+  const activeProject = useStore(
+    useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
+  );
+  const linkedWorkspace = useStore(
+    useMemo(
+      () => (store) => selectActiveWorkspaceForProjectRef(store, activeProjectRef),
+      [activeProjectRef],
+    ),
+  );
+  const effectiveGitContext = useMemo(
+    () =>
+      resolveEffectiveGitContext({
+        project: activeProject ? { cwd: activeProject.cwd } : null,
+        thread: serverThread
+          ? {
+              workspaceId: serverThread.workspaceId ?? null,
+              branch: serverThread.branch,
+              worktreePath: serverThread.worktreePath,
+            }
+          : null,
+        linkedWorkspace: linkedWorkspace
+          ? {
+              id: linkedWorkspace.id,
+              branch: linkedWorkspace.branch,
+              worktreePath: linkedWorkspace.worktreePath,
+            }
+          : null,
+      }),
+    [
+      activeProject?.cwd,
+      linkedWorkspace?.branch,
+      linkedWorkspace?.id,
+      linkedWorkspace?.worktreePath,
+      serverThread?.branch,
+      serverThread?.workspaceId,
+      serverThread?.worktreePath,
+    ],
+  );
+  const activeWorkspaceRoot = effectiveGitContext.worktreePath ?? activeProject?.cwd ?? null;
+  const workspaceDockScopeKey = useMemo(
+    () =>
+      threadRef && activeWorkspaceRoot
+        ? getWorkspaceDockScopeKey({
+            environmentId: threadRef.environmentId,
+            threadId: threadRef.threadId,
+            cwd: activeWorkspaceRoot,
+          })
+        : null,
+    [activeWorkspaceRoot, threadRef],
+  );
+  const workspaceDockState = useWorkspaceDockStore(
+    useMemo(
+      () => (state) => getWorkspaceDockScopeState(state, workspaceDockScopeKey),
+      [workspaceDockScopeKey],
+    ),
+  );
+  const openWorkspaceDockFile = useWorkspaceDockStore((state) => state.openFile);
   const hasOpenedDiff =
     diffPanelMountState.threadKey === currentThreadKey
       ? diffPanelMountState.hasOpenedDiff
       : diffOpen;
+
   const markDiffOpened = useCallback(() => {
     setDiffPanelMountState((previous) => {
       if (previous.threadKey === currentThreadKey && previous.hasOpenedDiff) {
@@ -213,30 +174,103 @@ function ChatThreadRouteView() {
       };
     });
   }, [currentThreadKey]);
-  const closeDiff = useCallback(() => {
+
+  const updateWorkspaceSearch = useCallback(
+    (
+      previous: Record<string, unknown>,
+      overrides: Partial<{
+        diff: "1" | undefined;
+        diffTurnId: DiffRouteSearch["diffTurnId"];
+        diffFilePath: string | undefined;
+        files: "1" | undefined;
+        file: string | undefined;
+      }>,
+    ) => {
+      const current = parseDiffRouteSearch(previous);
+      const nextDiff = Object.prototype.hasOwnProperty.call(overrides, "diff")
+        ? overrides.diff
+        : current.diff;
+      const nextFiles = Object.prototype.hasOwnProperty.call(overrides, "files")
+        ? overrides.files
+        : current.files;
+      const nextFile = Object.prototype.hasOwnProperty.call(overrides, "file")
+        ? overrides.file
+        : current.file;
+      const nextDiffTurnId = nextDiff
+        ? Object.prototype.hasOwnProperty.call(overrides, "diffTurnId")
+          ? overrides.diffTurnId
+          : current.diffTurnId
+        : undefined;
+      const nextDiffFilePath = nextDiff
+        ? Object.prototype.hasOwnProperty.call(overrides, "diffFilePath")
+          ? overrides.diffFilePath
+          : current.diffFilePath
+        : undefined;
+      const rest = stripDiffSearchParams(previous);
+      return {
+        ...rest,
+        ...(nextDiff ? { diff: nextDiff } : {}),
+        ...(nextFiles ? { files: nextFiles } : {}),
+        ...(nextDiffTurnId ? { diffTurnId: nextDiffTurnId } : {}),
+        ...(nextDiffFilePath ? { diffFilePath: nextDiffFilePath } : {}),
+        ...(nextFile ? { file: nextFile } : {}),
+      };
+    },
+    [],
+  );
+
+  const closeSheet = useCallback(() => {
     if (!threadRef) {
       return;
     }
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
-      search: { diff: undefined },
+      replace: true,
+      search: (previous) =>
+        updateWorkspaceSearch(previous, {
+          diff: undefined,
+          files: undefined,
+          file: undefined,
+        }),
     });
-  }, [navigate, threadRef]);
-  const openDiff = useCallback(() => {
+  }, [navigate, threadRef, updateWorkspaceSearch]);
+
+  const openWorkspaceFile = useCallback(
+    (relativePath: string) => {
+      if (!threadRef || !workspaceDockScopeKey) {
+        return;
+      }
+      openWorkspaceDockFile(workspaceDockScopeKey, relativePath);
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(previous, {
+            files: "1",
+            file: relativePath,
+          }),
+      });
+    },
+    [navigate, openWorkspaceDockFile, threadRef, updateWorkspaceSearch, workspaceDockScopeKey],
+  );
+
+  const closeFilePreview = useCallback(() => {
     if (!threadRef) {
       return;
     }
-    markDiffOpened();
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return { ...rest, diff: "1" };
-      },
+      replace: true,
+      search: (previous) =>
+        updateWorkspaceSearch(previous, {
+          files: filesOpen ? "1" : undefined,
+          file: undefined,
+        }),
     });
-  }, [markDiffOpened, navigate, threadRef]);
+  }, [filesOpen, navigate, threadRef, updateWorkspaceSearch]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -260,49 +294,90 @@ function ChatThreadRouteView() {
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
+  const showDiffContext = diffOpen && workspaceDockState.activeContext === "diff";
+  const showFilePreview = Boolean(activeFilePath) && (!diffOpen || !showDiffContext);
+  const previewFilePath = showFilePreview ? activeFilePath : null;
+  const contextOpen = showDiffContext || showFilePreview;
+  const sheetOpen = diffOpen || filesOpen || activeFilePath !== null;
 
-  if (!shouldUseDiffSheet) {
-    return (
-      <>
-        <SidebarInset className="h-dvh  min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-          <ChatView
-            environmentId={threadRef.environmentId}
-            threadId={threadRef.threadId}
-            onDiffPanelOpen={markDiffOpened}
-            routeKind="server"
-          />
-        </SidebarInset>
-        <DiffPanelInlineSidebar
-          diffOpen={diffOpen}
-          onCloseDiff={closeDiff}
-          onOpenDiff={openDiff}
-          renderDiffContent={shouldRenderDiffContent}
-        />
-      </>
-    );
-  }
+  const main = (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+      <ChatView
+        environmentId={threadRef.environmentId}
+        threadId={threadRef.threadId}
+        onDiffPanelOpen={markDiffOpened}
+        routeKind="server"
+      />
+    </SidebarInset>
+  );
+
+  const filesPanel =
+    filesOpen && activeWorkspaceRoot ? (
+      <FileTreePanel
+        environmentId={threadRef.environmentId}
+        cwd={activeWorkspaceRoot}
+        scopeKey={workspaceDockScopeKey}
+        selectedFilePath={activeFilePath}
+        resolvedTheme={resolvedTheme}
+        onOpenFile={openWorkspaceFile}
+      />
+    ) : undefined;
+
+  const contextPanel = showDiffContext ? (
+    shouldRenderDiffContent ? (
+      <LazyDiffPanel mode="sidebar" />
+    ) : null
+  ) : previewFilePath && activeWorkspaceRoot ? (
+    <FilePreviewPanel
+      environmentId={threadRef.environmentId}
+      cwd={activeWorkspaceRoot}
+      relativePath={previewFilePath}
+    />
+  ) : null;
+
+  const sheetContent: ReactNode = showDiffContext ? (
+    shouldRenderDiffContent ? (
+      <LazyDiffPanel mode="sheet" />
+    ) : null
+  ) : previewFilePath && activeWorkspaceRoot ? (
+    <FilePreviewPanel
+      environmentId={threadRef.environmentId}
+      cwd={activeWorkspaceRoot}
+      relativePath={previewFilePath}
+      onBack={closeFilePreview}
+    />
+  ) : filesOpen && activeWorkspaceRoot ? (
+    <FileTreePanel
+      environmentId={threadRef.environmentId}
+      cwd={activeWorkspaceRoot}
+      scopeKey={workspaceDockScopeKey}
+      selectedFilePath={activeFilePath}
+      resolvedTheme={resolvedTheme}
+      onOpenFile={openWorkspaceFile}
+    />
+  ) : null;
 
   return (
-    <>
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
-          onDiffPanelOpen={markDiffOpened}
-          routeKind="server"
-        />
-      </SidebarInset>
-      <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
-        {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
-      </DiffPanelSheet>
-    </>
+    <WorkspaceShell
+      main={main}
+      filesOpen={filesOpen}
+      contextOpen={contextOpen}
+      filesPanel={filesPanel}
+      contextPanel={contextPanel}
+      useSheet={shouldUseSheet}
+      sheetOpen={sheetOpen}
+      sheetContent={sheetContent}
+      onCloseSheet={closeSheet}
+    />
   );
 }
 
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
   validateSearch: (search) => parseDiffRouteSearch(search),
   search: {
-    middlewares: [retainSearchParams<DiffRouteSearch>(["diff"])],
+    middlewares: [
+      retainSearchParams<DiffRouteSearch>(["diff", "diffTurnId", "diffFilePath", "files", "file"]),
+    ],
   },
   component: ChatThreadRouteView,
 });

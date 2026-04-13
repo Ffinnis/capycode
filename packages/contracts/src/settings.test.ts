@@ -12,4 +12,13 @@ describe("ClientSettingsSchema", () => {
     expect(parsed.diffPanelMode).toBe("iterations");
     expect(DEFAULT_CLIENT_SETTINGS.diffPanelMode).toBe("iterations");
   });
+
+  it("defaults notification settings", () => {
+    const parsed = decodeClientSettings({});
+
+    expect(parsed.notificationSoundsMuted).toBe(false);
+    expect(parsed.notificationVolume).toBe(100);
+    expect(parsed.selectedNotificationSoundId).toBe("arcade");
+    expect(parsed.customNotificationSound).toBeNull();
+  });
 });

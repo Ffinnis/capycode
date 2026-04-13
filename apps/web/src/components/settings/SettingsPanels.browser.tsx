@@ -318,6 +318,11 @@ const createDesktopBridgeStub = (overrides?: {
       .fn()
       .mockResolvedValue({ accepted: false, completed: false, state: idleUpdateState }),
     onUpdateState: () => () => {},
+    showDesktopNotification: vi.fn().mockResolvedValue(undefined),
+    onDesktopNotificationAction: () => () => {},
+    previewNotificationSound: vi.fn().mockResolvedValue(undefined),
+    stopNotificationSoundPreview: vi.fn().mockResolvedValue(undefined),
+    importCustomNotificationSound: vi.fn().mockResolvedValue({ canceled: true, sound: null }),
   };
 };
 

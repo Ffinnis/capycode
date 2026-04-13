@@ -3,6 +3,13 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
 import {
+  CUSTOM_NOTIFICATION_SOUND_ID,
+  DEFAULT_NOTIFICATION_SOUND_ID,
+  DEFAULT_NOTIFICATION_VOLUME,
+  type NotificationSoundId,
+  isNotificationSoundId,
+} from "./notificationSounds";
+import {
   ClaudeModelOptions,
   CodexModelOptions,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
@@ -27,6 +34,13 @@ export const DiffPanelMode = Schema.Literals(["iterations", "git"]);
 export type DiffPanelMode = typeof DiffPanelMode.Type;
 export const DEFAULT_DIFF_PANEL_MODE: DiffPanelMode = "iterations";
 
+export const ClientCustomNotificationSound = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  storedFilename: TrimmedNonEmptyString,
+  importedAt: TrimmedNonEmptyString,
+});
+export type ClientCustomNotificationSound = typeof ClientCustomNotificationSound.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -44,10 +58,50 @@ export const ClientSettingsSchema = Schema.Struct({
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
+  notificationSoundsMuted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  notificationVolume: Schema.Number.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_VOLUME)),
+  ),
+  selectedNotificationSoundId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_SOUND_ID)),
+  ),
+  customNotificationSound: Schema.NullOr(ClientCustomNotificationSound).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
-export type ClientSettings = typeof ClientSettingsSchema.Type;
+export type ClientSettings = Omit<
+  typeof ClientSettingsSchema.Type,
+  "selectedNotificationSoundId"
+> & {
+  readonly selectedNotificationSoundId: NotificationSoundId;
+};
 
-export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
+function clampNotificationVolume(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_NOTIFICATION_VOLUME;
+  }
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeNotificationSoundId(value: string): NotificationSoundId {
+  return isNotificationSoundId(value) ? value : DEFAULT_NOTIFICATION_SOUND_ID;
+}
+
+export function normalizeClientSettings(input: unknown): ClientSettings {
+  const decoded = Schema.decodeUnknownSync(ClientSettingsSchema)(input);
+  return {
+    ...decoded,
+    notificationVolume: clampNotificationVolume(decoded.notificationVolume),
+    selectedNotificationSoundId: normalizeNotificationSoundId(decoded.selectedNotificationSoundId),
+    customNotificationSound:
+      decoded.selectedNotificationSoundId === CUSTOM_NOTIFICATION_SOUND_ID ||
+      decoded.customNotificationSound !== null
+        ? decoded.customNotificationSound
+        : null,
+  };
+}
+
+export const DEFAULT_CLIENT_SETTINGS: ClientSettings = normalizeClientSettings({});
 
 // ── Server Settings (server-authoritative) ────────────────────
 

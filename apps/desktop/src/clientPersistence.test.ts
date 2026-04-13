@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import {
   EnvironmentId,
+  DEFAULT_CLIENT_SETTINGS,
   type ClientSettings,
   type PersistedSavedEnvironmentRecord,
 } from "@capycode/contracts";
@@ -49,12 +50,21 @@ function makeSecretStorage(available: boolean): DesktopSecretStorage {
 }
 
 const clientSettings: ClientSettings = {
+  ...DEFAULT_CLIENT_SETTINGS,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   timestampFormat: "24-hour",
+  notificationSoundsMuted: true,
+  notificationVolume: 40,
+  selectedNotificationSoundId: "ping",
+  customNotificationSound: {
+    name: "My Sound",
+    storedFilename: "notification-custom.mp3",
+    importedAt: "2026-04-13T00:00:00.000Z",
+  },
 };
 
 const savedRegistryRecord: PersistedSavedEnvironmentRecord = {
@@ -73,6 +83,23 @@ describe("clientPersistence", () => {
     writeClientSettings(settingsPath, clientSettings);
 
     expect(readClientSettings(settingsPath)).toEqual(clientSettings);
+  });
+
+  it("falls back to the default notification sound when persisted id is invalid", () => {
+    const settingsPath = makeTempPath("client-settings.json");
+
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        settings: {
+          ...DEFAULT_CLIENT_SETTINGS,
+          selectedNotificationSoundId: "not-a-real-sound",
+        },
+      }),
+      "utf8",
+    );
+
+    expect(readClientSettings(settingsPath)?.selectedNotificationSoundId).toBe("arcade");
   });
 
   it("persists and reloads saved environment metadata", () => {

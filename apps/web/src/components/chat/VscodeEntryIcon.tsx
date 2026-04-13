@@ -1,24 +1,29 @@
 import { memo, useMemo, useState } from "react";
 import { getVscodeIconUrlForEntry } from "../../vscode-icons";
-import { FileIcon, FolderIcon } from "lucide-react";
+import { FileIcon, FolderIcon, FolderOpenIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 export const VscodeEntryIcon = memo(function VscodeEntryIcon(props: {
   pathValue: string;
   kind: "file" | "directory";
+  isOpen?: boolean;
   theme: "light" | "dark";
   className?: string;
 }) {
   const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
   const iconUrl = useMemo(
-    () => getVscodeIconUrlForEntry(props.pathValue, props.kind, props.theme),
-    [props.kind, props.pathValue, props.theme],
+    () => getVscodeIconUrlForEntry(props.pathValue, props.kind, props.theme, props.isOpen),
+    [props.isOpen, props.kind, props.pathValue, props.theme],
   );
   const failed = failedIconUrl === iconUrl;
 
   if (failed) {
     return props.kind === "directory" ? (
-      <FolderIcon className={cn("size-4 text-muted-foreground/80", props.className)} />
+      props.isOpen ? (
+        <FolderOpenIcon className={cn("size-4 text-muted-foreground/80", props.className)} />
+      ) : (
+        <FolderIcon className={cn("size-4 text-muted-foreground/80", props.className)} />
+      )
     ) : (
       <FileIcon className={cn("size-4 text-muted-foreground/80", props.className)} />
     );

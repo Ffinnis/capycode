@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
   type DesktopBridge,
   EnvironmentId,
@@ -226,6 +227,11 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
       throw new Error("installUpdate not implemented in test");
     },
     onUpdateState: () => () => undefined,
+    showDesktopNotification: async () => undefined,
+    onDesktopNotificationAction: () => () => undefined,
+    previewNotificationSound: async () => undefined,
+    stopNotificationSoundPreview: async () => undefined,
+    importCustomNotificationSound: async () => ({ canceled: true, sound: null }),
     ...overrides,
   };
 }
@@ -623,6 +629,7 @@ describe("wsApi", () => {
 
     await api.persistence.getClientSettings();
     await api.persistence.setClientSettings({
+      ...DEFAULT_CLIENT_SETTINGS,
       extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
@@ -643,6 +650,7 @@ describe("wsApi", () => {
 
     expect(getClientSettings).toHaveBeenCalledWith();
     expect(setClientSettings).toHaveBeenCalledWith({
+      ...DEFAULT_CLIENT_SETTINGS,
       extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
@@ -664,6 +672,7 @@ describe("wsApi", () => {
     const api = createLocalApi(rpcClientMock as never);
 
     await api.persistence.setClientSettings({
+      ...DEFAULT_CLIENT_SETTINGS,
       extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
@@ -689,6 +698,7 @@ describe("wsApi", () => {
     );
 
     await expect(api.persistence.getClientSettings()).resolves.toEqual({
+      ...DEFAULT_CLIENT_SETTINGS,
       extendedTraceMode: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,

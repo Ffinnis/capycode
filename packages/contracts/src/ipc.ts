@@ -27,6 +27,10 @@ import type {
   GitStatusResult,
 } from "./git";
 import type {
+  ProjectListDirectoryInput,
+  ProjectListDirectoryResult,
+  ProjectReadFileInput,
+  ProjectReadFileResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileInput,
@@ -83,6 +87,7 @@ import type {
 import type { EnvironmentId } from "./baseSchemas";
 import { EditorId } from "./editor";
 import { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings";
+import type { NotificationSoundId } from "./notificationSounds";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -161,6 +166,26 @@ export interface DesktopServerExposureState {
   advertisedHost: string | null;
 }
 
+export interface DesktopNotificationRequest {
+  kind: "completion" | "attention";
+  environmentId: EnvironmentId;
+  threadId: string;
+  projectName: string;
+  workspaceName: string | null;
+  threadTitle: string;
+  dedupeKey: string;
+}
+
+export interface DesktopNotificationAction {
+  environmentId: EnvironmentId;
+  threadId: string;
+}
+
+export interface CustomNotificationSoundImportResult {
+  canceled: boolean;
+  sound: ClientSettings["customNotificationSound"];
+}
+
 export interface DesktopBridge {
   getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
   getClientSettings: () => Promise<ClientSettings | null>;
@@ -188,6 +213,14 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  showDesktopNotification: (input: DesktopNotificationRequest) => Promise<void>;
+  onDesktopNotificationAction: (listener: (input: DesktopNotificationAction) => void) => () => void;
+  previewNotificationSound: (input: {
+    soundId: NotificationSoundId;
+    volume?: number;
+  }) => Promise<void>;
+  stopNotificationSoundPreview: () => Promise<void>;
+  importCustomNotificationSound: () => Promise<CustomNotificationSoundImportResult>;
 }
 
 /**
@@ -259,6 +292,8 @@ export interface EnvironmentApi {
     onEvent: (callback: (event: TerminalEvent) => void) => () => void;
   };
   projects: {
+    listDirectory: (input: ProjectListDirectoryInput) => Promise<ProjectListDirectoryResult>;
+    readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
   };

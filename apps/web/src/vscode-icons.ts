@@ -170,6 +170,7 @@ export function getVscodeIconUrlForEntry(
   pathValue: string,
   kind: "file" | "directory",
   theme: "light" | "dark",
+  _isOpen = false,
 ): string {
   const definitionKey =
     kind === "directory"

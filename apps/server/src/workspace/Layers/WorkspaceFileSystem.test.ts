@@ -50,6 +50,114 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 });
 
 it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
+  describe("listDirectory", () => {
+    it.effect("lists direct children with directories first", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "z-last.ts", "export const z = true;\n");
+        yield* writeTextFile(cwd, "src/alpha.ts", "export const alpha = true;\n");
+        yield* writeTextFile(cwd, "src/nested/beta.ts", "export const beta = true;\n");
+
+        const result = yield* workspaceFileSystem.listDirectory({ cwd });
+
+        expect(result.entries).toEqual([
+          { path: "src", name: "src", kind: "directory" },
+          { path: "z-last.ts", name: "z-last.ts", kind: "file" },
+        ]);
+      }),
+    );
+
+    it.effect("rejects traversal outside the workspace root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+
+        const error = yield* workspaceFileSystem
+          .listDirectory({
+            cwd,
+            relativePath: "../escape",
+          })
+          .pipe(Effect.flip);
+
+        expect(error.message).toContain(
+          "Workspace file path must be relative to the project root: ../escape",
+        );
+      }),
+    );
+  });
+
+  describe("readFile", () => {
+    it.effect("returns text previews for UTF-8 files", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/preview.ts", "export const preview = true;\n");
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "src/preview.ts",
+        });
+
+        expect(result).toEqual({
+          relativePath: "src/preview.ts",
+          kind: "text",
+          contents: "export const preview = true;\n",
+          sizeBytes: 29,
+          truncated: false,
+        });
+      }),
+    );
+
+    it.effect("classifies binary files without returning contents", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "assets"), { recursive: true }).pipe(
+          Effect.orDie,
+        );
+        yield* fileSystem
+          .writeFile(path.join(cwd, "assets", "logo.bin"), Uint8Array.from([0, 255, 10]))
+          .pipe(Effect.orDie);
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "assets/logo.bin",
+        });
+
+        expect(result).toEqual({
+          relativePath: "assets/logo.bin",
+          kind: "binary",
+          sizeBytes: 3,
+          truncated: false,
+        });
+      }),
+    );
+
+    it.effect("marks files above the preview cap as too_large", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "logs/big.log", "0123456789");
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "logs/big.log",
+          maxBytes: 5,
+        });
+
+        expect(result).toEqual({
+          relativePath: "logs/big.log",
+          kind: "too_large",
+          sizeBytes: 10,
+          truncated: true,
+        });
+      }),
+    );
+  });
+
   describe("writeFile", () => {
     it.effect("writes files relative to the workspace root", () =>
       Effect.gen(function* () {

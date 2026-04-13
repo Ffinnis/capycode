@@ -42,11 +42,16 @@ describe("parseDiffRouteSearch", () => {
   it("drops turn and file values when diff is closed", () => {
     const parsed = parseDiffRouteSearch({
       diff: "0",
+      files: "1",
       diffTurnId: "turn-1",
       diffFilePath: "src/app.ts",
+      file: "src/file.ts",
     });
 
-    expect(parsed).toEqual({});
+    expect(parsed).toEqual({
+      files: "1",
+      file: "src/file.ts",
+    });
   });
 
   it("drops file value when turn is not selected", () => {
@@ -63,12 +68,15 @@ describe("parseDiffRouteSearch", () => {
   it("normalizes whitespace-only values", () => {
     const parsed = parseDiffRouteSearch({
       diff: "1",
+      files: "1",
       diffTurnId: "  ",
       diffFilePath: "  ",
+      file: "  ",
     });
 
     expect(parsed).toEqual({
       diff: "1",
+      files: "1",
     });
   });
 });
