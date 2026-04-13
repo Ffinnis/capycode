@@ -115,9 +115,9 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
-        yield* fileSystem.makeDirectory(path.join(cwd, "assets"), { recursive: true }).pipe(
-          Effect.orDie,
-        );
+        yield* fileSystem
+          .makeDirectory(path.join(cwd, "assets"), { recursive: true })
+          .pipe(Effect.orDie);
         yield* fileSystem
           .writeFile(path.join(cwd, "assets", "logo.bin"), Uint8Array.from([0, 255, 10]))
           .pipe(Effect.orDie);

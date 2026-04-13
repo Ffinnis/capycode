@@ -322,9 +322,9 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
-                  ...(payload.title !== undefined ? { title: payload.title } : {}),
-                  ...(payload.workspaceId !== undefined ? { workspaceId: payload.workspaceId } : {}),
-                  ...(payload.modelSelection !== undefined
+            ...(payload.title !== undefined ? { title: payload.title } : {}),
+            ...(payload.workspaceId !== undefined ? { workspaceId: payload.workspaceId } : {}),
+            ...(payload.modelSelection !== undefined
               ? { modelSelection: payload.modelSelection }
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),

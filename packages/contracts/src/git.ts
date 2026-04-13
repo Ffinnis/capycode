@@ -207,12 +207,7 @@ export const GitGetCommitFilesInput = Schema.Struct({
 });
 export type GitGetCommitFilesInput = typeof GitGetCommitFilesInput.Type;
 
-export const GitDiffCategory = Schema.Literals([
-  "against-base",
-  "staged",
-  "unstaged",
-  "committed",
-]);
+export const GitDiffCategory = Schema.Literals(["against-base", "staged", "unstaged", "committed"]);
 export type GitDiffCategory = typeof GitDiffCategory.Type;
 
 export const GitGetFileDiffInput = Schema.Struct({

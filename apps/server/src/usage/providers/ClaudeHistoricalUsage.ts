@@ -89,9 +89,11 @@ async function collectSessionFiles(rootPath: string): Promise<Array<string>> {
   return results;
 }
 
-export async function readClaudeHistoricalUsage(input: {
-  readonly rootPath?: string;
-} = {}): Promise<ClaudeHistoricalUsageResult> {
+export async function readClaudeHistoricalUsage(
+  input: {
+    readonly rootPath?: string;
+  } = {},
+): Promise<ClaudeHistoricalUsageResult> {
   const configuredRoot =
     input.rootPath ??
     process.env.CLAUDE_CONFIG_DIR ??

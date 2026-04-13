@@ -50,7 +50,10 @@ function LimitRow(props: { label: string; window: ProviderRateWindow | null }) {
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-border/80">
         <div
-          className={cn("h-full rounded-full transition-[width,background-color] duration-300", limitTone(props.window))}
+          className={cn(
+            "h-full rounded-full transition-[width,background-color] duration-300",
+            limitTone(props.window),
+          )}
           style={{ width: `${usedPercent}%` }}
         />
       </div>
@@ -70,7 +73,10 @@ export function ProviderLimitsButton(props: { provider: ProviderKind }) {
     [props.provider, snapshot],
   );
   const [open, setOpen] = useState(false);
-  const providerQuery = useProviderLimits(props.provider, { enabled: open, range: DEFAULT_USAGE_RANGE });
+  const providerQuery = useProviderLimits(props.provider, {
+    enabled: open,
+    range: DEFAULT_USAGE_RANGE,
+  });
   const provider = providerQuery.provider ?? providerFromSnapshot;
   const primaryLimitWindow = primaryWindow(provider);
   const Icon = providerIcon[props.provider];

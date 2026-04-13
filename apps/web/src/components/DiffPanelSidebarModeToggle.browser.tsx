@@ -13,9 +13,8 @@ const { settingsRef, updateSettingsSpy, openDiffSpy } = vi.hoisted(() => ({
 }));
 
 vi.mock("~/hooks/useSettings", () => ({
-  useSettings: vi.fn(
-    (selector?: (settings: { diffPanelMode: "iterations" | "git" }) => unknown) =>
-      selector ? selector(settingsRef.current) : settingsRef.current,
+  useSettings: vi.fn((selector?: (settings: { diffPanelMode: "iterations" | "git" }) => unknown) =>
+    selector ? selector(settingsRef.current) : settingsRef.current,
   ),
   useUpdateSettings: vi.fn(() => ({
     updateSettings: (patch: Partial<typeof settingsRef.current>) => {

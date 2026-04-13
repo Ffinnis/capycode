@@ -1,14 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  statSync,
-  unlinkSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { copyFile, rename, unlink } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 
@@ -178,7 +171,9 @@ export async function importCustomNotificationSoundFromPath(input: {
   const destinationPath = join(soundsDir, destinationFilename);
   const tempPath = join(soundsDir, `.tmp-${randomUUID()}${sourceExtension}`);
 
-  if (normalizePathForComparison(input.sourcePath) === normalizePathForComparison(destinationPath)) {
+  if (
+    normalizePathForComparison(input.sourcePath) === normalizePathForComparison(destinationPath)
+  ) {
     return {
       name: sanitizeDisplayName(basename(input.sourcePath)),
       storedFilename: destinationFilename,
@@ -215,12 +210,10 @@ export async function importCustomNotificationSoundFromPath(input: {
 }
 
 export class NotificationSoundPreviewController {
-  private currentSession:
-    | {
-        id: number;
-        process: ChildProcess | null;
-      }
-    | null = null;
+  private currentSession: {
+    id: number;
+    process: ChildProcess | null;
+  } | null = null;
 
   private nextSessionId = 0;
 

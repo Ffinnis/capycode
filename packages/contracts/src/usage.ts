@@ -84,7 +84,9 @@ export const UsageSessionSummary = Schema.Struct({
   provider: ProviderKind,
   models: Schema.Array(TrimmedNonEmptyString),
   totals: UsageTotals,
-  projectPath: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  projectPath: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type UsageSessionSummary = typeof UsageSessionSummary.Type;
 

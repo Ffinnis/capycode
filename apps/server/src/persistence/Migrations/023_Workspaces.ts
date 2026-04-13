@@ -6,9 +6,7 @@ export default Effect.gen(function* () {
   const threadColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(projection_threads)
   `;
-  const hasWorkspaceIdColumn = threadColumns.some(
-    (column) => column.name === "workspace_id",
-  );
+  const hasWorkspaceIdColumn = threadColumns.some((column) => column.name === "workspace_id");
   const hasBranchColumn = threadColumns.some((column) => column.name === "branch");
 
   yield* sql`

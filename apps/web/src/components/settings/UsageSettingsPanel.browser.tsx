@@ -18,9 +18,8 @@ vi.mock("../../localApi", () => ({
 }));
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
-    "@tanstack/react-router",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
     useNavigate: () => navigateMock,
@@ -147,7 +146,9 @@ function createSnapshot(): UsageDashboardSnapshot {
         sessions: [],
         lastHistoricalRefreshAt: "2026-04-12T00:00:00.000Z",
         lastLimitsRefreshAt: null,
-        warnings: ["No live quota snapshot yet. Start one turn with this provider to populate live limits."],
+        warnings: [
+          "No live quota snapshot yet. Start one turn with this provider to populate live limits.",
+        ],
       },
     ],
     fetchedAt: "2026-04-12T00:05:00.000Z",
@@ -190,7 +191,13 @@ describe("UsageSettingsPanel", () => {
     await expect.element(page.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
     await expect.element(page.getByText("Model breakdown").first()).toBeInTheDocument();
     await expect.element(page.getByText("Recent sessions").first()).toBeInTheDocument();
-    await expect.element(page.getByText("No live quota snapshot yet. Start one turn with this provider to populate live limits.")).toBeInTheDocument();
+    await expect
+      .element(
+        page.getByText(
+          "No live quota snapshot yet. Start one turn with this provider to populate live limits.",
+        ),
+      )
+      .toBeInTheDocument();
 
     await page.getByRole("button", { name: "Refresh" }).click();
 

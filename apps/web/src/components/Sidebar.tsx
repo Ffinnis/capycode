@@ -1050,33 +1050,32 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
   );
 });
 
-interface WorkspaceRowProps
-  extends Pick<
-    SidebarProjectThreadListProps,
-    | "activeRouteThreadKey"
-    | "threadJumpLabelByKey"
-    | "appSettingsConfirmThreadArchive"
-    | "renamingThreadKey"
-    | "renamingTitle"
-    | "setRenamingTitle"
-    | "renamingInputRef"
-    | "renamingCommittedRef"
-    | "confirmingArchiveThreadKey"
-    | "setConfirmingArchiveThreadKey"
-    | "confirmArchiveButtonRefs"
-    | "attachThreadListAutoAnimateRef"
-    | "handleThreadClick"
-    | "navigateToThread"
-    | "handleMultiSelectContextMenu"
-    | "handleThreadContextMenu"
-    | "clearSelection"
-    | "commitRename"
-    | "cancelRename"
-    | "attemptArchiveThread"
-    | "openPrLink"
-    | "expandThreadListForProject"
-    | "collapseThreadListForProject"
-  > {
+interface WorkspaceRowProps extends Pick<
+  SidebarProjectThreadListProps,
+  | "activeRouteThreadKey"
+  | "threadJumpLabelByKey"
+  | "appSettingsConfirmThreadArchive"
+  | "renamingThreadKey"
+  | "renamingTitle"
+  | "setRenamingTitle"
+  | "renamingInputRef"
+  | "renamingCommittedRef"
+  | "confirmingArchiveThreadKey"
+  | "setConfirmingArchiveThreadKey"
+  | "confirmArchiveButtonRefs"
+  | "attachThreadListAutoAnimateRef"
+  | "handleThreadClick"
+  | "navigateToThread"
+  | "handleMultiSelectContextMenu"
+  | "handleThreadContextMenu"
+  | "clearSelection"
+  | "commitRename"
+  | "cancelRename"
+  | "attemptArchiveThread"
+  | "openPrLink"
+  | "expandThreadListForProject"
+  | "collapseThreadListForProject"
+> {
   workspace: SidebarWorkspaceSnapshot;
   project: SidebarProjectSnapshot;
   workspaceExpanded: boolean;
@@ -1567,7 +1566,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const activeProjectWorkspace = useStore(
     useMemo(
       () => (state: import("../store").AppState) =>
-        selectActiveWorkspaceForProjectRef(state, scopeProjectRef(project.environmentId, project.id)),
+        selectActiveWorkspaceForProjectRef(
+          state,
+          scopeProjectRef(project.environmentId, project.id),
+        ),
       [project.environmentId, project.id],
     ),
   );
@@ -1667,10 +1669,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   }, []);
 
   const requestSidebarContextMenu = useCallback(
-    <T extends string>(
-      items: readonly ContextMenuItem<T>[],
-      position: { x: number; y: number },
-    ) =>
+    <T extends string>(items: readonly ContextMenuItem<T>[], position: { x: number; y: number }) =>
       new Promise<T | null>((resolve) => {
         sidebarContextMenuResolverRef.current?.(null);
         sidebarContextMenuResolverRef.current = resolve as (value: string | null) => void;
@@ -1754,7 +1753,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ...workspace,
           workspaceKey: scopedWorkspaceKey(workspace.environmentId, workspace.id),
           projectKey: project.projectKey,
-          environmentLabel: workspace.environmentId === project.environmentId ? null : workspace.environmentId,
+          environmentLabel:
+            workspace.environmentId === project.environmentId ? null : workspace.environmentId,
         }))
         .toSorted((left, right) => {
           if (left.environmentId !== right.environmentId) {
@@ -1775,7 +1775,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ...section,
           sectionKey: scopedWorkspaceKey(section.environmentId, section.id),
           projectKey: project.projectKey,
-          environmentLabel: section.environmentId === project.environmentId ? null : section.environmentId,
+          environmentLabel:
+            section.environmentId === project.environmentId ? null : section.environmentId,
         }))
         .toSorted((left, right) => {
           if (left.environmentId !== right.environmentId) {
@@ -1792,10 +1793,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const workspaceByScopedId = useMemo(
     () =>
       new Map(
-        workspaceSnapshots.map((workspace) => [
-          scopedWorkspaceKey(workspace.environmentId, workspace.id),
-          workspace,
-        ] as const),
+        workspaceSnapshots.map(
+          (workspace) =>
+            [scopedWorkspaceKey(workspace.environmentId, workspace.id), workspace] as const,
+        ),
       ),
     [workspaceSnapshots],
   );
@@ -1811,7 +1812,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   }, [workspaceSnapshots]);
   const activeWorkspaceKey = useMemo(() => {
     const routeThread = activeRouteThreadKey
-      ? sidebarThreadByKey.get(activeRouteThreadKey) ?? null
+      ? (sidebarThreadByKey.get(activeRouteThreadKey) ?? null)
       : null;
     const routeWorkspaceId = routeThread?.workspaceId ?? null;
     if (routeWorkspaceId) {
@@ -1842,9 +1843,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         workspaceByScopedId.has(scopedWorkspaceKey(thread.environmentId, thread.workspaceId))
           ? workspaceByScopedId.get(scopedWorkspaceKey(thread.environmentId, thread.workspaceId))
               ?.workspaceKey
-          : defaultWorkspaceKeyByProjectIdentity.get(
-              `${thread.environmentId}:${thread.projectId}`,
-            );
+          : defaultWorkspaceKeyByProjectIdentity.get(`${thread.environmentId}:${thread.projectId}`);
       if (!workspaceKey) {
         continue;
       }
@@ -1881,7 +1880,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       }
     }
     for (const workspaces of next.values()) {
-      workspaces.sort((left, right) => left.tabOrder - right.tabOrder || left.name.localeCompare(right.name));
+      workspaces.sort(
+        (left, right) => left.tabOrder - right.tabOrder || left.name.localeCompare(right.name),
+      );
     }
     return next;
   }, [workspaceSnapshots]);
@@ -1902,7 +1903,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             tabOrder: workspace.tabOrder,
             workspace,
           })),
-      ].toSorted((left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key)),
+      ].toSorted(
+        (left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key),
+      ),
     [workspaceSections, workspaceSnapshots],
   );
 
@@ -2108,10 +2111,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
 
   const moveWorkspaceToSection = useCallback(
-    async (
-      workspace: SidebarWorkspaceSnapshot,
-      sectionId: WorkspaceSectionId | null,
-    ) => {
+    async (workspace: SidebarWorkspaceSnapshot, sectionId: WorkspaceSectionId | null) => {
       const api = readEnvironmentApi(workspace.environmentId);
       if (!api) {
         throw new Error("Workspace API unavailable.");
@@ -2156,7 +2156,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [project.environmentId, project.id, refreshWorkspaceSnapshot],
   );
   const reorderSectionWorkspaceChildren = useCallback(
-    async (section: SidebarWorkspaceSectionSnapshot, workspaces: readonly SidebarWorkspaceSnapshot[]) => {
+    async (
+      section: SidebarWorkspaceSectionSnapshot,
+      workspaces: readonly SidebarWorkspaceSnapshot[],
+    ) => {
       const api = readEnvironmentApi(section.environmentId);
       if (!api) {
         throw new Error("Workspace API unavailable.");
@@ -2475,7 +2478,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (!localApi) {
         throw new Error("Workspace actions unavailable.");
       }
-      const preview = await ensureEnvironmentApi(workspace.environmentId).workspaces.getDeletePreview({
+      const preview = await ensureEnvironmentApi(
+        workspace.environmentId,
+      ).workspaces.getDeletePreview({
         workspaceId: workspace.id,
       });
       const confirmed = await localApi.dialogs.confirm(
@@ -3018,19 +3023,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         ? workspaceThreads
         : workspaceThreads.slice(0, THREAD_PREVIEW_LIMIT);
     const hiddenThreadStatus = resolveProjectStatusIndicator(
-      workspaceThreads
-        .slice(renderedWorkspaceThreads.length)
-        .map((thread) =>
-          resolveThreadStatusPill({
-            thread: {
-              ...thread,
-              lastVisitedAt:
-                useUiStateStore.getState().threadLastVisitedAtById[
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-                ],
-            },
-          }),
-        ),
+      workspaceThreads.slice(renderedWorkspaceThreads.length).map((thread) =>
+        resolveThreadStatusPill({
+          thread: {
+            ...thread,
+            lastVisitedAt:
+              useUiStateStore.getState().threadLastVisitedAtById[
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+              ],
+          },
+        }),
+      ),
     );
 
     return (
@@ -3264,14 +3267,16 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                           type="button"
                           className="flex h-6 w-full items-center gap-2 px-3 pl-8 pb-1 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-foreground"
                           onClick={() => {
-                            void setSectionCollapsed(section, !section.isCollapsed).catch((error) => {
-                              toastManager.add({
-                                type: "error",
-                                title: "Failed to update section",
-                                description:
-                                  error instanceof Error ? error.message : "An error occurred.",
-                              });
-                            });
+                            void setSectionCollapsed(section, !section.isCollapsed).catch(
+                              (error) => {
+                                toastManager.add({
+                                  type: "error",
+                                  title: "Failed to update section",
+                                  description:
+                                    error instanceof Error ? error.message : "An error occurred.",
+                                });
+                              },
+                            );
                           }}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -3281,7 +3286,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                                   { id: "rename", label: "Rename section" },
                                   {
                                     id: section.isCollapsed ? "expand" : "collapse",
-                                    label: section.isCollapsed ? "Expand section" : "Collapse section",
+                                    label: section.isCollapsed
+                                      ? "Expand section"
+                                      : "Collapse section",
                                   },
                                   { id: "color:none", label: "Clear color" },
                                   { id: "color:red", label: "Red" },
@@ -3309,7 +3316,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                                 }
                                 if (typeof clicked === "string" && clicked.startsWith("color:")) {
                                   const nextColor = clicked.slice("color:".length);
-                                  await setSectionColor(section, nextColor === "none" ? null : nextColor);
+                                  await setSectionColor(
+                                    section,
+                                    nextColor === "none" ? null : nextColor,
+                                  );
                                   return;
                                 }
                                 if (clicked === "delete") {
@@ -3336,7 +3346,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                         </button>
                         {!section.isCollapsed ? (
                           <SortableContext
-                            items={sectionWorkspaces.map((workspace) => workspaceSortableId(workspace))}
+                            items={sectionWorkspaces.map((workspace) =>
+                              workspaceSortableId(workspace),
+                            )}
                             strategy={verticalListSortingStrategy}
                           >
                             {sectionWorkspaces.map((workspace) => (
@@ -3508,9 +3520,7 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
 });
 
 function CapycodeWordmark() {
-  return (
-    <span className="text-sm font-semibold tracking-tight text-foreground">Capycode</span>
-  );
+  return <span className="text-sm font-semibold tracking-tight text-foreground">Capycode</span>;
 }
 
 type SortableHandleProps = Pick<
@@ -4389,13 +4399,10 @@ export default function Sidebar() {
     [reorderProjects, sidebarProjectSortOrder, sidebarProjects, updateSettings],
   );
 
-  const handleProjectDragStart = useCallback(
-    (_event: DragStartEvent) => {
-      dragInProgressRef.current = true;
-      suppressProjectClickAfterDragRef.current = true;
-    },
-    [],
-  );
+  const handleProjectDragStart = useCallback((_event: DragStartEvent) => {
+    dragInProgressRef.current = true;
+    suppressProjectClickAfterDragRef.current = true;
+  }, []);
 
   const handleProjectDragCancel = useCallback((_event: DragCancelEvent) => {
     dragInProgressRef.current = false;
@@ -4464,7 +4471,9 @@ export default function Sidebar() {
           );
           return (physicalToLogicalKey.get(physicalKey) ?? physicalKey) === project.projectKey;
         });
-        const routeThread = routeThreadKey ? sidebarThreadByKey.get(routeThreadKey) ?? null : null;
+        const routeThread = routeThreadKey
+          ? (sidebarThreadByKey.get(routeThreadKey) ?? null)
+          : null;
         const activeWorkspace =
           (routeThread?.workspaceId
             ? projectWorkspaceEntries.find(

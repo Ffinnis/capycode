@@ -240,7 +240,9 @@ function buildChangedFiles(input: {
 }
 
 function dedupeStrings(values: ReadonlyArray<string | null | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value && value.length > 0)))];
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value && value.length > 0))),
+  ];
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -1408,94 +1410,90 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     );
   });
 
-  const getReviewStatus: GitCoreShape["getReviewStatus"] = Effect.fn("getReviewStatus")(
-    function* (input: GitReviewStatusInput) {
-      const details = yield* statusDetailsLocal(input.cwd);
-      if (!details.isRepo) {
-        return {
-          isRepo: false,
-          branch: null,
-          baseBranch: null,
-          baseBranchOptions: [],
-          againstBase: [],
-          staged: [],
-          unstaged: [],
-        };
-      }
-
-      const baseBranch = yield* resolveReviewBaseBranch(
-        input.cwd,
-        details.branch,
-        input.baseBranch,
-      );
-      const baseBranchOptions = yield* listReviewBaseBranchOptions(
-        input.cwd,
-        details.branch,
-        baseBranch,
-        input.baseBranch,
-      );
-      const untrackedFiles = yield* listUntrackedFiles(input.cwd);
-
-      const [againstBase, staged, unstagedTracked] = yield* Effect.all(
-        [
-          baseBranch
-            ? readChangedFilesFromArgs(
-                "GitCore.getReviewStatus.againstBase",
-                input.cwd,
-                [
-                  "diff",
-                  "--name-status",
-                  "--find-renames",
-                  "--find-copies-harder",
-                  `${baseBranch}...HEAD`,
-                ],
-                ["diff", "--numstat", `${baseBranch}...HEAD`],
-              )
-            : Effect.succeed([] as ReadonlyArray<GitChangedFile>),
-          readChangedFilesFromArgs(
-            "GitCore.getReviewStatus.staged",
-            input.cwd,
-            ["diff", "--cached", "--name-status", "--find-renames", "--find-copies-harder"],
-            ["diff", "--cached", "--numstat"],
-          ),
-          readChangedFilesFromArgs(
-            "GitCore.getReviewStatus.unstaged",
-            input.cwd,
-            ["diff", "--name-status", "--find-renames", "--find-copies-harder"],
-            ["diff", "--numstat"],
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
-
-      const unstaged = buildChangedFiles({
-        nameStatusEntries: unstagedTracked.map((file) => ({
-          path: file.path,
-          ...(file.oldPath ? { oldPath: file.oldPath } : {}),
-          status: file.status,
-        })),
-        numstatEntries: unstagedTracked.map((file) => ({
-          path: file.path,
-          insertions: file.additions,
-          deletions: file.deletions,
-        })),
-        extraFiles: untrackedFiles.map((path) => ({
-          path,
-          status: "untracked" as const,
-        })),
-      });
-
+  const getReviewStatus: GitCoreShape["getReviewStatus"] = Effect.fn("getReviewStatus")(function* (
+    input: GitReviewStatusInput,
+  ) {
+    const details = yield* statusDetailsLocal(input.cwd);
+    if (!details.isRepo) {
       return {
-        isRepo: true,
-        branch: details.branch,
-        baseBranch,
-        baseBranchOptions,
-        againstBase: [...againstBase],
-        staged: [...staged],
-        unstaged: [...unstaged],
+        isRepo: false,
+        branch: null,
+        baseBranch: null,
+        baseBranchOptions: [],
+        againstBase: [],
+        staged: [],
+        unstaged: [],
       };
-    },
-  );
+    }
+
+    const baseBranch = yield* resolveReviewBaseBranch(input.cwd, details.branch, input.baseBranch);
+    const baseBranchOptions = yield* listReviewBaseBranchOptions(
+      input.cwd,
+      details.branch,
+      baseBranch,
+      input.baseBranch,
+    );
+    const untrackedFiles = yield* listUntrackedFiles(input.cwd);
+
+    const [againstBase, staged, unstagedTracked] = yield* Effect.all(
+      [
+        baseBranch
+          ? readChangedFilesFromArgs(
+              "GitCore.getReviewStatus.againstBase",
+              input.cwd,
+              [
+                "diff",
+                "--name-status",
+                "--find-renames",
+                "--find-copies-harder",
+                `${baseBranch}...HEAD`,
+              ],
+              ["diff", "--numstat", `${baseBranch}...HEAD`],
+            )
+          : Effect.succeed([] as ReadonlyArray<GitChangedFile>),
+        readChangedFilesFromArgs(
+          "GitCore.getReviewStatus.staged",
+          input.cwd,
+          ["diff", "--cached", "--name-status", "--find-renames", "--find-copies-harder"],
+          ["diff", "--cached", "--numstat"],
+        ),
+        readChangedFilesFromArgs(
+          "GitCore.getReviewStatus.unstaged",
+          input.cwd,
+          ["diff", "--name-status", "--find-renames", "--find-copies-harder"],
+          ["diff", "--numstat"],
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const unstaged = buildChangedFiles({
+      nameStatusEntries: unstagedTracked.map((file) => ({
+        path: file.path,
+        ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+        status: file.status,
+      })),
+      numstatEntries: unstagedTracked.map((file) => ({
+        path: file.path,
+        insertions: file.additions,
+        deletions: file.deletions,
+      })),
+      extraFiles: untrackedFiles.map((path) => ({
+        path,
+        status: "untracked" as const,
+      })),
+    });
+
+    return {
+      isRepo: true,
+      branch: details.branch,
+      baseBranch,
+      baseBranchOptions,
+      againstBase: [...againstBase],
+      staged: [...staged],
+      unstaged: [...unstaged],
+    };
+  });
 
   const listCommitsAheadOfBase: GitCoreShape["listCommitsAheadOfBase"] = Effect.fn(
     "listCommitsAheadOfBase",
@@ -1549,24 +1547,23 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     };
   });
 
-  const getCommitFiles: GitCoreShape["getCommitFiles"] = Effect.fn("getCommitFiles")(function* (
-    cwd,
-    commitHash,
-  ) {
-    return yield* readChangedFilesFromArgs(
-      "GitCore.getCommitFiles",
-      cwd,
-      [
-        "show",
-        "--format=",
-        "--name-status",
-        "--find-renames",
-        "--find-copies-harder",
-        commitHash,
-      ],
-      ["show", "--format=", "--numstat", commitHash],
-    );
-  });
+  const getCommitFiles: GitCoreShape["getCommitFiles"] = Effect.fn("getCommitFiles")(
+    function* (cwd, commitHash) {
+      return yield* readChangedFilesFromArgs(
+        "GitCore.getCommitFiles",
+        cwd,
+        [
+          "show",
+          "--format=",
+          "--name-status",
+          "--find-renames",
+          "--find-copies-harder",
+          commitHash,
+        ],
+        ["show", "--format=", "--numstat", commitHash],
+      );
+    },
+  );
 
   const getFileDiff: GitCoreShape["getFileDiff"] = Effect.fn("getFileDiff")(function* (
     input: GitGetFileDiffInput,

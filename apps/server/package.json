@@ -33,11 +33,11 @@
     "open": "^10.1.0"
   },
   "devDependencies": {
-    "@effect/language-service": "catalog:",
-    "@effect/vitest": "catalog:",
     "@capycode/contracts": "workspace:*",
     "@capycode/shared": "workspace:*",
     "@capycode/web": "workspace:*",
+    "@effect/language-service": "catalog:",
+    "@effect/vitest": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "tsdown": "catalog:",

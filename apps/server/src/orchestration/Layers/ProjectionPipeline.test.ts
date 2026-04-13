@@ -172,41 +172,41 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   );
 });
 
-it.layer(
-  Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-explicit-workspace-")),
-)("OrchestrationProjectionPipeline", (it) => {
-  it.effect("hydrates thread branch and worktree path from an explicit workspace", () =>
-    Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
-      const eventStore = yield* OrchestrationEventStore;
-      const sql = yield* SqlClient.SqlClient;
-      const now = new Date().toISOString();
-      const workspaceId = WorkspaceId.make("workspace-explicit");
-      const worktreeId = "worktree-explicit";
-      const worktreePath = "/tmp/project-explicit/worktrees/feature-explicit";
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-explicit-workspace-")))(
+  "OrchestrationProjectionPipeline",
+  (it) => {
+    it.effect("hydrates thread branch and worktree path from an explicit workspace", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const now = new Date().toISOString();
+        const workspaceId = WorkspaceId.make("workspace-explicit");
+        const worktreeId = "worktree-explicit";
+        const worktreePath = "/tmp/project-explicit/worktrees/feature-explicit";
 
-      yield* eventStore.append({
-        type: "project.created",
-        eventId: EventId.make("evt-explicit-workspace-1"),
-        aggregateKind: "project",
-        aggregateId: ProjectId.make("project-explicit"),
-        occurredAt: now,
-        commandId: CommandId.make("cmd-explicit-workspace-1"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-explicit-workspace-1"),
-        metadata: {},
-        payload: {
-          projectId: ProjectId.make("project-explicit"),
-          title: "Project Explicit Workspace",
-          workspaceRoot: "/tmp/project-explicit",
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
+        yield* eventStore.append({
+          type: "project.created",
+          eventId: EventId.make("evt-explicit-workspace-1"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-explicit"),
+          occurredAt: now,
+          commandId: CommandId.make("cmd-explicit-workspace-1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-explicit-workspace-1"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-explicit"),
+            title: "Project Explicit Workspace",
+            workspaceRoot: "/tmp/project-explicit",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
 
-      yield* sql`
+        yield* sql`
         INSERT INTO worktrees (
           id,
           project_id,
@@ -227,7 +227,7 @@ it.layer(
         )
       `;
 
-      yield* sql`
+        yield* sql`
         INSERT INTO workspaces (
           id,
           project_id,
@@ -260,40 +260,40 @@ it.layer(
         )
       `;
 
-      yield* eventStore.append({
-        type: "thread.created",
-        eventId: EventId.make("evt-explicit-workspace-2"),
-        aggregateKind: "thread",
-        aggregateId: ThreadId.make("thread-explicit-workspace"),
-        occurredAt: now,
-        commandId: CommandId.make("cmd-explicit-workspace-2"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-explicit-workspace-2"),
-        metadata: {},
-        payload: {
-          threadId: ThreadId.make("thread-explicit-workspace"),
-          projectId: ProjectId.make("project-explicit"),
-          workspaceId,
-          title: "Thread Explicit Workspace",
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-explicit-workspace-2"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-explicit-workspace"),
+          occurredAt: now,
+          commandId: CommandId.make("cmd-explicit-workspace-2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-explicit-workspace-2"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-explicit-workspace"),
+            projectId: ProjectId.make("project-explicit"),
+            workspaceId,
+            title: "Thread Explicit Workspace",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
           },
-          runtimeMode: "full-access",
-          branch: null,
-          worktreePath: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
+        });
 
-      yield* projectionPipeline.bootstrap;
+        yield* projectionPipeline.bootstrap;
 
-      const rows = yield* sql<{
-        readonly workspaceId: string | null;
-        readonly branch: string | null;
-        readonly worktreePath: string | null;
-      }>`
+        const rows = yield* sql<{
+          readonly workspaceId: string | null;
+          readonly branch: string | null;
+          readonly worktreePath: string | null;
+        }>`
         SELECT
           workspace_id AS "workspaceId",
           branch,
@@ -301,99 +301,100 @@ it.layer(
         FROM projection_threads
         WHERE thread_id = 'thread-explicit-workspace'
       `;
-      assert.deepEqual(rows, [
-        {
-          workspaceId: "workspace-explicit",
-          branch: "feature/explicit",
-          worktreePath,
-        },
-      ]);
-    }),
-  );
-});
-
-it.layer(
-  Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-workspace-rehome-")),
-)("OrchestrationProjectionPipeline", (it) => {
-  it.effect("re-resolves workspace identity when a thread changes branch or worktree path", () =>
-    Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
-      const eventStore = yield* OrchestrationEventStore;
-      const sql = yield* SqlClient.SqlClient;
-      const now = new Date().toISOString();
-      const later = new Date(Date.now() + 1_000).toISOString();
-      const rehomePath = "/tmp/project-rehome/worktrees/feature-rehome";
-
-      yield* eventStore.append({
-        type: "project.created",
-        eventId: EventId.make("evt-workspace-rehome-1"),
-        aggregateKind: "project",
-        aggregateId: ProjectId.make("project-rehome"),
-        occurredAt: now,
-        commandId: CommandId.make("cmd-workspace-rehome-1"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-workspace-rehome-1"),
-        metadata: {},
-        payload: {
-          projectId: ProjectId.make("project-rehome"),
-          title: "Project Rehome",
-          workspaceRoot: "/tmp/project-rehome",
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-
-      yield* eventStore.append({
-        type: "thread.created",
-        eventId: EventId.make("evt-workspace-rehome-2"),
-        aggregateKind: "thread",
-        aggregateId: ThreadId.make("thread-rehome"),
-        occurredAt: now,
-        commandId: CommandId.make("cmd-workspace-rehome-2"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-workspace-rehome-2"),
-        metadata: {},
-        payload: {
-          threadId: ThreadId.make("thread-rehome"),
-          projectId: ProjectId.make("project-rehome"),
-          title: "Thread Rehome",
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
+        assert.deepEqual(rows, [
+          {
+            workspaceId: "workspace-explicit",
+            branch: "feature/explicit",
+            worktreePath,
           },
-          runtimeMode: "full-access",
-          branch: "main",
-          worktreePath: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
+        ]);
+      }),
+    );
+  },
+);
 
-      yield* eventStore.append({
-        type: "thread.meta-updated",
-        eventId: EventId.make("evt-workspace-rehome-3"),
-        aggregateKind: "thread",
-        aggregateId: ThreadId.make("thread-rehome"),
-        occurredAt: later,
-        commandId: CommandId.make("cmd-workspace-rehome-3"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-workspace-rehome-3"),
-        metadata: {},
-        payload: {
-          threadId: ThreadId.make("thread-rehome"),
-          branch: "feature/rehome",
-          worktreePath: rehomePath,
-          updatedAt: later,
-        },
-      });
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-workspace-rehome-")))(
+  "OrchestrationProjectionPipeline",
+  (it) => {
+    it.effect("re-resolves workspace identity when a thread changes branch or worktree path", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const now = new Date().toISOString();
+        const later = new Date(Date.now() + 1_000).toISOString();
+        const rehomePath = "/tmp/project-rehome/worktrees/feature-rehome";
 
-      yield* projectionPipeline.bootstrap;
+        yield* eventStore.append({
+          type: "project.created",
+          eventId: EventId.make("evt-workspace-rehome-1"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-rehome"),
+          occurredAt: now,
+          commandId: CommandId.make("cmd-workspace-rehome-1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-workspace-rehome-1"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-rehome"),
+            title: "Project Rehome",
+            workspaceRoot: "/tmp/project-rehome",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
 
-      const worktreeWorkspaceRows = yield* sql<{
-        readonly workspaceId: string;
-      }>`
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-workspace-rehome-2"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-rehome"),
+          occurredAt: now,
+          commandId: CommandId.make("cmd-workspace-rehome-2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-workspace-rehome-2"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-rehome"),
+            projectId: ProjectId.make("project-rehome"),
+            title: "Thread Rehome",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: "main",
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.meta-updated",
+          eventId: EventId.make("evt-workspace-rehome-3"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-rehome"),
+          occurredAt: later,
+          commandId: CommandId.make("cmd-workspace-rehome-3"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-workspace-rehome-3"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-rehome"),
+            branch: "feature/rehome",
+            worktreePath: rehomePath,
+            updatedAt: later,
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const worktreeWorkspaceRows = yield* sql<{
+          readonly workspaceId: string;
+        }>`
         SELECT workspaces.id AS "workspaceId"
         FROM workspaces
         JOIN worktrees
@@ -404,11 +405,11 @@ it.layer(
         LIMIT 1
       `;
 
-      const threadRows = yield* sql<{
-        readonly workspaceId: string | null;
-        readonly branch: string | null;
-        readonly worktreePath: string | null;
-      }>`
+        const threadRows = yield* sql<{
+          readonly workspaceId: string | null;
+          readonly branch: string | null;
+          readonly worktreePath: string | null;
+        }>`
         SELECT
           workspace_id AS "workspaceId",
           branch,
@@ -417,17 +418,18 @@ it.layer(
         WHERE thread_id = 'thread-rehome'
       `;
 
-      assert.equal(worktreeWorkspaceRows.length, 1);
-      assert.deepEqual(threadRows, [
-        {
-          workspaceId: worktreeWorkspaceRows[0]!.workspaceId,
-          branch: "feature/rehome",
-          worktreePath: rehomePath,
-        },
-      ]);
-    }),
-  );
-});
+        assert.equal(worktreeWorkspaceRows.length, 1);
+        assert.deepEqual(threadRows, [
+          {
+            workspaceId: worktreeWorkspaceRows[0]!.workspaceId,
+            branch: "feature/rehome",
+            worktreePath: rehomePath,
+          },
+        ]);
+      }),
+    );
+  },
+);
 
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
   "OrchestrationProjectionPipeline",

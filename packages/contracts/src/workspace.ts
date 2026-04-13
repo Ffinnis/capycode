@@ -153,8 +153,7 @@ export const WorkspaceSectionToggleCollapsedInput = Schema.Struct({
   sectionId: WorkspaceSectionId,
   isCollapsed: Schema.Boolean,
 });
-export type WorkspaceSectionToggleCollapsedInput =
-  typeof WorkspaceSectionToggleCollapsedInput.Type;
+export type WorkspaceSectionToggleCollapsedInput = typeof WorkspaceSectionToggleCollapsedInput.Type;
 
 export const WorkspaceProjectChildOrderItem = Schema.Union([
   Schema.Struct({
@@ -172,8 +171,7 @@ export const WorkspaceReorderProjectChildrenInput = Schema.Struct({
   projectId: ProjectId,
   orderedItems: Schema.Array(WorkspaceProjectChildOrderItem),
 });
-export type WorkspaceReorderProjectChildrenInput =
-  typeof WorkspaceReorderProjectChildrenInput.Type;
+export type WorkspaceReorderProjectChildrenInput = typeof WorkspaceReorderProjectChildrenInput.Type;
 
 export const WorkspaceReorderSectionWorkspacesInput = Schema.Struct({
   sectionId: WorkspaceSectionId,

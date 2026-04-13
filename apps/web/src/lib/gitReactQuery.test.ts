@@ -221,7 +221,10 @@ describe("git review query options", () => {
       gitQueryKeys.reviewStatus(ENVIRONMENT_A, "/repo/a", "main"),
       REVIEW_STATUS_RESULT,
     );
-    queryClient.setQueryData(gitQueryKeys.commits(ENVIRONMENT_A, "/repo/a", "main"), COMMITS_RESULT);
+    queryClient.setQueryData(
+      gitQueryKeys.commits(ENVIRONMENT_A, "/repo/a", "main"),
+      COMMITS_RESULT,
+    );
     queryClient.setQueryData(
       gitQueryKeys.reviewStatus(ENVIRONMENT_B, "/repo/b", "main"),
       REVIEW_STATUS_RESULT,

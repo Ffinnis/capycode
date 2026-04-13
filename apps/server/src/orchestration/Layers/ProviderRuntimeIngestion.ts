@@ -131,12 +131,7 @@ function reasoningActivityId(
       ? `summary:${event.payload.summaryIndex ?? 0}`
       : "main";
   return EventId.make(
-    [
-      "reasoning",
-      event.threadId,
-      reasoningActivityIdentity(event),
-      summaryKey,
-    ].join(":"),
+    ["reasoning", event.threadId, reasoningActivityIdentity(event), summaryKey].join(":"),
   );
 }
 

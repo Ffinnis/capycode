@@ -71,7 +71,8 @@ function readClaudeSubscriptionLabel(
   credentials: ClaudeOAuthCredentials | null,
   accountState: ClaudeLocalAccountState | null,
 ): string | null {
-  const subscriptionHint = `${credentials?.subscriptionType ?? ""} ${credentials?.rateLimitTier ?? ""}`.toLowerCase();
+  const subscriptionHint =
+    `${credentials?.subscriptionType ?? ""} ${credentials?.rateLimitTier ?? ""}`.toLowerCase();
   if (subscriptionHint.includes("enterprise")) return "Claude Enterprise";
   if (subscriptionHint.includes("team")) return "Claude Team";
   if (subscriptionHint.includes("pro")) return "Claude Pro";
@@ -93,13 +94,15 @@ function toIdentity(
   };
 }
 
-function readKeychainSecret(input: {
-  readonly keychainServiceName: string;
-}): string | null {
-  const result = spawnSync("security", ["find-generic-password", "-s", input.keychainServiceName, "-w"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
+function readKeychainSecret(input: { readonly keychainServiceName: string }): string | null {
+  const result = spawnSync(
+    "security",
+    ["find-generic-password", "-s", input.keychainServiceName, "-w"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  );
   if (result.status !== 0) {
     return null;
   }
@@ -167,10 +170,7 @@ async function readClaudeAccountState(homeDir: string): Promise<ClaudeLocalAccou
   }
 }
 
-async function fetchClaudeUsage(
-  accessToken: string,
-  fetchFn: typeof fetch,
-): Promise<unknown> {
+async function fetchClaudeUsage(accessToken: string, fetchFn: typeof fetch): Promise<unknown> {
   const response = await fetchFn("https://api.anthropic.com/api/oauth/usage", {
     method: "GET",
     headers: {

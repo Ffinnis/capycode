@@ -56,7 +56,11 @@ export function WorkspaceShell(props: {
       const delta = moveEvent.clientX - startX;
       if (target === "files") {
         setFilesPanelWidth(
-          clamp(startFilesWidth + delta, FILES_PANEL_MIN_WIDTH, Math.min(FILES_PANEL_MAX_WIDTH, maxFiles)),
+          clamp(
+            startFilesWidth - delta,
+            FILES_PANEL_MIN_WIDTH,
+            Math.min(FILES_PANEL_MAX_WIDTH, maxFiles),
+          ),
         );
         return;
       }
@@ -104,8 +108,13 @@ export function WorkspaceShell(props: {
   }
 
   return (
-    <div ref={wrapperRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      <div className="min-w-0 flex-1">{props.main}</div>
+    <div
+      ref={wrapperRef}
+      className="flex h-dvh max-h-dvh min-h-0 min-w-0 flex-1 items-stretch overflow-hidden bg-background"
+    >
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {props.main}
+      </div>
       {props.filesOpen ? (
         <>
           <button
@@ -115,7 +124,7 @@ export function WorkspaceShell(props: {
             onPointerDown={(event) => beginResize("files", event)}
           />
           <aside
-            className={cn("min-h-0 shrink-0 overflow-hidden")}
+            className={cn("flex h-full min-h-0 shrink-0 flex-col overflow-hidden")}
             style={{ width: `${filesPanelWidth}px` }}
           >
             {props.filesPanel}
@@ -131,7 +140,7 @@ export function WorkspaceShell(props: {
             onPointerDown={(event) => beginResize("context", event)}
           />
           <aside
-            className="min-h-0 shrink-0 overflow-hidden"
+            className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
             style={{
               width: `${clamp(contextPanelWidth, CONTEXT_PANEL_MIN_WIDTH, maxContextWidth)}px`,
             }}

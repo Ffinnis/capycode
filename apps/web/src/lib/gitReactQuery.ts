@@ -30,11 +30,8 @@ export const gitQueryKeys = {
     cwd: string | null,
     baseBranch: string | null,
   ) => [...gitQueryKeys.scope(environmentId, cwd), "review-status", baseBranch] as const,
-  commits: (
-    environmentId: EnvironmentId | null,
-    cwd: string | null,
-    baseBranch: string | null,
-  ) => [...gitQueryKeys.scope(environmentId, cwd), "commits", baseBranch] as const,
+  commits: (environmentId: EnvironmentId | null, cwd: string | null, baseBranch: string | null) =>
+    [...gitQueryKeys.scope(environmentId, cwd), "commits", baseBranch] as const,
   commitFiles: (
     environmentId: EnvironmentId | null,
     cwd: string | null,

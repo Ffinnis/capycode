@@ -1246,7 +1246,9 @@ function applyEnvironmentOrchestrationEvent(
     case "thread.meta-updated":
       return updateThreadState(state, event.payload.threadId, (thread) => ({
         ...thread,
-        ...(event.payload.workspaceId !== undefined ? { workspaceId: event.payload.workspaceId } : {}),
+        ...(event.payload.workspaceId !== undefined
+          ? { workspaceId: event.payload.workspaceId }
+          : {}),
         ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: normalizeModelSelection(event.payload.modelSelection) }

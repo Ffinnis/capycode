@@ -672,6 +672,14 @@ function resolveBackendEntry(): string {
   return Path.join(resolveAppRoot(), "apps/server/dist/bin.mjs");
 }
 
+function resolveBackendSourceEntry(): string {
+  return Path.join(resolveAppRoot(), "apps/server/src/bin.ts");
+}
+
+function resolveBackendDevCwd(): string {
+  return Path.join(resolveAppRoot(), "apps/server");
+}
+
 function resolveBackendCwd(): string {
   if (!app.isPackaged) {
     return resolveAppRoot();
@@ -1282,25 +1290,38 @@ function startBackend(): void {
   if (isQuitting || backendProcess) return;
 
   backendObservabilitySettings = readPersistedBackendObservabilitySettings();
-  const backendEntry = resolveBackendEntry();
+  const isDevBackend = !app.isPackaged;
+  const backendEntry = isDevBackend ? resolveBackendSourceEntry() : resolveBackendEntry();
   if (!FS.existsSync(backendEntry)) {
     scheduleBackendRestart(`missing server entry at ${backendEntry}`);
     return;
   }
 
   const captureBackendLogs = app.isPackaged && backendLogSink !== null;
-  const child = ChildProcess.spawn(process.execPath, [backendEntry, "--bootstrap-fd", "3"], {
-    cwd: resolveBackendCwd(),
-    // In Electron main, process.execPath points to the Electron binary.
-    // Run the child in Node mode so this backend process does not become a GUI app instance.
-    env: {
-      ...backendChildEnv(),
-      ELECTRON_RUN_AS_NODE: "1",
-    },
-    stdio: captureBackendLogs
-      ? ["ignore", "pipe", "pipe", "pipe"]
-      : ["ignore", "inherit", "inherit", "pipe"],
-  });
+  const child = isDevBackend
+    ? ChildProcess.spawn(
+        process.env.BUN_BINARY?.trim() || "bun",
+        ["run", backendEntry, "--bootstrap-fd", "3"],
+        {
+          cwd: resolveBackendDevCwd(),
+          env: backendChildEnv(),
+          stdio: captureBackendLogs
+            ? ["ignore", "pipe", "pipe", "pipe"]
+            : ["ignore", "inherit", "inherit", "pipe"],
+        },
+      )
+    : ChildProcess.spawn(process.execPath, [backendEntry, "--bootstrap-fd", "3"], {
+        cwd: resolveBackendCwd(),
+        // In Electron main, process.execPath points to the Electron binary.
+        // Run the child in Node mode so this backend process does not become a GUI app instance.
+        env: {
+          ...backendChildEnv(),
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+        stdio: captureBackendLogs
+          ? ["ignore", "pipe", "pipe", "pipe"]
+          : ["ignore", "inherit", "inherit", "pipe"],
+      });
   const bootstrapStream = child.stdio[3];
   if (bootstrapStream && "write" in bootstrapStream) {
     bootstrapStream.write(

@@ -172,7 +172,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeTurnStartedAt,
         extendedTraceMode,
       }),
-    [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt, extendedTraceMode],
+    [
+      timelineEntries,
+      completionDividerBeforeEntryId,
+      isWorking,
+      activeTurnStartedAt,
+      extendedTraceMode,
+    ],
   );
 
   const firstUnvirtualizedRowIndex = useMemo(() => {

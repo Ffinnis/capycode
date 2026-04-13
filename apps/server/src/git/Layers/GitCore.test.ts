@@ -2385,13 +2385,17 @@ it.layer(TestLayer)("git integration", (it) => {
 
         yield* writeTextFile(
           path.join(tmp, "copy-source.txt"),
-          Array.from({ length: 20 }, (_, index) => `copy line ${index}`).join("\n").concat("\n"),
+          Array.from({ length: 20 }, (_, index) => `copy line ${index}`)
+            .join("\n")
+            .concat("\n"),
         );
         yield* git(tmp, ["add", "copy-source.txt"]);
         yield* git(tmp, ["commit", "-m", "add copy source"]);
         yield* writeTextFile(
           path.join(tmp, "copy-target.txt"),
-          Array.from({ length: 20 }, (_, index) => `copy line ${index}`).join("\n").concat("\n"),
+          Array.from({ length: 20 }, (_, index) => `copy line ${index}`)
+            .join("\n")
+            .concat("\n"),
         );
         yield* git(tmp, ["add", "copy-target.txt"]);
         yield* git(tmp, ["commit", "-m", "copy source file"]);
@@ -2405,51 +2409,53 @@ it.layer(TestLayer)("git integration", (it) => {
       }),
     );
 
-    it.effect("builds single-file patches for against-base, staged, unstaged, and committed views", () =>
-      Effect.gen(function* () {
-        const tmp = yield* makeTmpDir();
-        const gitCore = yield* GitCore;
-        const { initialBranch } = yield* initRepoWithCommit(tmp);
+    it.effect(
+      "builds single-file patches for against-base, staged, unstaged, and committed views",
+      () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          const gitCore = yield* GitCore;
+          const { initialBranch } = yield* initRepoWithCommit(tmp);
 
-        yield* git(tmp, ["checkout", "-b", "feature/review-diff"]);
-        yield* writeTextFile(path.join(tmp, "feature.txt"), "feature base\n");
-        yield* git(tmp, ["add", "feature.txt"]);
-        yield* git(tmp, ["commit", "-m", "add feature file"]);
-        const committedHash = yield* git(tmp, ["rev-parse", "HEAD"]);
+          yield* git(tmp, ["checkout", "-b", "feature/review-diff"]);
+          yield* writeTextFile(path.join(tmp, "feature.txt"), "feature base\n");
+          yield* git(tmp, ["add", "feature.txt"]);
+          yield* git(tmp, ["commit", "-m", "add feature file"]);
+          const committedHash = yield* git(tmp, ["rev-parse", "HEAD"]);
 
-        yield* writeTextFile(path.join(tmp, "staged.txt"), "staged patch\n");
-        yield* git(tmp, ["add", "staged.txt"]);
+          yield* writeTextFile(path.join(tmp, "staged.txt"), "staged patch\n");
+          yield* git(tmp, ["add", "staged.txt"]);
 
-        yield* writeTextFile(path.join(tmp, "unstaged.txt"), "unstaged patch\n");
+          yield* writeTextFile(path.join(tmp, "unstaged.txt"), "unstaged patch\n");
 
-        const againstBasePatch = yield* gitCore.getFileDiff({
-          cwd: tmp,
-          path: "feature.txt",
-          category: "against-base",
-          baseBranch: initialBranch,
-        });
-        const stagedPatch = yield* gitCore.getFileDiff({
-          cwd: tmp,
-          path: "staged.txt",
-          category: "staged",
-        });
-        const unstagedPatch = yield* gitCore.getFileDiff({
-          cwd: tmp,
-          path: "unstaged.txt",
-          category: "unstaged",
-        });
-        const committedPatch = yield* gitCore.getFileDiff({
-          cwd: tmp,
-          path: "feature.txt",
-          category: "committed",
-          commitHash: committedHash,
-        });
+          const againstBasePatch = yield* gitCore.getFileDiff({
+            cwd: tmp,
+            path: "feature.txt",
+            category: "against-base",
+            baseBranch: initialBranch,
+          });
+          const stagedPatch = yield* gitCore.getFileDiff({
+            cwd: tmp,
+            path: "staged.txt",
+            category: "staged",
+          });
+          const unstagedPatch = yield* gitCore.getFileDiff({
+            cwd: tmp,
+            path: "unstaged.txt",
+            category: "unstaged",
+          });
+          const committedPatch = yield* gitCore.getFileDiff({
+            cwd: tmp,
+            path: "feature.txt",
+            category: "committed",
+            commitHash: committedHash,
+          });
 
-        expect(againstBasePatch).toContain("feature.txt");
-        expect(stagedPatch).toContain("staged.txt");
-        expect(unstagedPatch).toContain("unstaged.txt");
-        expect(committedPatch).toContain("feature.txt");
-      }),
+          expect(againstBasePatch).toContain("feature.txt");
+          expect(stagedPatch).toContain("staged.txt");
+          expect(unstagedPatch).toContain("unstaged.txt");
+          expect(committedPatch).toContain("feature.txt");
+        }),
     );
   });
 });

@@ -1,13 +1,13 @@
-import type { ProviderKind, ProviderRateWindow, ProviderUsageDashboard, UsageRange } from "@capycode/contracts";
+import type {
+  ProviderKind,
+  ProviderRateWindow,
+  ProviderUsageDashboard,
+  UsageRange,
+} from "@capycode/contracts";
 import { DEFAULT_USAGE_RANGE } from "@capycode/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  BarChart3Icon,
-  BotIcon,
-  FeatherIcon,
-  RefreshCcwIcon,
-} from "lucide-react";
+import { BarChart3Icon, BotIcon, FeatherIcon, RefreshCcwIcon } from "lucide-react";
 import { startTransition, useMemo, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
@@ -81,7 +81,10 @@ function UsageLimitRow(props: { label: string; window: ProviderRateWindow | null
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-border/80">
         <div
-          className={cn("h-full rounded-full transition-[width,background-color] duration-300", limitTone(props.window))}
+          className={cn(
+            "h-full rounded-full transition-[width,background-color] duration-300",
+            limitTone(props.window),
+          )}
           style={{ width: `${usedPercent}%` }}
         />
       </div>
@@ -150,10 +153,7 @@ function smoothPath(points: Array<{ x: number; y: number }>): string {
   return d;
 }
 
-function UsageLineChart(props: {
-  buckets: ProviderUsageDashboard["buckets"];
-  range: string;
-}) {
+function UsageLineChart(props: { buckets: ProviderUsageDashboard["buckets"]; range: string }) {
   const { buckets } = props;
   if (buckets.length === 0) return null;
 
@@ -210,7 +210,8 @@ function UsageLineChart(props: {
           Usage over time
         </div>
         <div className="text-[11px] text-muted-foreground/70">
-          {buckets.length} periods · {props.range === "all" ? "all time" : props.range.toUpperCase()}
+          {buckets.length} periods ·{" "}
+          {props.range === "all" ? "all time" : props.range.toUpperCase()}
         </div>
       </div>
       <svg
@@ -241,9 +242,7 @@ function UsageLineChart(props: {
         ))}
 
         {/* Area fill */}
-        {areaPath ? (
-          <path d={areaPath} className="fill-foreground/[0.04]" />
-        ) : null}
+        {areaPath ? <path d={areaPath} className="fill-foreground/[0.04]" /> : null}
 
         {/* Line */}
         {linePath ? (
@@ -435,7 +434,9 @@ function UsageProviderSection(props: {
                   </div>
                   <div className="mt-0.5 flex items-baseline justify-between gap-3 text-[11px] text-muted-foreground">
                     <span className="truncate">{session.models.join(", ") || "Unknown model"}</span>
-                    <span className="shrink-0">{formatDateTime(session.startedAt, props.nowMs)}</span>
+                    <span className="shrink-0">
+                      {formatDateTime(session.startedAt, props.nowMs)}
+                    </span>
                   </div>
                 </div>
               ))}

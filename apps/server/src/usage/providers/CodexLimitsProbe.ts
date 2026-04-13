@@ -97,7 +97,9 @@ async function readJsonFile(filePath: string): Promise<Record<string, unknown> |
   }
 }
 
-function readCodexOAuthCredentials(payload: Record<string, unknown> | null): CodexOAuthCredentials | null {
+function readCodexOAuthCredentials(
+  payload: Record<string, unknown> | null,
+): CodexOAuthCredentials | null {
   const auth = payload as CodexAuthPayload | null;
   const tokens = asObject(auth?.tokens);
   const accessToken = readString(tokens?.access_token);
@@ -203,10 +205,15 @@ async function fetchCodexOAuthUsage(input: {
     );
   }
 
-  return (asObject((await response.json()) as CodexOAuthUsageResponse) ?? {}) as Record<string, unknown>;
+  return (asObject((await response.json()) as CodexOAuthUsageResponse) ?? {}) as Record<
+    string,
+    unknown
+  >;
 }
 
-export async function probeCodexLimits(input: CodexLimitsProbeInput): Promise<CodexLimitsProbeResult> {
+export async function probeCodexLimits(
+  input: CodexLimitsProbeInput,
+): Promise<CodexLimitsProbeResult> {
   const snapshot = await (input.probeDiscovery ?? probeCodexDiscovery)(input);
   const discoveredIdentity = toIdentity(snapshot);
   const appServerLimits = normalizeCodexRateWindows(snapshot.rateLimits, {

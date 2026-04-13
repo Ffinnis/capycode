@@ -305,12 +305,8 @@ export interface EnvironmentApi {
     delete: (input: WorkspaceDeleteInput) => Promise<void>;
     listOpenCandidates: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceOpenCandidates>;
     openMainRepo: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceRecord>;
-    openTrackedWorktree: (
-      input: WorkspaceOpenTrackedWorktreeInput,
-    ) => Promise<WorkspaceRecord>;
-    openExternalWorktree: (
-      input: WorkspaceOpenExternalWorktreeInput,
-    ) => Promise<WorkspaceRecord>;
+    openTrackedWorktree: (input: WorkspaceOpenTrackedWorktreeInput) => Promise<WorkspaceRecord>;
+    openExternalWorktree: (input: WorkspaceOpenExternalWorktreeInput) => Promise<WorkspaceRecord>;
     importAll: (input: WorkspaceImportAllInput) => Promise<WorkspaceRecord[]>;
     createSection: (input: WorkspaceSectionCreateInput) => Promise<WorkspaceSection>;
     renameSection: (input: WorkspaceSectionRenameInput) => Promise<WorkspaceSection>;
@@ -320,9 +316,7 @@ export interface EnvironmentApi {
       input: WorkspaceSectionToggleCollapsedInput,
     ) => Promise<WorkspaceSection>;
     reorderProjectChildren: (input: WorkspaceReorderProjectChildrenInput) => Promise<void>;
-    reorderSectionWorkspaces: (
-      input: WorkspaceReorderSectionWorkspacesInput,
-    ) => Promise<void>;
+    reorderSectionWorkspaces: (input: WorkspaceReorderSectionWorkspacesInput) => Promise<void>;
     moveToSection: (input: WorkspaceMoveToSectionInput) => Promise<WorkspaceRecord>;
   };
   git: {

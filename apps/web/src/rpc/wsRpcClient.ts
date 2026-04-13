@@ -73,9 +73,7 @@ export interface WsRpcClient {
     readonly listOpenCandidates: RpcUnaryMethod<typeof WS_METHODS.workspacesListOpenCandidates>;
     readonly openMainRepo: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenMainRepo>;
     readonly openTrackedWorktree: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenTrackedWorktree>;
-    readonly openExternalWorktree: RpcUnaryMethod<
-      typeof WS_METHODS.workspacesOpenExternalWorktree
-    >;
+    readonly openExternalWorktree: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenExternalWorktree>;
     readonly importAll: RpcUnaryMethod<typeof WS_METHODS.workspacesImportAll>;
     readonly createSection: RpcUnaryMethod<typeof WS_METHODS.workspacesCreateSection>;
     readonly renameSection: RpcUnaryMethod<typeof WS_METHODS.workspacesRenameSection>;
@@ -138,12 +136,12 @@ export interface WsRpcClient {
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
   };
   readonly usage: {
-    readonly getDashboard: (range?: UsageRange) => Promise<
-      Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageGetDashboard>>>
-    >;
-    readonly refreshDashboard: (range?: UsageRange) => Promise<
-      Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageRefreshDashboard>>>
-    >;
+    readonly getDashboard: (
+      range?: UsageRange,
+    ) => Promise<Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageGetDashboard>>>>;
+    readonly refreshDashboard: (
+      range?: UsageRange,
+    ) => Promise<Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageRefreshDashboard>>>>;
     readonly subscribe: RpcStreamMethod<typeof WS_METHODS.subscribeUsage>;
   };
   readonly orchestration: {

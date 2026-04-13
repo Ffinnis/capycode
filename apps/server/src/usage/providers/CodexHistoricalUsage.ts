@@ -118,9 +118,11 @@ async function collectSessionFiles(rootPath: string): Promise<Array<string>> {
   return results;
 }
 
-export async function readCodexHistoricalUsage(input: {
-  readonly rootPath?: string;
-} = {}): Promise<CodexHistoricalUsageResult> {
+export async function readCodexHistoricalUsage(
+  input: {
+    readonly rootPath?: string;
+  } = {},
+): Promise<CodexHistoricalUsageResult> {
   const rootPath = withHome(input.rootPath ?? path.join(OS.homedir(), ".codex", "sessions"));
   const sessionFiles = await collectSessionFiles(rootPath);
   if (sessionFiles.length === 0) {
@@ -202,7 +204,10 @@ export async function readCodexHistoricalUsage(input: {
       if (!nextUsage && totalTokenUsage) {
         if (previousTotalSnapshot) {
           nextUsage = {
-            inputTokens: Math.max(0, totalTokenUsage.inputTokens - previousTotalSnapshot.inputTokens),
+            inputTokens: Math.max(
+              0,
+              totalTokenUsage.inputTokens - previousTotalSnapshot.inputTokens,
+            ),
             cachedInputTokens: Math.max(
               0,
               totalTokenUsage.cachedInputTokens - previousTotalSnapshot.cachedInputTokens,
@@ -215,7 +220,10 @@ export async function readCodexHistoricalUsage(input: {
               0,
               totalTokenUsage.reasoningOutputTokens - previousTotalSnapshot.reasoningOutputTokens,
             ),
-            totalTokens: Math.max(0, totalTokenUsage.totalTokens - previousTotalSnapshot.totalTokens),
+            totalTokens: Math.max(
+              0,
+              totalTokenUsage.totalTokens - previousTotalSnapshot.totalTokens,
+            ),
           };
         } else {
           nextUsage = totalTokenUsage;

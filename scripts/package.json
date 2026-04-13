@@ -9,9 +9,9 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.77",
-    "@effect/platform-node": "catalog:",
     "@capycode/contracts": "workspace:*",
     "@capycode/shared": "workspace:*",
+    "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 import { type EnvironmentId } from "@capycode/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { projectListDirectoryQueryOptions } from "~/lib/projectReactQuery";
 import { getWorkspaceDockScopeState, useWorkspaceDockStore } from "~/workspaceDockStore";
@@ -33,11 +33,28 @@ export function useWorkspaceFileTree(input: {
     ),
   );
   const setDirectoryExpanded = useWorkspaceDockStore((state) => state.setDirectoryExpanded);
+  const rootDirectoryQuery = useQuery(
+    projectListDirectoryQueryOptions({
+      environmentId: input.environmentId,
+      cwd: input.cwd,
+      ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    }),
+  );
 
   useEffect(() => {
     setDirectoryEntriesByPath({});
     setLoadingDirectories({});
   }, [input.cwd, input.environmentId, input.scopeKey]);
+
+  useEffect(() => {
+    if (!rootDirectoryQuery.data) {
+      return;
+    }
+    setDirectoryEntriesByPath((current) => ({
+      ...current,
+      "": rootDirectoryQuery.data.entries,
+    }));
+  }, [rootDirectoryQuery.data]);
 
   const fetchDirectory = useCallback(
     async (relativePath?: string) => {
@@ -69,14 +86,6 @@ export function useWorkspaceFileTree(input: {
     },
     [directoryEntriesByPath, input.cwd, input.environmentId, queryClient],
   );
-
-  useEffect(() => {
-    if (!input.enabled || !input.environmentId || !input.cwd) {
-      return;
-    }
-    void fetchDirectory();
-  }, [fetchDirectory, input.cwd, input.enabled, input.environmentId]);
-
   const revealPath = useCallback(
     async (relativePath: string) => {
       if (!input.scopeKey) {
@@ -123,7 +132,8 @@ export function useWorkspaceFileTree(input: {
       entries: ReadonlyArray<{ path: string; name: string; kind: "file" | "directory" }>,
     ): WorkspaceFileTreeNode[] =>
       entries.map((entry) => {
-        const isExpanded = entry.kind === "directory" ? Boolean(expandedDirectories[entry.path]) : false;
+        const isExpanded =
+          entry.kind === "directory" ? Boolean(expandedDirectories[entry.path]) : false;
         return {
           ...entry,
           isExpanded,
@@ -139,7 +149,8 @@ export function useWorkspaceFileTree(input: {
   }, [directoryEntriesByPath, expandedDirectories, loadingDirectories]);
 
   return {
-    isLoadingRoot: Boolean(loadingDirectories[""]) && !directoryEntriesByPath[""],
+    isLoadingRoot: rootDirectoryQuery.isLoading || rootDirectoryQuery.isFetching,
+    rootError: rootDirectoryQuery.error,
     revealedFilePath: input.revealedFilePath,
     rootNodes: treeNodes,
     revealPath,

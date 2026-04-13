@@ -1,5 +1,9 @@
 import { scopeThreadRef } from "@capycode/client-runtime";
-import { type GitRunStackedActionResult, type GitStatusResult, ThreadId } from "@capycode/contracts";
+import {
+  type GitRunStackedActionResult,
+  type GitStatusResult,
+  ThreadId,
+} from "@capycode/contracts";
 import { page } from "vitest/browser";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -573,6 +577,120 @@ describe("GitActionsControl thread-scoped progress toast", () => {
           action: "commit_push_pr",
           commitMessage: "feat: selected files",
           filePaths: ["src/selected.ts"],
+        }),
+      );
+    } finally {
+      await screen.unmount();
+      host.remove();
+    }
+  });
+
+  it("renders and commits the explicit selected file scope even when live status is grouped differently", async () => {
+    statusRef.current = {
+      branch: BRANCH_NAME,
+      hasWorkingTreeChanges: true,
+      workingTree: {
+        files: [
+          {
+            path: "capycode/apps/desktop/resources/notification-sounds/",
+            insertions: 0,
+            deletions: 0,
+          },
+          { path: "capycode/apps/web/src/components/files/", insertions: 0, deletions: 0 },
+        ],
+        insertions: 0,
+        deletions: 0,
+      },
+      hasUpstream: true,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+      hasOriginRemote: true,
+      isRepo: true,
+      isDefaultBranch: false,
+    };
+    runStackedActionMutateAsyncSpy.mockResolvedValueOnce({
+      action: "commit_push_pr",
+      branch: { status: "skipped_not_requested" },
+      commit: {
+        status: "created",
+        commitSha: "abc123",
+        subject: "feat: selected files",
+      },
+      push: {
+        status: "pushed",
+        branch: BRANCH_NAME,
+        upstreamBranch: `origin/${BRANCH_NAME}`,
+        setUpstream: false,
+      },
+      pr: {
+        status: "created",
+        url: "https://example.com/pr/1",
+        number: 1,
+        baseBranch: "main",
+        headBranch: BRANCH_NAME,
+        title: "feat: selected files",
+      },
+      toast: {
+        title: "Committed",
+        description: "Created commit.",
+        cta: { kind: "none" },
+      },
+    } satisfies GitRunStackedActionResult);
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    const screen = await render(
+      <GitActionsControl
+        variant="panel"
+        gitCwd={GIT_CWD}
+        activeThreadRef={scopeThreadRef(ENVIRONMENT_A, SHARED_THREAD_ID)}
+        selectedFilePaths={[
+          "capycode/apps/desktop/resources/notification-sounds/agentisdonewoman.mp3",
+          "capycode/apps/web/src/components/files/FilePreviewPanel.tsx",
+        ]}
+        selectionSummary="Commit 2 selected files"
+        enableAmbientSync={false}
+      />,
+      { container: host },
+    );
+
+    try {
+      const quickActionButton = findButtonByText("Commit 2 selected files");
+      expect(quickActionButton).toBeTruthy();
+      if (!(quickActionButton instanceof HTMLButtonElement)) {
+        throw new Error('Unable to find button containing "Commit 2 selected files"');
+      }
+      quickActionButton.click();
+
+      await expect
+        .element(
+          page.getByText(
+            "capycode/apps/desktop/resources/notification-sounds/agentisdonewoman.mp3",
+          ),
+        )
+        .toBeInTheDocument();
+      await expect
+        .element(page.getByText("capycode/apps/web/src/components/files/FilePreviewPanel.tsx"))
+        .toBeInTheDocument();
+      await expect
+        .element(page.getByText(/^capycode\/apps\/desktop\/resources\/notification-sounds\/$/))
+        .not.toBeInTheDocument();
+
+      const submitButton = findLastButtonByText("Commit, push & PR");
+      expect(submitButton).toBeTruthy();
+      if (!(submitButton instanceof HTMLButtonElement)) {
+        throw new Error('Unable to find dialog button containing "Commit, push & PR"');
+      }
+      submitButton.click();
+
+      expect(runStackedActionMutateAsyncSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "commit_push_pr",
+          filePaths: [
+            "capycode/apps/desktop/resources/notification-sounds/agentisdonewoman.mp3",
+            "capycode/apps/web/src/components/files/FilePreviewPanel.tsx",
+          ],
         }),
       );
     } finally {

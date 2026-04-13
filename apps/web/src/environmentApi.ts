@@ -32,7 +32,8 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       openMainRepo: rpcClient.workspaces.openMainRepo,
       openTrackedWorktree: rpcClient.workspaces.openTrackedWorktree,
       openExternalWorktree: rpcClient.workspaces.openExternalWorktree,
-      importAll: (input) => rpcClient.workspaces.importAll(input).then((workspaces) => [...workspaces]),
+      importAll: (input) =>
+        rpcClient.workspaces.importAll(input).then((workspaces) => [...workspaces]),
       createSection: rpcClient.workspaces.createSection,
       renameSection: rpcClient.workspaces.renameSection,
       deleteSection: async (input) => {

@@ -1,9 +1,4 @@
-import type {
-  EnvironmentId,
-  ProjectListDirectoryResult,
-  ProjectReadFileResult,
-  ProjectSearchEntriesResult,
-} from "@capycode/contracts";
+import type { EnvironmentId, ProjectSearchEntriesResult } from "@capycode/contracts";
 import { queryOptions } from "@tanstack/react-query";
 import { ensureEnvironmentApi } from "~/environmentApi";
 
@@ -16,7 +11,8 @@ export const projectQueryKeys = {
     cwd: string | null,
     relativePath: string | null,
     maxBytes?: number,
-  ) => ["projects", "read-file", environmentId ?? null, cwd, relativePath, maxBytes ?? null] as const,
+  ) =>
+    ["projects", "read-file", environmentId ?? null, cwd, relativePath, maxBytes ?? null] as const,
   searchEntries: (
     environmentId: EnvironmentId | null,
     cwd: string | null,
@@ -28,9 +24,6 @@ export const projectQueryKeys = {
 const DEFAULT_SEARCH_ENTRIES_LIMIT = 80;
 const DEFAULT_SEARCH_ENTRIES_STALE_TIME = 15_000;
 const DEFAULT_READ_FILE_STALE_TIME = 15_000;
-const EMPTY_LIST_DIRECTORY_RESULT: ProjectListDirectoryResult = {
-  entries: [],
-};
 const EMPTY_SEARCH_ENTRIES_RESULT: ProjectSearchEntriesResult = {
   entries: [],
   truncated: false,
@@ -57,7 +50,7 @@ export function projectListDirectoryQueryOptions(input: {
     },
     enabled: (input.enabled ?? true) && input.environmentId !== null && input.cwd !== null,
     staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
-    placeholderData: (previous) => previous ?? EMPTY_LIST_DIRECTORY_RESULT,
+    retry: false,
   });
 }
 
@@ -93,6 +86,7 @@ export function projectReadFileQueryOptions(input: {
       input.cwd !== null &&
       input.relativePath !== null,
     staleTime: input.staleTime ?? DEFAULT_READ_FILE_STALE_TIME,
+    retry: false,
   });
 }
 
@@ -125,5 +119,6 @@ export function projectSearchEntriesQueryOptions(input: {
       input.query.length > 0,
     staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
     placeholderData: (previous) => previous ?? EMPTY_SEARCH_ENTRIES_RESULT,
+    retry: false,
   });
 }

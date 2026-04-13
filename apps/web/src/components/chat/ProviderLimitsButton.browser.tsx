@@ -71,9 +71,8 @@ vi.mock("../../rpc/usageState", () => ({
 }));
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
-    "@tanstack/react-router",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
     useNavigate: () => navigateMock,
@@ -124,9 +123,9 @@ describe("ProviderLimitsButton", () => {
       { container: host },
     );
 
-    await expect.element(page.getByRole("button", { name: "codex limits" })).toHaveTextContent(
-      "58% left",
-    );
+    await expect
+      .element(page.getByRole("button", { name: "codex limits" }))
+      .toHaveTextContent("58% left");
 
     await page.getByRole("button", { name: "codex limits" }).click();
 

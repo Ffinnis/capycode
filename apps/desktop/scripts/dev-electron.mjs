@@ -16,14 +16,10 @@ if (!Number.isInteger(port) || port <= 0) {
   throw new Error(`VITE_DEV_SERVER_URL must include an explicit port: ${devServerUrl}`);
 }
 
-const requiredFiles = [
-  "dist-electron/main.js",
-  "dist-electron/preload.js",
-  "../server/dist/bin.mjs",
-];
+const requiredFiles = ["dist-electron/main.js", "dist-electron/preload.js"];
 const watchedDirectories = [
   { directory: "dist-electron", files: new Set(["main.js", "preload.js"]) },
-  { directory: "../server/dist", files: new Set(["bin.mjs"]) },
+  { directory: "../server/src", files: null, recursive: true },
 ];
 const forcedShutdownTimeoutMs = 1_500;
 const restartDebounceMs = 120;
@@ -38,6 +34,7 @@ await waitForResources({
 
 const childEnv = { ...process.env };
 delete childEnv.ELECTRON_RUN_AS_NODE;
+childEnv.BUN_BINARY = process.execPath;
 
 let shuttingDown = false;
 let restartTimer = null;
@@ -164,9 +161,12 @@ function startWatchers() {
   for (const { directory, files } of watchedDirectories) {
     const watcher = watch(
       join(desktopDir, directory),
-      { persistent: true },
+      { persistent: true, recursive: true },
       (_eventType, filename) => {
-        if (typeof filename !== "string" || !files.has(filename)) {
+        if (typeof filename !== "string") {
+          return;
+        }
+        if (files && !files.has(filename)) {
           return;
         }
 

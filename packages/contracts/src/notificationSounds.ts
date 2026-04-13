@@ -139,7 +139,9 @@ export function isNotificationSoundId(value: string): value is NotificationSound
   return value === CUSTOM_NOTIFICATION_SOUND_ID || isBuiltInNotificationSoundId(value);
 }
 
-export function getNotificationSoundById(id: BuiltInNotificationSoundId): NotificationSoundDescriptor {
+export function getNotificationSoundById(
+  id: BuiltInNotificationSoundId,
+): NotificationSoundDescriptor {
   const sound = BUILT_IN_NOTIFICATION_SOUNDS.find((entry) => entry.id === id);
   if (!sound) {
     throw new Error(`Unknown notification sound: ${id}`);

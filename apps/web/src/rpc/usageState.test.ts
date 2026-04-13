@@ -69,6 +69,45 @@ describe("usageState", () => {
     expect(getUsageSnapshot()?.providers[0]?.lastLimitsRefreshAt).not.toBeNull();
   });
 
+  it("does not clobber an existing non-empty limits snapshot with an empty update", () => {
+    applyUsageEvent({
+      type: "snapshot",
+      snapshot: {
+        ...baseSnapshot,
+        providers: [
+          {
+            ...baseSnapshot.providers[0]!,
+            limits: [
+              {
+                kind: "rolling-5h",
+                usedPercent: 42,
+                remainingPercent: 58,
+                windowMinutes: 300,
+                resetsAt: "2026-04-12T05:00:00.000Z",
+                resetDescription: "Resets in 2h",
+                source: "codex-oauth-api",
+                stale: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    applyUsageEvent({
+      type: "limitsUpdated",
+      provider: "codex",
+      limits: [],
+    });
+
+    expect(getUsageSnapshot()?.providers[0]?.limits).toEqual([
+      expect.objectContaining({
+        kind: "rolling-5h",
+        usedPercent: 42,
+        source: "codex-oauth-api",
+      }),
+    ]);
+  });
+
   it("replaces the snapshot when a historical update provides one", () => {
     applyUsageEvent({ type: "snapshot", snapshot: baseSnapshot });
     applyUsageEvent({

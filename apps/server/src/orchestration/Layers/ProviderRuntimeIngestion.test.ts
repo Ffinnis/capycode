@@ -2300,12 +2300,10 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+      ),
     );
 
     const reasoningActivities = thread.activities.filter(
@@ -2377,12 +2375,10 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
-    const thread = await waitForThread(
-      harness.engine,
-      (entry) =>
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
-        ),
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "reasoning.updated",
+      ),
     );
 
     const reasoningActivities = thread.activities.filter(

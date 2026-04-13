@@ -49,7 +49,10 @@ export function applyUsageEvent(event: UsageStreamEvent): void {
         provider.provider === event.provider
           ? {
               ...provider,
-              limits: event.limits,
+              limits:
+                event.limits.length > 0 || provider.limits.length === 0
+                  ? event.limits
+                  : provider.limits,
               lastLimitsRefreshAt: new Date().toISOString(),
             }
           : provider,
@@ -71,7 +74,10 @@ export function applyUsageEvent(event: UsageStreamEvent): void {
   }
 }
 
-export function startUsageStateSync(client: UsageStateClient, queryClient: QueryClient): () => void {
+export function startUsageStateSync(
+  client: UsageStateClient,
+  queryClient: QueryClient,
+): () => void {
   return client.subscribe((event) => {
     applyUsageEvent(event);
     void queryClient.invalidateQueries({ queryKey: ["usage"] });

@@ -37,6 +37,8 @@ import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ServerConfig } from "../../config.ts";
+import { GitCore } from "../../git/Services/GitCore.ts";
+import { GitCoreLive } from "../../git/Layers/GitCore.ts";
 import {
   OrchestrationProjectionPipeline,
   type OrchestrationProjectionPipelineShape,
@@ -368,10 +370,25 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const gitCore = yield* GitCore;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;
+
+    const resolveProjectDefaultBranch = (workspaceRoot: string) =>
+      gitCore.listBranches({ cwd: workspaceRoot }).pipe(
+        Effect.map((result) => {
+          const localBranches = result.branches.filter((branch) => branch.isRemote !== true);
+          return (
+            localBranches.find((branch) => branch.isDefault)?.name ??
+            localBranches.find((branch) => branch.current)?.name ??
+            localBranches[0]?.name ??
+            "main"
+          );
+        }),
+        Effect.orElseSucceed(() => "main"),
+      );
 
     const resolveWorkspaceContextForThread = Effect.fn("resolveWorkspaceContextForThread")(
       function* (input: {
@@ -451,7 +468,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           WHERE project_id = ${input.projectId}
         `.pipe(
           Effect.mapError(
-            toPersistenceSqlError("ProjectionPipeline.resolveWorkspaceContextForThread:nextTabOrder"),
+            toPersistenceSqlError(
+              "ProjectionPipeline.resolveWorkspaceContextForThread:nextTabOrder",
+            ),
           ),
         );
         const nextTabOrder = nextTabOrderRow[0]?.nextTabOrder ?? 0;
@@ -592,7 +611,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             );
           }
         } else {
-          resolvedBranch = input.branch ?? "main";
+          if (input.branch !== null) {
+            resolvedBranch = input.branch;
+          } else {
+            const project = yield* projectionProjectRepository.getById({
+              projectId: input.projectId as never,
+            });
+            resolvedBranch = Option.isSome(project)
+              ? yield* resolveProjectDefaultBranch(project.value.workspaceRoot)
+              : "main";
+          }
           const existingWorkspaceRows = yield* sql<{
             readonly id: string;
           }>`
@@ -746,6 +774,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               existingDefaultWorkspaceRows[0]?.workspaceId ?? crypto.randomUUID();
 
             if (existingDefaultWorkspaceRows.length === 0) {
+              const defaultBranch = yield* resolveProjectDefaultBranch(event.payload.workspaceRoot);
               yield* sql`
                 INSERT INTO workspaces (
                   id,
@@ -767,8 +796,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                   ${event.payload.projectId},
                   NULL,
                   'branch',
-                  'main',
-                  'main',
+                  ${defaultBranch},
+                  ${defaultBranch},
                   0,
                   1,
                   ${event.payload.createdAt},
@@ -1746,6 +1775,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   OrchestrationProjectionPipeline,
   makeOrchestrationProjectionPipeline(),
 ).pipe(
+  Layer.provideMerge(GitCoreLive),
   Layer.provideMerge(ProjectionProjectRepositoryLive),
   Layer.provideMerge(ProjectionThreadRepositoryLive),
   Layer.provideMerge(ProjectionThreadMessageRepositoryLive),

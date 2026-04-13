@@ -14,24 +14,25 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|---------------|
-| `apps/web/src/hooks/useTheme.ts` (modify) | Add `colorScheme` state, `data-theme` attribute management, localStorage persistence |
-| `apps/web/src/index.css` (modify) | Add `[data-theme="capybara"]` and `[data-theme="capybara"] @variant dark` CSS variable blocks |
-| `apps/web/src/lib/capybaraShikiLight.ts` (new) | Shiki TextMate theme definition for capybara-light |
-| `apps/web/src/lib/capybaraShikiDark.ts` (new) | Shiki TextMate theme definition for capybara-dark |
-| `apps/web/src/lib/diffRendering.ts` (modify) | Extend theme name resolution to support color schemes |
-| `apps/web/src/components/ChatMarkdown.tsx` (modify) | Pass color scheme to theme resolution, register capybara Shiki themes |
-| `apps/web/src/components/DiffWorkerPoolProvider.tsx` (modify) | Pass color scheme to theme resolution |
-| `apps/web/src/components/DiffPanel.tsx` (modify) | Pass color scheme to theme resolution |
-| `apps/web/src/components/ThreadTerminalDrawer.tsx` (modify) | Add capybara terminal ANSI color palette |
-| `apps/web/src/components/settings/SettingsPanels.tsx` (modify) | Add "Color scheme" select to settings UI |
+| File                                                           | Responsibility                                                                                |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `apps/web/src/hooks/useTheme.ts` (modify)                      | Add `colorScheme` state, `data-theme` attribute management, localStorage persistence          |
+| `apps/web/src/index.css` (modify)                              | Add `[data-theme="capybara"]` and `[data-theme="capybara"] @variant dark` CSS variable blocks |
+| `apps/web/src/lib/capybaraShikiLight.ts` (new)                 | Shiki TextMate theme definition for capybara-light                                            |
+| `apps/web/src/lib/capybaraShikiDark.ts` (new)                  | Shiki TextMate theme definition for capybara-dark                                             |
+| `apps/web/src/lib/diffRendering.ts` (modify)                   | Extend theme name resolution to support color schemes                                         |
+| `apps/web/src/components/ChatMarkdown.tsx` (modify)            | Pass color scheme to theme resolution, register capybara Shiki themes                         |
+| `apps/web/src/components/DiffWorkerPoolProvider.tsx` (modify)  | Pass color scheme to theme resolution                                                         |
+| `apps/web/src/components/DiffPanel.tsx` (modify)               | Pass color scheme to theme resolution                                                         |
+| `apps/web/src/components/ThreadTerminalDrawer.tsx` (modify)    | Add capybara terminal ANSI color palette                                                      |
+| `apps/web/src/components/settings/SettingsPanels.tsx` (modify) | Add "Color scheme" select to settings UI                                                      |
 
 ---
 
 ### Task 1: Extend useTheme hook with colorScheme state
 
 **Files:**
+
 - Modify: `apps/web/src/hooks/useTheme.ts`
 
 - [ ] **Step 1: Add ColorScheme type and storage constants**
@@ -225,6 +226,7 @@ data-theme attribute management, and flash prevention on module load."
 ### Task 2: Add Capybara CSS variable overrides to index.css
 
 **Files:**
+
 - Modify: `apps/web/src/index.css`
 
 - [ ] **Step 1: Add capybara light CSS variables**
@@ -234,61 +236,61 @@ After the closing `}` of the `:root { ... }` block (line 127), add the capybara 
 ```css
 [data-theme="capybara"] {
   color-scheme: light;
-  --background: #FAF6F0;
+  --background: #faf6f0;
   --app-chrome-background: var(--background);
-  --foreground: #3D2B1F;
-  --card: #F5EDE3;
-  --card-foreground: #3D2B1F;
-  --popover: #FFFFFF;
-  --popover-foreground: #3D2B1F;
+  --foreground: #3d2b1f;
+  --card: #f5ede3;
+  --card-foreground: #3d2b1f;
+  --popover: #ffffff;
+  --popover-foreground: #3d2b1f;
   --primary: oklch(0.52 0.12 75);
-  --primary-foreground: #FFFFFF;
+  --primary-foreground: #ffffff;
   --secondary: rgba(139, 105, 20, 0.08);
-  --secondary-foreground: #3D2B1F;
+  --secondary-foreground: #3d2b1f;
   --muted: rgba(139, 105, 20, 0.06);
-  --muted-foreground: #9C8B7A;
+  --muted-foreground: #9c8b7a;
   --accent: rgba(139, 105, 20, 0.08);
-  --accent-foreground: #3D2B1F;
-  --destructive: #D45050;
-  --destructive-foreground: #A03030;
+  --accent-foreground: #3d2b1f;
+  --destructive: #d45050;
+  --destructive-foreground: #a03030;
   --border: rgba(139, 105, 20, 0.12);
   --input: rgba(139, 105, 20, 0.15);
   --ring: oklch(0.52 0.12 75);
-  --info: #5A8FA0;
-  --info-foreground: #3D6B78;
-  --success: #6B9B5A;
-  --success-foreground: #4A7040;
-  --warning: #C4920A;
-  --warning-foreground: #8A6500;
+  --info: #5a8fa0;
+  --info-foreground: #3d6b78;
+  --success: #6b9b5a;
+  --success-foreground: #4a7040;
+  --warning: #c4920a;
+  --warning-foreground: #8a6500;
 
   @variant dark {
     color-scheme: dark;
-    --background: #1A130D;
+    --background: #1a130d;
     --app-chrome-background: var(--background);
-    --foreground: #E8DDD0;
-    --card: #241C14;
-    --card-foreground: #E8DDD0;
-    --popover: #261E15;
-    --popover-foreground: #E8DDD0;
-    --primary: oklch(0.72 0.10 75);
-    --primary-foreground: #1A130D;
+    --foreground: #e8ddd0;
+    --card: #241c14;
+    --card-foreground: #e8ddd0;
+    --popover: #261e15;
+    --popover-foreground: #e8ddd0;
+    --primary: oklch(0.72 0.1 75);
+    --primary-foreground: #1a130d;
     --secondary: rgba(196, 169, 125, 0.08);
-    --secondary-foreground: #E8DDD0;
+    --secondary-foreground: #e8ddd0;
     --muted: rgba(196, 169, 125, 0.06);
-    --muted-foreground: #7A6B5A;
+    --muted-foreground: #7a6b5a;
     --accent: rgba(196, 169, 125, 0.08);
-    --accent-foreground: #E8DDD0;
-    --destructive: #E07070;
-    --destructive-foreground: #E07070;
-    --border: rgba(196, 169, 125, 0.10);
+    --accent-foreground: #e8ddd0;
+    --destructive: #e07070;
+    --destructive-foreground: #e07070;
+    --border: rgba(196, 169, 125, 0.1);
     --input: rgba(196, 169, 125, 0.12);
-    --ring: oklch(0.72 0.10 75);
-    --info: #70A8B8;
-    --info-foreground: #70A8B8;
-    --success: #82B872;
-    --success-foreground: #82B872;
-    --warning: #E0A820;
-    --warning-foreground: #E0A820;
+    --ring: oklch(0.72 0.1 75);
+    --info: #70a8b8;
+    --info-foreground: #70a8b8;
+    --success: #82b872;
+    --success-foreground: #82b872;
+    --warning: #e0a820;
+    --warning-foreground: #e0a820;
   }
 }
 ```
@@ -314,6 +316,7 @@ and shifted semantic colors under [data-theme=capybara] selector."
 ### Task 3: Add Color Scheme selector to Settings UI
 
 **Files:**
+
 - Modify: `apps/web/src/components/settings/SettingsPanels.tsx`
 
 - [ ] **Step 1: Add COLOR_SCHEME_OPTIONS constant**
@@ -407,6 +410,7 @@ with reset button when non-default scheme is active."
 ### Task 4: Create Capybara Shiki themes and update diff rendering
 
 **Files:**
+
 - Create: `apps/web/src/lib/capybaraShikiLight.ts`
 - Create: `apps/web/src/lib/capybaraShikiDark.ts`
 - Modify: `apps/web/src/lib/diffRendering.ts`
@@ -621,6 +625,7 @@ earth-tone syntax colors. resolveDiffThemeName now accepts colorScheme."
 ### Task 5: Register Capybara Shiki themes and wire through ChatMarkdown
 
 **Files:**
+
 - Modify: `apps/web/src/components/ChatMarkdown.tsx`
 
 - [ ] **Step 1: Register capybara themes at module level**
@@ -704,6 +709,7 @@ theme name using both resolvedTheme and colorScheme."
 ### Task 6: Wire colorScheme through DiffPanel and DiffWorkerPoolProvider
 
 **Files:**
+
 - Modify: `apps/web/src/components/DiffPanel.tsx`
 - Modify: `apps/web/src/components/DiffWorkerPoolProvider.tsx`
 
@@ -758,13 +764,13 @@ There are 3 inner components that receive `resolvedTheme` as a prop. Add `colorS
 At line 1572, after `resolvedTheme={resolvedTheme as DiffThemeType}`, add:
 
 ```tsx
-colorScheme={colorScheme}
+colorScheme = { colorScheme };
 ```
 
 At line 1623, after `resolvedTheme={resolvedTheme as DiffThemeType}`, add:
 
 ```tsx
-colorScheme={colorScheme}
+colorScheme = { colorScheme };
 ```
 
 Also find where `IterationDiffView` and `GitDiffView` pass `resolvedTheme` to `PatchFileDiffList` (around lines 720-723 and 1039-1042) and add `colorScheme={props.colorScheme}` there too.
@@ -804,6 +810,7 @@ and GitDiffView so diffs use capybara syntax highlighting when active."
 ### Task 7: Add capybara terminal colors
 
 **Files:**
+
 - Modify: `apps/web/src/components/ThreadTerminalDrawer.tsx`
 
 - [ ] **Step 1: Add capybara terminal theme function**
@@ -883,25 +890,26 @@ const isCapybara = document.documentElement.getAttribute("data-theme") === "capy
 Then at the end of the function, before `return` for the dark branch (line 139) and the light branch (line 166), wrap with capybara override:
 
 For the dark branch, change:
+
 ```ts
-  return {
-    background,
-    foreground,
-    cursor: "rgb(180, 203, 255)",
-    // ... existing dark colors ...
-  };
+return {
+  background,
+  foreground,
+  cursor: "rgb(180, 203, 255)",
+  // ... existing dark colors ...
+};
 ```
 
 to:
 
 ```ts
-  const baseTheme: ITheme = {
-    background,
-    foreground,
-    cursor: "rgb(180, 203, 255)",
-    // ... existing dark colors stay the same ...
-  };
-  return isCapybara ? { ...baseTheme, ...capybaraTerminalColors(true) } : baseTheme;
+const baseTheme: ITheme = {
+  background,
+  foreground,
+  cursor: "rgb(180, 203, 255)",
+  // ... existing dark colors stay the same ...
+};
+return isCapybara ? { ...baseTheme, ...capybaraTerminalColors(true) } : baseTheme;
 ```
 
 Apply the same pattern to the light branch.

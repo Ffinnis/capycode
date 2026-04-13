@@ -1,6 +1,6 @@
 import { scopeProjectRef } from "@capycode/client-runtime";
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, startTransition, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
@@ -209,11 +209,11 @@ function ChatThreadRouteView() {
       const rest = stripDiffSearchParams(previous);
       return {
         ...rest,
-        ...(nextDiff ? { diff: nextDiff } : {}),
-        ...(nextFiles ? { files: nextFiles } : {}),
-        ...(nextDiffTurnId ? { diffTurnId: nextDiffTurnId } : {}),
-        ...(nextDiffFilePath ? { diffFilePath: nextDiffFilePath } : {}),
-        ...(nextFile ? { file: nextFile } : {}),
+        diff: nextDiff,
+        files: nextFiles,
+        diffTurnId: nextDiffTurnId,
+        diffFilePath: nextDiffFilePath,
+        file: nextFile,
       };
     },
     [],
@@ -223,16 +223,18 @@ function ChatThreadRouteView() {
     if (!threadRef) {
       return;
     }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      replace: true,
-      search: (previous) =>
-        updateWorkspaceSearch(previous, {
-          diff: undefined,
-          files: undefined,
-          file: undefined,
-        }),
+    startTransition(() => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(previous, {
+            diff: undefined,
+            files: undefined,
+            file: undefined,
+          }),
+      });
     });
   }, [navigate, threadRef, updateWorkspaceSearch]);
 
@@ -242,15 +244,17 @@ function ChatThreadRouteView() {
         return;
       }
       openWorkspaceDockFile(workspaceDockScopeKey, relativePath);
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
-        replace: true,
-        search: (previous) =>
-          updateWorkspaceSearch(previous, {
-            files: "1",
-            file: relativePath,
-          }),
+      startTransition(() => {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(threadRef),
+          replace: true,
+          search: (previous) =>
+            updateWorkspaceSearch(previous, {
+              files: "1",
+              file: relativePath,
+            }),
+        });
       });
     },
     [navigate, openWorkspaceDockFile, threadRef, updateWorkspaceSearch, workspaceDockScopeKey],
@@ -260,15 +264,17 @@ function ChatThreadRouteView() {
     if (!threadRef) {
       return;
     }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      replace: true,
-      search: (previous) =>
-        updateWorkspaceSearch(previous, {
-          files: filesOpen ? "1" : undefined,
-          file: undefined,
-        }),
+    startTransition(() => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(previous, {
+            files: filesOpen ? "1" : undefined,
+            file: undefined,
+          }),
+      });
     });
   }, [filesOpen, navigate, threadRef, updateWorkspaceSearch]);
 
@@ -294,19 +300,27 @@ function ChatThreadRouteView() {
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
-  const showDiffContext = diffOpen && workspaceDockState.activeContext === "diff";
-  const showFilePreview = Boolean(activeFilePath) && (!diffOpen || !showDiffContext);
-  const previewFilePath = showFilePreview ? activeFilePath : null;
-  const contextOpen = showDiffContext || showFilePreview;
+  const previewFilePath = activeFilePath;
+  const contextOpen = diffOpen;
   const sheetOpen = diffOpen || filesOpen || activeFilePath !== null;
 
   const main = (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+    <SidebarInset className="h-full min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <ChatView
         environmentId={threadRef.environmentId}
         threadId={threadRef.threadId}
         onDiffPanelOpen={markDiffOpened}
         routeKind="server"
+        workspaceSurfaceContent={
+          previewFilePath && activeWorkspaceRoot ? (
+            <FilePreviewPanel
+              environmentId={threadRef.environmentId}
+              cwd={activeWorkspaceRoot}
+              relativePath={previewFilePath}
+              variant="main"
+            />
+          ) : undefined
+        }
       />
     </SidebarInset>
   );
@@ -323,39 +337,35 @@ function ChatThreadRouteView() {
       />
     ) : undefined;
 
-  const contextPanel = showDiffContext ? (
+  const contextPanel = diffOpen ? (
     shouldRenderDiffContent ? (
       <LazyDiffPanel mode="sidebar" />
     ) : null
-  ) : previewFilePath && activeWorkspaceRoot ? (
-    <FilePreviewPanel
-      environmentId={threadRef.environmentId}
-      cwd={activeWorkspaceRoot}
-      relativePath={previewFilePath}
-    />
   ) : null;
 
-  const sheetContent: ReactNode = showDiffContext ? (
-    shouldRenderDiffContent ? (
-      <LazyDiffPanel mode="sheet" />
-    ) : null
-  ) : previewFilePath && activeWorkspaceRoot ? (
-    <FilePreviewPanel
-      environmentId={threadRef.environmentId}
-      cwd={activeWorkspaceRoot}
-      relativePath={previewFilePath}
-      onBack={closeFilePreview}
-    />
-  ) : filesOpen && activeWorkspaceRoot ? (
-    <FileTreePanel
-      environmentId={threadRef.environmentId}
-      cwd={activeWorkspaceRoot}
-      scopeKey={workspaceDockScopeKey}
-      selectedFilePath={activeFilePath}
-      resolvedTheme={resolvedTheme}
-      onOpenFile={openWorkspaceFile}
-    />
-  ) : null;
+  const sheetContent: ReactNode =
+    previewFilePath && activeWorkspaceRoot && workspaceDockState.activeContext !== "diff" ? (
+      <FilePreviewPanel
+        environmentId={threadRef.environmentId}
+        cwd={activeWorkspaceRoot}
+        relativePath={previewFilePath}
+        onBack={closeFilePreview}
+        variant="main"
+      />
+    ) : diffOpen && workspaceDockState.activeContext === "diff" ? (
+      shouldRenderDiffContent ? (
+        <LazyDiffPanel mode="sheet" />
+      ) : null
+    ) : filesOpen && activeWorkspaceRoot ? (
+      <FileTreePanel
+        environmentId={threadRef.environmentId}
+        cwd={activeWorkspaceRoot}
+        scopeKey={workspaceDockScopeKey}
+        selectedFilePath={activeFilePath}
+        resolvedTheme={resolvedTheme}
+        onOpenFile={openWorkspaceFile}
+      />
+    ) : null;
 
   return (
     <WorkspaceShell

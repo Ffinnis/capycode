@@ -250,7 +250,10 @@ export interface GitCoreShape {
   readonly listCommitsAheadOfBase: (
     cwd: string,
     baseBranch?: string,
-  ) => Effect.Effect<{ baseBranch: string | null; commits: ReadonlyArray<GitCommitSummary> }, GitCommandError>;
+  ) => Effect.Effect<
+    { baseBranch: string | null; commits: ReadonlyArray<GitCommitSummary> },
+    GitCommandError
+  >;
 
   /**
    * List changed files for a single commit.
@@ -263,9 +266,7 @@ export interface GitCoreShape {
   /**
    * Build a single-file patch for the selected review category.
    */
-  readonly getFileDiff: (
-    input: GitGetFileDiffInput,
-  ) => Effect.Effect<string, GitCommandError>;
+  readonly getFileDiff: (input: GitGetFileDiffInput) => Effect.Effect<string, GitCommandError>;
 
   /**
    * Pull current branch from upstream using fast-forward only.

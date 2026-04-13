@@ -260,7 +260,10 @@ function resolveCommitDialogCopy(action: CommitDialogAction): {
 
 function formatGitActionError(error: unknown): string {
   const message = error instanceof Error ? error.message : "An error occurred.";
-  if (message.includes("index.lock") && message.includes("Another git process seems to be running")) {
+  if (
+    message.includes("index.lock") &&
+    message.includes("Another git process seems to be running")
+  ) {
     return 'Git index is locked by another process. Close any running git/editor operation, then remove ".git/index.lock" if it was left behind and retry.';
   }
   return message;
@@ -414,17 +417,33 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasOriginRemote = gitStatus?.hasOriginRemote ?? false;
   const gitStatusForActions = gitStatus;
-  const selectedFilePathSet = useMemo(
-    () => new Set(selectedFilePaths ?? []),
-    [selectedFilePaths],
-  );
+  const selectedFilePathSet = useMemo(() => new Set(selectedFilePaths ?? []), [selectedFilePaths]);
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
-  const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
-  const allSelected = excludedFiles.size === 0;
+  const scopedSelectedPaths = useMemo(
+    () =>
+      [...selectedFilePathSet].toSorted((left, right) =>
+        left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [selectedFilePathSet],
+  );
+  const hasScopedFileSelection = scopedSelectedPaths.length > 0;
+  const allFilesByPath = useMemo(
+    () => new Map(allFiles.map((file) => [file.path, file])),
+    [allFiles],
+  );
+  const dialogFiles = useMemo(() => {
+    if (!hasScopedFileSelection) {
+      return allFiles;
+    }
+
+    return scopedSelectedPaths.map(
+      (path) => allFilesByPath.get(path) ?? { path, insertions: 0, deletions: 0 },
+    );
+  }, [allFiles, allFilesByPath, hasScopedFileSelection, scopedSelectedPaths]);
+  const selectedFiles = dialogFiles.filter((file) => !excludedFiles.has(file.path));
+  const allSelected = dialogFiles.length > 0 && excludedFiles.size === 0;
   const noneSelected = selectedFiles.length === 0;
-  const scopedSelectedFiles = allFiles.filter((file) => selectedFilePathSet.has(file.path));
-  const hasScopedFileSelection = scopedSelectedFiles.length > 0;
 
   const initMutation = useMutation(
     gitInitMutationOptions({ environmentId: activeEnvironmentId, cwd: gitCwd, queryClient }),
@@ -483,12 +502,7 @@ export default function GitActionsControl({
 
   const gitActionMenuItems = useMemo(
     () =>
-      buildMenuItems(
-        gitStatusForActions,
-        isGitActionRunning,
-        hasOriginRemote,
-        variant === "panel",
-      ),
+      buildMenuItems(gitStatusForActions, isGitActionRunning, hasOriginRemote, variant === "panel"),
     [gitStatusForActions, hasOriginRemote, isGitActionRunning, variant],
   );
   const quickAction = useMemo(
@@ -497,7 +511,10 @@ export default function GitActionsControl({
     [gitStatusForActions, hasOriginRemote, isDefaultBranch, isGitActionRunning],
   );
   const displayedQuickActionLabel =
-    selectionSummary && quickAction.kind === "run_action" && quickAction.action && actionIncludesCommit(quickAction.action)
+    selectionSummary &&
+    quickAction.kind === "run_action" &&
+    quickAction.action &&
+    actionIncludesCommit(quickAction.action)
       ? selectionSummary
       : quickAction.label;
   const quickActionDisabledReason = quickAction.disabled
@@ -518,13 +535,8 @@ export default function GitActionsControl({
     null;
 
   const buildInitialExcludedFiles = useCallback(() => {
-    if (!hasScopedFileSelection) {
-      return new Set<string>();
-    }
-    return new Set(
-      allFiles.filter((file) => !selectedFilePathSet.has(file.path)).map((file) => file.path),
-    );
-  }, [allFiles, hasScopedFileSelection, selectedFilePathSet]);
+    return new Set<string>();
+  }, []);
   const commitDialogCopy = useMemo(
     () => resolveCommitDialogCopy(commitDialogAction),
     [commitDialogAction],
@@ -644,8 +656,7 @@ export default function GitActionsControl({
         actionIncludesCommit(action) &&
         (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
       const resolvedFilePaths =
-        filePaths ??
-        (includesCommit && hasScopedFileSelection ? scopedSelectedFiles.map((file) => file.path) : undefined);
+        filePaths ?? (includesCommit && hasScopedFileSelection ? scopedSelectedPaths : undefined);
       if (
         !skipDefaultBranchPrompt &&
         requiresDefaultBranchConfirmation(action, actionIsDefaultBranch) &&
@@ -1090,51 +1101,52 @@ export default function GitActionsControl({
     </Menu>
   );
 
-  const quickActionButton = quickActionDisabledReason && variant === "compact" ? (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
-        render={
-          <Button
-            aria-disabled="true"
-            className="cursor-not-allowed rounded-e-none border-e-0 opacity-64 before:rounded-e-none"
-            size="xs"
-            variant="outline"
-          />
-        }
-      >
-        <GitQuickActionIcon quickAction={quickAction} />
-        <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
-          {displayedQuickActionLabel}
-        </span>
-      </PopoverTrigger>
-      <PopoverPopup tooltipStyle side="bottom" align="start">
-        {quickActionDisabledReason}
-      </PopoverPopup>
-    </Popover>
-  ) : (
-    <Button
-      variant="outline"
-      size={variant === "panel" ? "sm" : "xs"}
-      disabled={isGitActionRunning || quickAction.disabled}
-      onClick={runQuickAction}
-      className={variant === "panel" ? "min-w-[12rem] justify-between" : undefined}
-      data-testid={variant === "panel" ? "git-panel-primary-action" : undefined}
-    >
-      <span className="inline-flex items-center gap-2">
-        <GitQuickActionIcon quickAction={quickAction} />
-        <span
-          className={
-            variant === "panel"
-              ? "text-sm"
-              : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
+  const quickActionButton =
+    quickActionDisabledReason && variant === "compact" ? (
+      <Popover>
+        <PopoverTrigger
+          openOnHover
+          render={
+            <Button
+              aria-disabled="true"
+              className="cursor-not-allowed rounded-e-none border-e-0 opacity-64 before:rounded-e-none"
+              size="xs"
+              variant="outline"
+            />
           }
         >
-          {displayedQuickActionLabel}
+          <GitQuickActionIcon quickAction={quickAction} />
+          <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
+            {displayedQuickActionLabel}
+          </span>
+        </PopoverTrigger>
+        <PopoverPopup tooltipStyle side="bottom" align="start">
+          {quickActionDisabledReason}
+        </PopoverPopup>
+      </Popover>
+    ) : (
+      <Button
+        variant="outline"
+        size={variant === "panel" ? "sm" : "xs"}
+        disabled={isGitActionRunning || quickAction.disabled}
+        onClick={runQuickAction}
+        className={variant === "panel" ? "min-w-[12rem] justify-between" : undefined}
+        data-testid={variant === "panel" ? "git-panel-primary-action" : undefined}
+      >
+        <span className="inline-flex items-center gap-2">
+          <GitQuickActionIcon quickAction={quickAction} />
+          <span
+            className={
+              variant === "panel"
+                ? "text-sm"
+                : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
+            }
+          >
+            {displayedQuickActionLabel}
+          </span>
         </span>
-      </span>
-    </Button>
-  );
+      </Button>
+    );
 
   return (
     <>
@@ -1169,40 +1181,36 @@ export default function GitActionsControl({
             {initMutation.isPending ? "Initializing..." : "Initialize Git"}
           </Button>
         )
-      ) : (
-        variant === "panel" ? (
-          <div
-            className="flex items-center gap-3"
-            data-testid="git-panel-action-bar"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-mono text-[11px] text-foreground">
-                  {effectiveBranchLabel}
-                </span>
-                <span className="text-[10px] text-muted-foreground/60">
-                  ↑{gitStatusForActions?.aheadCount ?? 0} ↓{gitStatusForActions?.behindCount ?? 0}
-                </span>
-                {gitStatusForActions?.pr?.state === "open" ? (
-                  <span className="text-[10px] text-primary">PR open</span>
-                ) : null}
-                {selectionSummary ? (
-                  <span className="text-[10px] text-muted-foreground/60">{selectionSummary}</span>
-                ) : null}
-                {(quickActionDisabledReason || gitStatusError) ? (
-                  <span className="text-[10px] text-warning">{panelInlineStatus}</span>
-                ) : null}
-              </div>
+      ) : variant === "panel" ? (
+        <div className="flex items-center gap-3" data-testid="git-panel-action-bar">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono text-[11px] text-foreground">{effectiveBranchLabel}</span>
+              <span className="text-[10px] text-muted-foreground/60">
+                ↑{gitStatusForActions?.aheadCount ?? 0} ↓{gitStatusForActions?.behindCount ?? 0}
+              </span>
+              {gitStatusForActions?.pr?.state === "open" ? (
+                <span className="text-[10px] text-primary">PR open</span>
+              ) : null}
+              {selectionSummary ? (
+                <span className="text-[10px] text-muted-foreground/60">{selectionSummary}</span>
+              ) : null}
+              {quickActionDisabledReason || gitStatusError ? (
+                <span className="text-[10px] text-warning">{panelInlineStatus}</span>
+              ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">{quickActionButton}{actionMenu}</div>
           </div>
-        ) : (
-          <Group aria-label="Git actions" className="shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             {quickActionButton}
-            <GroupSeparator className="hidden @3xl/header-actions:block" />
             {actionMenu}
-          </Group>
-        )
+          </div>
+        </div>
+      ) : (
+        <Group aria-label="Git actions" className="shrink-0">
+          {quickActionButton}
+          <GroupSeparator className="hidden @3xl/header-actions:block" />
+          {actionMenu}
+        </Group>
       )}
 
       <Dialog
@@ -1230,20 +1238,18 @@ export default function GitActionsControl({
                   {gitStatusForActions?.branch ?? "(detached HEAD)"}
                 </span>
               </div>
-              {isDefaultBranch && (
-                <span className="text-[11px] text-warning">default branch</span>
-              )}
+              {isDefaultBranch && <span className="text-[11px] text-warning">default branch</span>}
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 px-1">
-                {allFiles.length > 0 && (
+                {dialogFiles.length > 0 && (
                   <Checkbox
                     checked={allSelected}
                     indeterminate={!allSelected && !noneSelected}
                     onCheckedChange={() => {
                       setExcludedFiles(
-                        allSelected ? new Set(allFiles.map((f) => f.path)) : new Set(),
+                        allSelected ? new Set(dialogFiles.map((file) => file.path)) : new Set(),
                       );
                     }}
                     aria-label={allSelected ? "Deselect all files" : "Select all files"}
@@ -1253,16 +1259,16 @@ export default function GitActionsControl({
                   Files
                 </span>
                 <span className="text-[10px] tabular-nums text-muted-foreground/50">
-                  {selectedFiles.length} of {allFiles.length}
+                  {selectedFiles.length} of {dialogFiles.length}
                 </span>
               </div>
-              {!gitStatusForActions || allFiles.length === 0 ? (
+              {!gitStatusForActions || dialogFiles.length === 0 ? (
                 <p className="px-1 text-[11px] text-muted-foreground/50">No files to commit.</p>
               ) : (
                 <>
                   <ScrollArea className="h-52">
                     <div className="space-y-px">
-                      {allFiles.map((file) => {
+                      {dialogFiles.map((file) => {
                         const isExcluded = excludedFiles.has(file.path);
                         return (
                           <div
@@ -1297,19 +1303,14 @@ export default function GitActionsControl({
                               <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
                                 {file.path}
                               </span>
-                              {!isExcluded &&
-                              (file.insertions > 0 || file.deletions > 0) ? (
+                              {!isExcluded && (file.insertions > 0 || file.deletions > 0) ? (
                                 <span className="shrink-0 font-mono text-[10px]">
                                   {file.insertions > 0 ? (
-                                    <span className="text-success/80">
-                                      +{file.insertions}
-                                    </span>
+                                    <span className="text-success/80">+{file.insertions}</span>
                                   ) : null}
                                   {file.insertions > 0 && file.deletions > 0 ? " " : null}
                                   {file.deletions > 0 ? (
-                                    <span className="text-destructive/80">
-                                      -{file.deletions}
-                                    </span>
+                                    <span className="text-destructive/80">-{file.deletions}</span>
                                   ) : null}
                                 </span>
                               ) : null}

@@ -128,8 +128,7 @@ export function normalizeCodexRateWindows(
 ): ReadonlyArray<ProviderRateWindow> {
   const now = input.now ?? new Date();
   const record = asObject(payload);
-  const rateLimits =
-    asObject(record?.rateLimits) ?? asObject(record?.rate_limit) ?? record;
+  const rateLimits = asObject(record?.rateLimits) ?? asObject(record?.rate_limit) ?? record;
   const rawWindows = [
     rateLimits?.primary,
     rateLimits?.secondary,
@@ -154,8 +153,8 @@ export function normalizeCodexRateWindows(
     );
   }
 
-  return Array.from(windowsByKind.values()).sort((left, right) =>
-    left.windowMinutes - right.windowMinutes,
+  return Array.from(windowsByKind.values()).sort(
+    (left, right) => left.windowMinutes - right.windowMinutes,
   );
 }
 
@@ -290,8 +289,8 @@ export function normalizeClaudeRateWindows(
     }
   }
 
-  return Array.from(windowsByKind.values()).sort((left, right) =>
-    left.windowMinutes - right.windowMinutes,
+  return Array.from(windowsByKind.values()).sort(
+    (left, right) => left.windowMinutes - right.windowMinutes,
   );
 }
 

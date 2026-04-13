@@ -15,11 +15,7 @@ import type {
   UsageStreamEvent,
   UsageTotals,
 } from "@capycode/contracts";
-import {
-  DEFAULT_USAGE_RANGE,
-  EMPTY_USAGE_TOTALS,
-  UsageDashboardError,
-} from "@capycode/contracts";
+import { DEFAULT_USAGE_RANGE, EMPTY_USAGE_TOTALS, UsageDashboardError } from "@capycode/contracts";
 import { Effect, Layer, PubSub, Ref, Stream } from "effect";
 
 import { ProviderService } from "../../provider/Services/ProviderService";
@@ -30,10 +26,7 @@ import {
   readClaudeHistoricalUsage,
   type ClaudeHistoricalUsageResult,
 } from "../providers/ClaudeHistoricalUsage";
-import {
-  probeClaudeLimits,
-  type ClaudeLimitsProbeResult,
-} from "../providers/ClaudeLimitsProbe";
+import { probeClaudeLimits, type ClaudeLimitsProbeResult } from "../providers/ClaudeLimitsProbe";
 import { probeCodexLimits, type CodexLimitsProbeResult } from "../providers/CodexLimitsProbe";
 import {
   readCodexHistoricalUsage,
@@ -128,10 +121,16 @@ function isWithinRange(timestamp: string, range: UsageRange, now: Date): boolean
   return date.getTime() >= now.getTime() - days * 24 * 60 * 60 * 1000;
 }
 
-function timeRangeStart(range: UsageRange, now: Date, sessions: ReadonlyArray<UsageSessionSummary>): Date {
+function timeRangeStart(
+  range: UsageRange,
+  now: Date,
+  sessions: ReadonlyArray<UsageSessionSummary>,
+): Date {
   if (range === "all") {
     const lastSession = sessions[sessions.length - 1];
-    return lastSession ? new Date(lastSession.startedAt) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return lastSession
+      ? new Date(lastSession.startedAt)
+      : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   }
 
   const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
@@ -182,7 +181,9 @@ function buildBuckets(
   return buckets;
 }
 
-function buildTopModels(sessions: ReadonlyArray<UsageSessionSummary>): ReadonlyArray<UsageModelSummary> {
+function buildTopModels(
+  sessions: ReadonlyArray<UsageSessionSummary>,
+): ReadonlyArray<UsageModelSummary> {
   const models = new Map<
     string,
     { totals: UsageTotals; sessionIds: Set<string>; lastSeenAt: string | null }
@@ -190,12 +191,11 @@ function buildTopModels(sessions: ReadonlyArray<UsageSessionSummary>): ReadonlyA
 
   for (const session of sessions) {
     for (const model of session.models) {
-      const current =
-        models.get(model) ?? {
-          totals: { ...EMPTY_USAGE_TOTALS },
-          sessionIds: new Set<string>(),
-          lastSeenAt: null,
-        };
+      const current = models.get(model) ?? {
+        totals: { ...EMPTY_USAGE_TOTALS },
+        sessionIds: new Set<string>(),
+        lastSeenAt: null,
+      };
       current.totals = addTotals(current.totals, session.totals);
       current.sessionIds.add(session.id);
       current.lastSeenAt =
@@ -224,6 +224,14 @@ function staleWindows(
   return limits.map((window) => ({ ...window, stale }));
 }
 
+function mergeCodexRateLimits(
+  current: ReadonlyArray<ProviderRateWindow>,
+  payload: unknown,
+): ReadonlyArray<ProviderRateWindow> {
+  const next = normalizeCodexRateWindows(payload);
+  return next.length > 0 ? next : current;
+}
+
 function toProviderDashboard(input: {
   readonly provider: "codex" | "claudeAgent";
   readonly range: UsageRange;
@@ -243,7 +251,9 @@ function toProviderDashboard(input: {
   const warnings = [...(input.historical?.warnings ?? [])];
 
   if (limits.length === 0) {
-    warnings.push("No live quota snapshot yet. Start one turn with this provider to populate live limits.");
+    warnings.push(
+      "No live quota snapshot yet. Start one turn with this provider to populate live limits.",
+    );
   }
 
   return {
@@ -279,7 +289,9 @@ function resolveClaudeProjectsRoot(): string {
     const normalized = configured.startsWith("~")
       ? path.join(OS.homedir(), configured.slice(1))
       : configured;
-    return path.basename(normalized) === "projects" ? normalized : path.join(normalized, "projects");
+    return path.basename(normalized) === "projects"
+      ? normalized
+      : path.join(normalized, "projects");
   }
 
   const primary = path.join(OS.homedir(), ".config", "claude", "projects");
@@ -300,7 +312,9 @@ function isFresh(isoTimestamp: string | null, ttlMs: number): boolean {
   return Number.isFinite(timestamp) && nowMs() - timestamp <= ttlMs;
 }
 
-function mapHistoricalResult(result: CodexHistoricalUsageResult | ClaudeHistoricalUsageResult): HistoricalCacheEntry {
+function mapHistoricalResult(
+  result: CodexHistoricalUsageResult | ClaudeHistoricalUsageResult,
+): HistoricalCacheEntry {
   return {
     rootPath: result.rootPath,
     fetchedAt: usageNow(),
@@ -338,9 +352,13 @@ const makeUsageService = Effect.gen(function* () {
   const changesPubSub = yield* PubSub.unbounded<UsageStreamEvent>();
   const stateRef = yield* Ref.make<UsageCacheState>(INITIAL_STATE);
 
-  const publish = (event: UsageStreamEvent) => PubSub.publish(changesPubSub, event).pipe(Effect.asVoid);
+  const publish = (event: UsageStreamEvent) =>
+    PubSub.publish(changesPubSub, event).pipe(Effect.asVoid);
 
-  const setRefreshState = (range: UsageRange, updater: (current: UsageRefreshState) => UsageRefreshState) =>
+  const setRefreshState = (
+    range: UsageRange,
+    updater: (current: UsageRefreshState) => UsageRefreshState,
+  ) =>
     Ref.updateAndGet(stateRef, (state) => ({
       ...state,
       refresh: {
@@ -367,7 +385,12 @@ const makeUsageService = Effect.gen(function* () {
       const rootPath = readCodexHistoricalRoot(homePath);
       const state = yield* Ref.get(stateRef);
       const current = state.historical.codex;
-      if (!force && current && current.rootPath === rootPath && isFresh(current.fetchedAt, HISTORICAL_USAGE_TTL_MS)) {
+      if (
+        !force &&
+        current &&
+        current.rootPath === rootPath &&
+        isFresh(current.fetchedAt, HISTORICAL_USAGE_TTL_MS)
+      ) {
         return current;
       }
 
@@ -392,7 +415,12 @@ const makeUsageService = Effect.gen(function* () {
       const rootPath = resolveClaudeProjectsRoot();
       const state = yield* Ref.get(stateRef);
       const current = state.historical.claudeAgent;
-      if (!force && current && current.rootPath === rootPath && isFresh(current.fetchedAt, HISTORICAL_USAGE_TTL_MS)) {
+      if (
+        !force &&
+        current &&
+        current.rootPath === rootPath &&
+        isFresh(current.fetchedAt, HISTORICAL_USAGE_TTL_MS)
+      ) {
         return current;
       }
 
@@ -408,7 +436,11 @@ const makeUsageService = Effect.gen(function* () {
           claudeAgent: next,
         },
       }));
-      yield* publish({ type: "historicalUpdated", provider: "claudeAgent", range: DEFAULT_USAGE_RANGE });
+      yield* publish({
+        type: "historicalUpdated",
+        provider: "claudeAgent",
+        range: DEFAULT_USAGE_RANGE,
+      });
       return next;
     });
 
@@ -471,7 +503,10 @@ const makeUsageService = Effect.gen(function* () {
         limits: [] as ReadonlyArray<ProviderRateWindow>,
         fetchedAt: null,
       }),
-      limits: staleWindows(current?.limits ?? [], !isFresh(current?.fetchedAt ?? null, CLAUDE_LIMITS_STALE_MS)),
+      limits: staleWindows(
+        current?.limits ?? [],
+        !isFresh(current?.fetchedAt ?? null, CLAUDE_LIMITS_STALE_MS),
+      ),
     } satisfies LimitsCacheEntry;
   });
 
@@ -587,7 +622,7 @@ const makeUsageService = Effect.gen(function* () {
             ...state.limits,
             codex: {
               ...current,
-              limits: normalizeCodexRateWindows(event.payload.rateLimits),
+              limits: mergeCodexRateLimits(current.limits, event.payload.rateLimits),
               fetchedAt: usageNow(),
             },
           },

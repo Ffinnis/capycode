@@ -84,7 +84,11 @@ describe("probeCodexLimits", () => {
       }),
       "utf8",
     );
-    await fs.writeFile(configPath, 'chatgpt_base_url = "https://chatgpt.com/backend-api/"\n', "utf8");
+    await fs.writeFile(
+      configPath,
+      'chatgpt_base_url = "https://chatgpt.com/backend-api/"\n',
+      "utf8",
+    );
 
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

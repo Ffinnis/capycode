@@ -35,39 +35,36 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries;
 
-  const resolveWorkspacePath = Effect.fn("WorkspaceFileSystem.resolveWorkspacePath")(function* (
-    input: {
-      cwd: string;
-      relativePath?: string;
-    },
-  ) {
-    if (!input.relativePath) {
-      const absolutePath = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd).pipe(
-        Effect.mapError(
-          (cause) =>
-            new WorkspaceFileSystemError({
-              cwd: input.cwd,
-              operation: "workspaceFileSystem.resolveWorkspaceRoot",
-              detail: cause.message,
-              cause,
-            }),
-        ),
-      );
-      return {
-        absolutePath,
-        relativePath: undefined,
-      };
-    }
+  const resolveWorkspacePath = Effect.fn("WorkspaceFileSystem.resolveWorkspacePath")(
+    function* (input: { cwd: string; relativePath?: string }) {
+      if (!input.relativePath) {
+        const absolutePath = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd).pipe(
+          Effect.mapError(
+            (cause) =>
+              new WorkspaceFileSystemError({
+                cwd: input.cwd,
+                operation: "workspaceFileSystem.resolveWorkspaceRoot",
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
+        return {
+          absolutePath,
+          relativePath: undefined,
+        };
+      }
 
-    const resolved = yield* workspacePaths.resolveRelativePathWithinRoot({
-      workspaceRoot: input.cwd,
-      relativePath: input.relativePath,
-    });
-    return {
-      absolutePath: resolved.absolutePath,
-      relativePath: resolved.relativePath,
-    };
-  });
+      const resolved = yield* workspacePaths.resolveRelativePathWithinRoot({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+      });
+      return {
+        absolutePath: resolved.absolutePath,
+        relativePath: resolved.relativePath,
+      };
+    },
+  );
 
   const listDirectory: WorkspaceFileSystemShape["listDirectory"] = Effect.fn(
     "WorkspaceFileSystem.listDirectory",
@@ -132,74 +129,74 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
     return { entries };
   });
 
-  const readFile: WorkspaceFileSystemShape["readFile"] = Effect.fn(
-    "WorkspaceFileSystem.readFile",
-  )(function* (input) {
-    const target = yield* resolveWorkspacePath({
-      cwd: input.cwd,
-      relativePath: input.relativePath,
-    });
-    const maxBytes = input.maxBytes ?? DEFAULT_PROJECT_READ_FILE_MAX_BYTES;
-
-    const stat = yield* Effect.tryPromise({
-      try: async () => fsPromises.stat(target.absolutePath),
-      catch: (cause) =>
-        new WorkspaceFileSystemError({
-          cwd: input.cwd,
-          relativePath: input.relativePath,
-          operation: "workspaceFileSystem.readFile.stat",
-          detail: cause instanceof Error ? cause.message : String(cause),
-          cause,
-        }),
-    });
-    if (!stat.isFile()) {
-      return yield* new WorkspaceFileSystemError({
+  const readFile: WorkspaceFileSystemShape["readFile"] = Effect.fn("WorkspaceFileSystem.readFile")(
+    function* (input) {
+      const target = yield* resolveWorkspacePath({
         cwd: input.cwd,
         relativePath: input.relativePath,
-        operation: "workspaceFileSystem.readFile",
-        detail: "Path is not a file.",
       });
-    }
+      const maxBytes = input.maxBytes ?? DEFAULT_PROJECT_READ_FILE_MAX_BYTES;
 
-    const sizeBytes = stat.size;
-    if (sizeBytes > maxBytes) {
-      return {
-        relativePath: target.relativePath ?? input.relativePath,
-        kind: "too_large",
-        sizeBytes,
-        truncated: true,
-      };
-    }
-
-    const bytes = yield* Effect.tryPromise({
-      try: async () => Uint8Array.from(await fsPromises.readFile(target.absolutePath)),
-      catch: (cause) =>
-        new WorkspaceFileSystemError({
+      const stat = yield* Effect.tryPromise({
+        try: async () => fsPromises.stat(target.absolutePath),
+        catch: (cause) =>
+          new WorkspaceFileSystemError({
+            cwd: input.cwd,
+            relativePath: input.relativePath,
+            operation: "workspaceFileSystem.readFile.stat",
+            detail: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      });
+      if (!stat.isFile()) {
+        return yield* new WorkspaceFileSystemError({
           cwd: input.cwd,
           relativePath: input.relativePath,
           operation: "workspaceFileSystem.readFile",
-          detail: cause instanceof Error ? cause.message : String(cause),
-          cause,
-        }),
-    });
+          detail: "Path is not a file.",
+        });
+      }
 
-    if (isBinaryContent(bytes)) {
+      const sizeBytes = stat.size;
+      if (sizeBytes > maxBytes) {
+        return {
+          relativePath: target.relativePath ?? input.relativePath,
+          kind: "too_large",
+          sizeBytes,
+          truncated: true,
+        };
+      }
+
+      const bytes = yield* Effect.tryPromise({
+        try: async () => Uint8Array.from(await fsPromises.readFile(target.absolutePath)),
+        catch: (cause) =>
+          new WorkspaceFileSystemError({
+            cwd: input.cwd,
+            relativePath: input.relativePath,
+            operation: "workspaceFileSystem.readFile",
+            detail: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      });
+
+      if (isBinaryContent(bytes)) {
+        return {
+          relativePath: target.relativePath ?? input.relativePath,
+          kind: "binary",
+          sizeBytes,
+          truncated: false,
+        };
+      }
+
       return {
         relativePath: target.relativePath ?? input.relativePath,
-        kind: "binary",
+        kind: "text",
+        contents: Buffer.from(bytes).toString("utf8"),
         sizeBytes,
         truncated: false,
       };
-    }
-
-    return {
-      relativePath: target.relativePath ?? input.relativePath,
-      kind: "text",
-      contents: Buffer.from(bytes).toString("utf8"),
-      sizeBytes,
-      truncated: false,
-    };
-  });
+    },
+  );
 
   const writeFile: WorkspaceFileSystemShape["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",

@@ -92,7 +92,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(NOTIFICATION_ACTION_CHANNEL, wrappedListener);
     };
   },
-  previewNotificationSound: (input) => ipcRenderer.invoke(PREVIEW_NOTIFICATION_SOUND_CHANNEL, input),
+  previewNotificationSound: (input) =>
+    ipcRenderer.invoke(PREVIEW_NOTIFICATION_SOUND_CHANNEL, input),
   stopNotificationSoundPreview: () => ipcRenderer.invoke(STOP_NOTIFICATION_SOUND_PREVIEW_CHANNEL),
   importCustomNotificationSound: () => ipcRenderer.invoke(IMPORT_CUSTOM_NOTIFICATION_SOUND_CHANNEL),
 } satisfies DesktopBridge);

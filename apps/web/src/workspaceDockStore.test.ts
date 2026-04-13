@@ -59,9 +59,9 @@ describe("workspaceDockStore", () => {
     store.openFile(SCOPE, "src/app.ts");
     store.openFile(otherScope, "main.go");
 
-    expect(getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE).openFileTabs).toEqual(
-      ["src/app.ts"],
-    );
+    expect(
+      getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE).openFileTabs,
+    ).toEqual(["src/app.ts"]);
     expect(
       getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), otherScope).openFileTabs,
     ).toEqual(["main.go"]);

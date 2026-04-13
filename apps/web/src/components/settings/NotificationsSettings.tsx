@@ -182,10 +182,13 @@ export function NotificationsSettings() {
         });
         setPlayingId(soundId);
         const duration = soundOptions.find((sound) => sound.id === soundId)?.duration ?? 5;
-        previewTimerRef.current = setTimeout(() => {
-          setPlayingId((current) => (current === soundId ? null : current));
-          previewTimerRef.current = null;
-        }, Math.max(1500, duration * 1000 + 500));
+        previewTimerRef.current = setTimeout(
+          () => {
+            setPlayingId((current) => (current === soundId ? null : current));
+            previewTimerRef.current = null;
+          },
+          Math.max(1500, duration * 1000 + 500),
+        );
       } catch (error) {
         resetPreviewState();
         toastManager.add({
@@ -251,9 +254,7 @@ export function NotificationsSettings() {
               <Switch
                 id="notification-sounds"
                 checked={!settings.notificationSoundsMuted}
-                onCheckedChange={(enabled) =>
-                  updateSettings({ notificationSoundsMuted: !enabled })
-                }
+                onCheckedChange={(enabled) => updateSettings({ notificationSoundsMuted: !enabled })}
               />
             </div>
           }
@@ -290,9 +291,7 @@ export function NotificationsSettings() {
                     <span className="font-medium">
                       {getVolumeLabel(settings.notificationVolume)}
                     </span>
-                    <span className="text-muted-foreground">
-                      ({settings.notificationVolume}%)
-                    </span>
+                    <span className="text-muted-foreground">({settings.notificationVolume}%)</span>
                   </span>
                 </SelectValue>
               </SelectTrigger>

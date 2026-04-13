@@ -28,7 +28,7 @@ import {
 import { applyClaudePromptEffortPrefix } from "@capycode/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@capycode/shared/projectScripts";
 import { truncate } from "@capycode/shared/String";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -320,6 +320,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       routeKind: "server";
       draftId?: never;
+      workspaceSurfaceContent?: React.ReactNode;
     }
   | {
       environmentId: EnvironmentId;
@@ -327,6 +328,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       routeKind: "draft";
       draftId: DraftId;
+      workspaceSurfaceContent?: React.ReactNode;
     };
 
 interface TerminalLaunchContext {
@@ -1613,11 +1615,11 @@ export default function ChatView(props: ChatViewProps) {
       const rest = stripDiffSearchParams(previous);
       return {
         ...rest,
-        ...(nextDiff ? { diff: nextDiff } : {}),
-        ...(nextFiles ? { files: nextFiles } : {}),
-        ...(nextDiffTurnId ? { diffTurnId: nextDiffTurnId } : {}),
-        ...(nextDiffFilePath ? { diffFilePath: nextDiffFilePath } : {}),
-        ...(nextFile ? { file: nextFile } : {}),
+        diff: nextDiff,
+        files: nextFiles,
+        diffTurnId: nextDiffTurnId,
+        diffFilePath: nextDiffFilePath,
+        file: nextFile,
       };
     },
     [],
@@ -1632,15 +1634,17 @@ export default function ChatView(props: ChatViewProps) {
         showWorkspaceDockDiffContext(workspaceDockScopeKey);
       }
     }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId,
-        threadId,
-      },
-      replace: true,
-      search: (previous) =>
-        updateWorkspaceSearch(previous, diffOpen ? { diff: undefined } : { diff: "1" }),
+    startTransition(() => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(previous, diffOpen ? { diff: undefined } : { diff: "1" }),
+      });
     });
   }, [
     diffOpen,
@@ -1659,15 +1663,20 @@ export default function ChatView(props: ChatViewProps) {
     }
     const nextFilesOpen = !filesOpen;
     setWorkspaceDockFilesOpen(workspaceDockScopeKey, nextFilesOpen);
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId,
-        threadId,
-      },
-      replace: true,
-      search: (previous) =>
-        updateWorkspaceSearch(previous, nextFilesOpen ? { files: "1" } : { files: undefined, file: undefined }),
+    startTransition(() => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) =>
+          updateWorkspaceSearch(
+            previous,
+            nextFilesOpen ? { files: "1" } : { files: undefined, file: undefined },
+          ),
+      });
     });
   }, [
     environmentId,
@@ -3287,8 +3296,8 @@ export default function ChatView(props: ChatViewProps) {
     const nextThreadTitle = truncate(buildPlanImplementationThreadTitle(planMarkdown));
     const nextThreadModelSelection: ModelSelection = ctxSelectedModelSelection;
     const targetWorkspaceId = isServerThread
-      ? activeThread.workspaceId ?? activeWorkspace?.id ?? null
-      : activeWorkspace?.id ?? null;
+      ? (activeThread.workspaceId ?? activeWorkspace?.id ?? null)
+      : (activeWorkspace?.id ?? null);
 
     sendInFlightRef.current = true;
     beginLocalDispatch({ preparingWorktree: false });
@@ -3450,19 +3459,21 @@ export default function ChatView(props: ChatViewProps) {
       if (workspaceDockScopeKey) {
         showWorkspaceDockDiffContext(workspaceDockScopeKey);
       }
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId,
-          threadId,
-        },
-        search: (previous) =>
-          updateWorkspaceSearch(
-            previous,
-            filePath
-              ? { diff: "1", diffTurnId: turnId, diffFilePath: filePath }
-              : { diff: "1", diffTurnId: turnId, diffFilePath: undefined },
-          ),
+      startTransition(() => {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId,
+            threadId,
+          },
+          search: (previous) =>
+            updateWorkspaceSearch(
+              previous,
+              filePath
+                ? { diff: "1", diffTurnId: turnId, diffFilePath: filePath }
+                : { diff: "1", diffTurnId: turnId, diffFilePath: undefined },
+            ),
+        });
       });
     },
     [
@@ -3481,14 +3492,16 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     selectWorkspaceDockChatTab(workspaceDockScopeKey);
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId,
-        threadId,
-      },
-      replace: true,
-      search: (previous) => updateWorkspaceSearch(previous, { file: undefined }),
+    startTransition(() => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) => updateWorkspaceSearch(previous, { file: undefined }),
+      });
     });
   }, [
     environmentId,
@@ -3505,14 +3518,16 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       selectWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId,
-          threadId,
-        },
-        replace: true,
-        search: (previous) => updateWorkspaceSearch(previous, { files: "1", file: relativePath }),
+      startTransition(() => {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId,
+            threadId,
+          },
+          replace: true,
+          search: (previous) => updateWorkspaceSearch(previous, { files: "1", file: relativePath }),
+        });
       });
     },
     [
@@ -3533,18 +3548,22 @@ export default function ChatView(props: ChatViewProps) {
       const remainingTabs = workspaceDockState.openFileTabs.filter((path) => path !== relativePath);
       closeWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
       const nextActiveTab =
-        workspaceDockState.activeTab === relativePath ? (remainingTabs.at(-1) ?? "chat") : workspaceDockState.activeTab;
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId,
-          threadId,
-        },
-        replace: true,
-        search: (previous) =>
-          updateWorkspaceSearch(previous, {
-            file: nextActiveTab === "chat" ? undefined : nextActiveTab,
-          }),
+        workspaceDockState.activeTab === relativePath
+          ? (remainingTabs.at(-1) ?? "chat")
+          : workspaceDockState.activeTab;
+      startTransition(() => {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId,
+            threadId,
+          },
+          replace: true,
+          search: (previous) =>
+            updateWorkspaceSearch(previous, {
+              file: nextActiveTab === "chat" ? undefined : nextActiveTab,
+            }),
+        });
       });
     },
     [
@@ -3636,138 +3655,155 @@ export default function ChatView(props: ChatViewProps) {
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Chat column */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Messages Wrapper */}
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            {/* Messages */}
+          <div className="relative min-h-0 flex-1">
             <div
-              ref={setMessagesScrollContainerRef}
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
-              onScroll={onMessagesScroll}
-              onClickCapture={onMessagesClickCapture}
-              onWheel={onMessagesWheel}
-              onPointerDown={onMessagesPointerDown}
-              onPointerUp={onMessagesPointerUp}
-              onPointerCancel={onMessagesPointerCancel}
-              onTouchStart={onMessagesTouchStart}
-              onTouchMove={onMessagesTouchMove}
-              onTouchEnd={onMessagesTouchEnd}
-              onTouchCancel={onMessagesTouchEnd}
+              className={cn(
+                "flex h-full min-h-0 flex-col",
+                props.workspaceSurfaceContent && "pointer-events-none invisible",
+              )}
             >
-              <MessagesTimeline
-                key={activeThread.id}
-                hasMessages={timelineEntries.length > 0}
-                isWorking={isWorking}
-                activeTurnInProgress={isWorking || !latestTurnSettled}
-                activeTurnId={activeLatestTurn?.turnId ?? null}
-                activeTurnStartedAt={activeWorkStartedAt}
-                scrollContainer={messagesScrollElement}
-                timelineEntries={timelineEntries}
-                completionDividerBeforeEntryId={completionDividerBeforeEntryId}
-                completionSummary={completionSummary}
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                nowIso={nowIso}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                expandedWorkGroups={expandedWorkGroups}
-                onToggleWorkGroup={onToggleWorkGroup}
-                changedFilesExpandedByTurnId={changedFilesExpandedByTurnId}
-                onSetChangedFilesExpanded={handleSetChangedFilesExpanded}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                extendedTraceMode={extendedTraceMode}
-                workspaceRoot={activeWorkspaceRoot}
-              />
-            </div>
-
-            {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
-            {showScrollToBottom && (
-              <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
-                <button
-                  type="button"
-                  onClick={() => scrollMessagesToBottom("smooth")}
-                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
+              {/* Messages Wrapper */}
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {/* Messages */}
+                <div
+                  ref={setMessagesScrollContainerRef}
+                  className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
+                  onScroll={onMessagesScroll}
+                  onClickCapture={onMessagesClickCapture}
+                  onWheel={onMessagesWheel}
+                  onPointerDown={onMessagesPointerDown}
+                  onPointerUp={onMessagesPointerUp}
+                  onPointerCancel={onMessagesPointerCancel}
+                  onTouchStart={onMessagesTouchStart}
+                  onTouchMove={onMessagesTouchMove}
+                  onTouchEnd={onMessagesTouchEnd}
+                  onTouchCancel={onMessagesTouchEnd}
                 >
-                  <ChevronDownIcon className="size-3.5" />
-                  Scroll to bottom
-                </button>
+                  <MessagesTimeline
+                    key={activeThread.id}
+                    hasMessages={timelineEntries.length > 0}
+                    isWorking={isWorking}
+                    activeTurnInProgress={isWorking || !latestTurnSettled}
+                    activeTurnId={activeLatestTurn?.turnId ?? null}
+                    activeTurnStartedAt={activeWorkStartedAt}
+                    scrollContainer={messagesScrollElement}
+                    timelineEntries={timelineEntries}
+                    completionDividerBeforeEntryId={completionDividerBeforeEntryId}
+                    completionSummary={completionSummary}
+                    turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                    nowIso={nowIso}
+                    activeThreadEnvironmentId={activeThread.environmentId}
+                    expandedWorkGroups={expandedWorkGroups}
+                    onToggleWorkGroup={onToggleWorkGroup}
+                    changedFilesExpandedByTurnId={changedFilesExpandedByTurnId}
+                    onSetChangedFilesExpanded={handleSetChangedFilesExpanded}
+                    onOpenTurnDiff={onOpenTurnDiff}
+                    revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                    onRevertUserMessage={onRevertUserMessage}
+                    isRevertingCheckpoint={isRevertingCheckpoint}
+                    onImageExpand={onExpandTimelineImage}
+                    markdownCwd={gitCwd ?? undefined}
+                    resolvedTheme={resolvedTheme}
+                    timestampFormat={timestampFormat}
+                    extendedTraceMode={extendedTraceMode}
+                    workspaceRoot={activeWorkspaceRoot}
+                  />
+                </div>
+
+                {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
+                {showScrollToBottom && (
+                  <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => scrollMessagesToBottom("smooth")}
+                      className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
+                    >
+                      <ChevronDownIcon className="size-3.5" />
+                      Scroll to bottom
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Input bar */}
-          <div className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}>
-            <ChatComposer
-              ref={composerRef}
-              composerDraftTarget={composerDraftTarget}
-              environmentId={environmentId}
-              routeKind={routeKind}
-              routeThreadRef={routeThreadRef}
-              draftId={draftId}
-              activeThreadId={activeThreadId}
-              activeThreadEnvironmentId={activeThread?.environmentId}
-              activeThread={activeThread}
-              isServerThread={isServerThread}
-              isLocalDraftThread={isLocalDraftThread}
-              phase={phase}
-              isConnecting={isConnecting}
-              isSendBusy={isSendBusy}
-              isPreparingWorktree={isPreparingWorktree}
-              activePendingApproval={activePendingApproval}
-              pendingApprovals={pendingApprovals}
-              pendingUserInputs={pendingUserInputs}
-              activePendingProgress={activePendingProgress}
-              activePendingResolvedAnswers={activePendingResolvedAnswers}
-              activePendingIsResponding={activePendingIsResponding}
-              activePendingDraftAnswers={activePendingDraftAnswers}
-              activePendingQuestionIndex={activePendingQuestionIndex}
-              respondingRequestIds={respondingRequestIds}
-              showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-              activeProposedPlan={activeProposedPlan}
-              activePlan={activePlan as { turnId?: TurnId } | null}
-              sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
-              planSidebarOpen={planSidebarOpen}
-              runtimeMode={runtimeMode}
-              interactionMode={interactionMode}
-              lockedProvider={lockedProvider}
-              providerStatuses={providerStatuses as ServerProvider[]}
-              activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
-              activeThreadModelSelection={activeThread?.modelSelection}
-              activeThreadActivities={activeThread?.activities}
-              resolvedTheme={resolvedTheme}
-              settings={settings}
-              gitCwd={gitCwd}
-              promptRef={promptRef}
-              composerImagesRef={composerImagesRef}
-              composerTerminalContextsRef={composerTerminalContextsRef}
-              shouldAutoScrollRef={shouldAutoScrollRef}
-              scheduleStickToBottom={scheduleStickToBottom}
-              onSend={onSend}
-              onInterrupt={onInterrupt}
-              onImplementPlanInNewThread={onImplementPlanInNewThread}
-              onRespondToApproval={onRespondToApproval}
-              onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
-              onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-              onPreviousActivePendingUserInputQuestion={onPreviousActivePendingUserInputQuestion}
-              onChangeActivePendingUserInputCustomAnswer={
-                onChangeActivePendingUserInputCustomAnswer
-              }
-              onProviderModelSelect={onProviderModelSelect}
-              toggleInteractionMode={toggleInteractionMode}
-              handleRuntimeModeChange={handleRuntimeModeChange}
-              handleInteractionModeChange={handleInteractionModeChange}
-              togglePlanSidebar={togglePlanSidebar}
-              focusComposer={focusComposer}
-              scheduleComposerFocus={scheduleComposerFocus}
-              setThreadError={setThreadError}
-              onExpandImage={onExpandTimelineImage}
-            />
+              {/* Input bar */}
+              <div
+                className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}
+              >
+                <ChatComposer
+                  ref={composerRef}
+                  composerDraftTarget={composerDraftTarget}
+                  environmentId={environmentId}
+                  routeKind={routeKind}
+                  routeThreadRef={routeThreadRef}
+                  draftId={draftId}
+                  activeThreadId={activeThreadId}
+                  activeThreadEnvironmentId={activeThread?.environmentId}
+                  activeThread={activeThread}
+                  isServerThread={isServerThread}
+                  isLocalDraftThread={isLocalDraftThread}
+                  phase={phase}
+                  isConnecting={isConnecting}
+                  isSendBusy={isSendBusy}
+                  isPreparingWorktree={isPreparingWorktree}
+                  activePendingApproval={activePendingApproval}
+                  pendingApprovals={pendingApprovals}
+                  pendingUserInputs={pendingUserInputs}
+                  activePendingProgress={activePendingProgress}
+                  activePendingResolvedAnswers={activePendingResolvedAnswers}
+                  activePendingIsResponding={activePendingIsResponding}
+                  activePendingDraftAnswers={activePendingDraftAnswers}
+                  activePendingQuestionIndex={activePendingQuestionIndex}
+                  respondingRequestIds={respondingRequestIds}
+                  showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+                  activeProposedPlan={activeProposedPlan}
+                  activePlan={activePlan as { turnId?: TurnId } | null}
+                  sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
+                  planSidebarOpen={planSidebarOpen}
+                  runtimeMode={runtimeMode}
+                  interactionMode={interactionMode}
+                  lockedProvider={lockedProvider}
+                  providerStatuses={providerStatuses as ServerProvider[]}
+                  activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
+                  activeThreadModelSelection={activeThread?.modelSelection}
+                  activeThreadActivities={activeThread?.activities}
+                  resolvedTheme={resolvedTheme}
+                  settings={settings}
+                  gitCwd={gitCwd}
+                  promptRef={promptRef}
+                  composerImagesRef={composerImagesRef}
+                  composerTerminalContextsRef={composerTerminalContextsRef}
+                  shouldAutoScrollRef={shouldAutoScrollRef}
+                  scheduleStickToBottom={scheduleStickToBottom}
+                  onSend={onSend}
+                  onInterrupt={onInterrupt}
+                  onImplementPlanInNewThread={onImplementPlanInNewThread}
+                  onRespondToApproval={onRespondToApproval}
+                  onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
+                  onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                  onPreviousActivePendingUserInputQuestion={
+                    onPreviousActivePendingUserInputQuestion
+                  }
+                  onChangeActivePendingUserInputCustomAnswer={
+                    onChangeActivePendingUserInputCustomAnswer
+                  }
+                  onProviderModelSelect={onProviderModelSelect}
+                  toggleInteractionMode={toggleInteractionMode}
+                  handleRuntimeModeChange={handleRuntimeModeChange}
+                  handleInteractionModeChange={handleInteractionModeChange}
+                  togglePlanSidebar={togglePlanSidebar}
+                  focusComposer={focusComposer}
+                  scheduleComposerFocus={scheduleComposerFocus}
+                  setThreadError={setThreadError}
+                  onExpandImage={onExpandTimelineImage}
+                />
+              </div>
+            </div>
+            {props.workspaceSurfaceContent ? (
+              <div className="absolute inset-0 z-10 flex min-h-0 flex-col bg-background">
+                {props.workspaceSurfaceContent}
+              </div>
+            ) : null}
           </div>
-
         </div>
         {/* end chat column */}
 

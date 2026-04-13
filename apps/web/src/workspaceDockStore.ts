@@ -91,7 +91,9 @@ function readPersistedState(): Pick<
   }
 }
 
-function persistState(state: Pick<WorkspaceDockState, "scopes" | "filesPanelWidth" | "contextPanelWidth">) {
+function persistState(
+  state: Pick<WorkspaceDockState, "scopes" | "filesPanelWidth" | "contextPanelWidth">,
+) {
   if (typeof window === "undefined") {
     return;
   }
@@ -237,8 +239,7 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
             activeTab: nextActiveTab,
             revealedFilePath:
               current.revealedFilePath === relativePath ? undefined : current.revealedFilePath,
-            activeContext:
-              nextActiveTab === "chat" ? current.activeContext : "file",
+            activeContext: nextActiveTab === "chat" ? current.activeContext : "file",
           };
         }),
       };

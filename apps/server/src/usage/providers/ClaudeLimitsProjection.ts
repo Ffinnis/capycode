@@ -14,7 +14,7 @@ export function mergeClaudeRateLimits(
   for (const nextWindow of nextWindows) {
     windowsByKind.set(nextWindow.kind, nextWindow);
   }
-  return Array.from(windowsByKind.values()).sort((left, right) =>
-    left.windowMinutes - right.windowMinutes,
+  return Array.from(windowsByKind.values()).sort(
+    (left, right) => left.windowMinutes - right.windowMinutes,
   );
 }

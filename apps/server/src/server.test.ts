@@ -2042,7 +2042,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const path = yield* Path.Path;
       const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-read-" });
       yield* fs.makeDirectory(path.join(workspaceDir, "src"), { recursive: true });
-      yield* fs.writeFileString(path.join(workspaceDir, "src", "preview.ts"), "export const ok = true;\n");
+      yield* fs.writeFileString(
+        path.join(workspaceDir, "src", "preview.ts"),
+        "export const ok = true;\n",
+      );
 
       yield* buildAppUnderTest();
 

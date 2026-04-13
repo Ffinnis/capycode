@@ -111,13 +111,14 @@ describe("wsRpcClient", () => {
       providers: [],
       fetchedAt: "2026-04-12T00:00:00.000Z",
     };
-    const request = vi.fn((resolver: (client: Record<string, (input: unknown) => unknown>) => unknown) =>
-      Promise.resolve(
-        resolver({
-          [WS_METHODS.usageGetDashboard]: (input: unknown) => input,
-          [WS_METHODS.usageRefreshDashboard]: (_input: unknown) => snapshot,
-        }),
-      ),
+    const request = vi.fn(
+      (resolver: (client: Record<string, (input: unknown) => unknown>) => unknown) =>
+        Promise.resolve(
+          resolver({
+            [WS_METHODS.usageGetDashboard]: (input: unknown) => input,
+            [WS_METHODS.usageRefreshDashboard]: (_input: unknown) => snapshot,
+          }),
+        ),
     );
 
     const transport = {

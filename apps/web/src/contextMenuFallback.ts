@@ -68,7 +68,7 @@ export function showContextMenuFallback<T extends string>(
     document.body.appendChild(overlay);
     document.body.appendChild(menu);
     const focusableItems = Array.from(
-      menu.querySelectorAll<HTMLButtonElement>('button:not([disabled])'),
+      menu.querySelectorAll<HTMLButtonElement>("button:not([disabled])"),
     );
 
     // Adjust if menu overflows viewport

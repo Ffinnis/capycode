@@ -3075,7 +3075,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
         archiveAction,
         "Archive button should render inside a visibility wrapper.",
       ).not.toBeNull();
-      expect(deleteAction, "Delete button should render inside a visibility wrapper.").not.toBeNull();
+      expect(
+        deleteAction,
+        "Delete button should render inside a visibility wrapper.",
+      ).not.toBeNull();
       expect(getComputedStyle(archiveAction!).opacity).toBe("0");
       expect(getComputedStyle(deleteAction!).opacity).toBe("0");
 

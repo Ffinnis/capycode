@@ -2,6 +2,7 @@ import { scopeThreadRef } from "@capycode/client-runtime";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@capycode/contracts";
 import { useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { buildThreadRouteParams } from "../threadRoutes";
 import {
@@ -43,11 +44,10 @@ function buildThreadNotificationSnapshot(
   environmentStateById: AppState["environmentStateById"],
 ): ThreadNotificationSnapshot {
   const environmentState = environmentStateById[thread.environmentId];
-  const projectName =
-    environmentState?.projectById[thread.projectId]?.name ?? "Project";
+  const projectName = environmentState?.projectById[thread.projectId]?.name ?? "Project";
   const workspaceName =
     thread.workspaceId && environmentState?.workspaceById[thread.workspaceId]
-      ? environmentState.workspaceById[thread.workspaceId]?.name ?? null
+      ? (environmentState.workspaceById[thread.workspaceId]?.name ?? null)
       : null;
   const pendingApprovals = derivePendingApprovals(thread.activities);
   const pendingUserInput = derivePendingUserInputs(thread.activities);
@@ -82,24 +82,20 @@ function shouldSuppressNotification(
 export function DesktopNotificationsCoordinator() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const threads = useStore(selectThreadsAcrossEnvironments);
+  const threads = useStore(useShallow(selectThreadsAcrossEnvironments));
   const environmentStateById = useStore((state) => state.environmentStateById);
   const previousSnapshotByThreadKeyRef = useRef(new Map<string, ThreadNotificationSnapshot>());
 
-  const handleNotificationAction = useEffectEvent((action: {
-    environmentId: string;
-    threadId: string;
-  }) => {
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(
-        scopeThreadRef(
-          EnvironmentId.make(action.environmentId),
-          ThreadId.make(action.threadId),
+  const handleNotificationAction = useEffectEvent(
+    (action: { environmentId: string; threadId: string }) => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(
+          scopeThreadRef(EnvironmentId.make(action.environmentId), ThreadId.make(action.threadId)),
         ),
-      ),
-    });
-  });
+      });
+    },
+  );
 
   useEffect(() => {
     const bridge = window.desktopBridge;
