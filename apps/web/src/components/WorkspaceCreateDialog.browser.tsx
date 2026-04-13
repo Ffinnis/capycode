@@ -2,6 +2,22 @@ import { page } from "vitest/browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
+function findOptionByText(text: string): HTMLElement | null {
+  return (
+    (Array.from(document.querySelectorAll('[role="option"]')).find((option) =>
+      option.textContent?.includes(text),
+    ) as HTMLElement | null) ?? null
+  );
+}
+
+function findButtonByText(text: string): HTMLButtonElement | null {
+  return (
+    (Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes(text),
+    ) as HTMLButtonElement | null) ?? null
+  );
+}
+
 const {
   apiRef,
   branchesRef,
@@ -147,7 +163,9 @@ describe("WorkspaceCreateDialog", () => {
       await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("From branch")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Branch")).not.toBeInTheDocument();
+      await expect
+        .element(page.getByLabelText("Branch", { exact: true }))
+        .not.toBeInTheDocument();
     } finally {
       await mounted.unmount();
     }
@@ -176,7 +194,7 @@ describe("WorkspaceCreateDialog", () => {
     try {
       await expect.element(page.getByText("Switch branch")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Branch")).toBeInTheDocument();
+      await expect.element(page.getByLabelText("Branch", { exact: true })).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch name")).not.toBeInTheDocument();
       await expect.element(page.getByLabelText("From branch")).not.toBeInTheDocument();
     } finally {
@@ -206,16 +224,27 @@ describe("WorkspaceCreateDialog", () => {
 
     try {
       await page.getByLabelText("Branch name").fill("feature/release-shell");
-      await page.getByRole("button", { name: "From branch" }).click();
-      await page.getByRole("option", { name: "main" }).click();
-      await page.getByRole("button", { name: "Create workspace" }).click();
+      const fromBranchCombobox = page.getByRole("combobox", { name: "From branch" });
+      await fromBranchCombobox.click();
 
-      expect(createWorkspaceSpy).toHaveBeenCalledWith({
-        projectId: "project-1",
-        type: "worktree",
-        name: "Release shell",
-        branch: "feature/release-shell",
-        baseBranch: "main",
+      const mainOption = findOptionByText("main");
+      expect(mainOption, 'Option "main" not found').toBeTruthy();
+      mainOption!.click();
+
+      await expect.element(fromBranchCombobox).toHaveAttribute("aria-expanded", "false");
+
+      const createButton = findButtonByText("Create workspace");
+      expect(createButton, 'Button "Create workspace" not found').toBeTruthy();
+      createButton!.click();
+
+      await vi.waitFor(() => {
+        expect(createWorkspaceSpy).toHaveBeenCalledWith({
+          projectId: "project-1",
+          type: "worktree",
+          name: "Release shell",
+          branch: "feature/release-shell",
+          baseBranch: "main",
+        });
       });
       expect(onCreatedSpy).toHaveBeenCalledTimes(1);
       expect(onOpenChangeSpy).toHaveBeenCalledWith(false);
@@ -247,9 +276,18 @@ describe("WorkspaceCreateDialog", () => {
     );
 
     try {
-      await page.getByRole("button", { name: "Branch" }).click();
-      await page.getByRole("option", { name: "feature/release-shell" }).click();
-      await page.getByRole("button", { name: "Create workspace" }).click();
+      const branchCombobox = page.getByRole("combobox", { name: "Branch" });
+      await branchCombobox.click();
+
+      const featureOption = findOptionByText("feature/release-shell");
+      expect(featureOption, 'Option "feature/release-shell" not found').toBeTruthy();
+      featureOption!.click();
+
+      await expect.element(branchCombobox).toHaveAttribute("aria-expanded", "false");
+
+      const createButton = findButtonByText("Create workspace");
+      expect(createButton, 'Button "Create workspace" not found').toBeTruthy();
+      createButton!.click();
 
       await expect.element(page.getByText("Creation failed.")).toBeInTheDocument();
       expect(onCreatedSpy).not.toHaveBeenCalled();
