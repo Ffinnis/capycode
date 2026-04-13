@@ -126,6 +126,13 @@ describe("ProviderLimitsButton", () => {
     await expect
       .element(page.getByRole("button", { name: "codex limits" }))
       .toHaveTextContent("58% left");
+    await expect
+      .element(
+        host.querySelector<SVGSVGElement>(
+          'button[aria-label="codex limits"] svg[viewBox="0 0 256 260"]',
+        ),
+      )
+      .not.toBeNull();
 
     await page.getByRole("button", { name: "codex limits" }).click();
 
@@ -133,6 +140,48 @@ describe("ProviderLimitsButton", () => {
     await expect.element(page.getByText("Weekly limit")).toBeInTheDocument();
     await expect.element(page.getByText("Resets in 2h")).toBeInTheDocument();
     await expect.element(page.getByRole("button", { name: "Open Usage" })).toBeInTheDocument();
+
+    await screen.unmount();
+    host.remove();
+  });
+
+  it("renders the branded Claude icon for claude limits", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+
+    const claudeProvider: ProviderUsageDashboard = {
+      ...providerDashboard,
+      provider: "claudeAgent",
+    };
+
+    useProviderLimitsMock.mockReturnValue({
+      provider: claudeProvider,
+      data: { providers: [claudeProvider], fetchedAt: "2026-04-12T00:05:00.000Z" },
+      isLoading: false,
+      isError: false,
+    });
+    useUsageSnapshotMock.mockReturnValue({
+      providers: [claudeProvider],
+      fetchedAt: "2026-04-12T00:05:00.000Z",
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <ProviderLimitsButton provider="claudeAgent" />
+      </QueryClientProvider>,
+      { container: host },
+    );
+
+    await expect
+      .element(
+        host.querySelector<SVGSVGElement>(
+          'button[aria-label="claudeAgent limits"] svg[viewBox="0 0 256 257"]',
+        ),
+      )
+      .not.toBeNull();
 
     await screen.unmount();
     host.remove();
