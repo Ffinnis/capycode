@@ -86,7 +86,7 @@ interface ViewportSpec {
   name: string;
   width: number;
   height: number;
-  textTolerancePx: number;
+  textToleranceRatio?: number;
   attachmentTolerancePx: number;
 }
 
@@ -94,33 +94,36 @@ const DEFAULT_VIEWPORT: ViewportSpec = {
   name: "desktop",
   width: 960,
   height: 1_100,
-  textTolerancePx: 44,
   attachmentTolerancePx: 56,
 };
 const WIDE_FOOTER_VIEWPORT: ViewportSpec = {
   name: "wide-footer",
   width: 1_400,
   height: 1_100,
-  textTolerancePx: 44,
   attachmentTolerancePx: 56,
 };
 const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   name: "compact-footer",
   width: 430,
   height: 932,
-  textTolerancePx: 56,
   attachmentTolerancePx: 56,
 };
 const TEXT_VIEWPORT_MATRIX = [
-  { ...DEFAULT_VIEWPORT, textTolerancePx: 320 },
-  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 320, attachmentTolerancePx: 56 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 320, attachmentTolerancePx: 56 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 320, attachmentTolerancePx: 56 },
+  { ...DEFAULT_VIEWPORT, textToleranceRatio: 0.15 },
+  {
+    name: "tablet",
+    width: 720,
+    height: 1_024,
+    textToleranceRatio: 0.15,
+    attachmentTolerancePx: 56,
+  },
+  { name: "mobile", width: 430, height: 932, textToleranceRatio: 0.15, attachmentTolerancePx: 56 },
+  { name: "narrow", width: 320, height: 700, textToleranceRatio: 0.15, attachmentTolerancePx: 56 },
 ] as const satisfies readonly ViewportSpec[];
 const ATTACHMENT_VIEWPORT_MATRIX = [
   { ...DEFAULT_VIEWPORT, attachmentTolerancePx: 120 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 56, attachmentTolerancePx: 120 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 84, attachmentTolerancePx: 120 },
+  { name: "mobile", width: 430, height: 932, attachmentTolerancePx: 120 },
+  { name: "narrow", width: 320, height: 700, attachmentTolerancePx: 120 },
 ] as const satisfies readonly ViewportSpec[];
 
 interface UserRowMeasurement {
@@ -839,25 +842,13 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
   }
   if (tag === WS_METHODS.workspacesSetActive) {
     const workspaceId = "workspaceId" in body ? body.workspaceId : null;
-    return (
-      fixture.snapshot.workspaces.find((workspace) => workspace.id === workspaceId) ?? {
-        id: DEFAULT_WORKSPACE_ID,
-        projectId: PROJECT_ID,
-        worktreeId: null,
-        type: "branch",
-        name: "Main workspace",
-        branch: "main",
-        worktreePath: null,
-        sectionId: null,
-        tabOrder: 0,
-        isDefault: true,
-        isActive: true,
-        createdAt: NOW_ISO,
-        updatedAt: NOW_ISO,
-        lastOpenedAt: NOW_ISO,
-        deletingAt: null,
-      }
-    );
+    const workspace = fixture.snapshot.workspaces.find((candidate) => candidate.id === workspaceId);
+    if (!workspace) {
+      throw new Error(
+        `Fixture received unknown workspace id for ${WS_METHODS.workspacesSetActive}: ${String(workspaceId)}`,
+      );
+    }
+    return workspace;
   }
   if (tag === WS_METHODS.terminalOpen) {
     return {
@@ -931,6 +922,11 @@ async function waitForProductionStyles(): Promise<void> {
       interval: 16,
     },
   );
+}
+
+function resolveTextTolerancePx(viewport: ViewportSpec, estimatedHeightPx: number): number {
+  const ratio = viewport.textToleranceRatio ?? 0.15;
+  return Math.ceil(estimatedHeightPx * ratio);
 }
 
 async function waitForElement<T extends Element>(
@@ -1290,7 +1286,7 @@ async function triggerChatNewShortcutUntilPath(
 }
 
 async function waitForNewThreadShortcutLabel(): Promise<void> {
-  const newThreadButton = page.getByTestId("new-thread-button");
+  const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
   await expect.element(newThreadButton).toBeInTheDocument();
 }
 
@@ -1570,7 +1566,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
         );
 
         expect(Math.abs(measuredRowHeightPx - estimatedHeightPx)).toBeLessThanOrEqual(
-          viewport.textTolerancePx,
+          resolveTextTolerancePx(viewport, estimatedHeightPx),
         );
       } finally {
         await mounted.cleanup();
@@ -1633,7 +1629,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
         expect(measurement.renderedInVirtualizedRegion).toBe(true);
         expect(Math.abs(measurement.measuredRowHeightPx - estimatedHeightPx)).toBeLessThanOrEqual(
-          viewport.textTolerancePx,
+          resolveTextTolerancePx(viewport, estimatedHeightPx),
         );
         measurements.push({ ...measurement, viewport, estimatedHeightPx });
       }
@@ -3235,7 +3231,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
     try {
       // Wait for the sidebar to render with the project.
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3295,7 +3291,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3351,7 +3347,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3404,7 +3400,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3444,7 +3440,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3486,7 +3482,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
 
       await newThreadButton.click();
@@ -3623,7 +3619,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const newThreadButton = page.getByTestId("new-thread-button");
+      const newThreadButton = page.getByTestId(`new-thread-button-${DEFAULT_WORKSPACE_ID}`);
       await expect.element(newThreadButton).toBeInTheDocument();
       await waitForNewThreadShortcutLabel();
       await waitForServerConfigToApply();

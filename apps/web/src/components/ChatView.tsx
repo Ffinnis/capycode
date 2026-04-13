@@ -1357,7 +1357,9 @@ export default function ChatView(props: ChatViewProps) {
       ? terminalLaunchContext
       : (storeServerTerminalLaunchContext ?? null);
   const terminalSurfaceVisible = terminalSurfaceOpen && workspaceDockState.terminalTabOpen;
-  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceOpen;
+  const terminalSurfaceActive =
+    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceActive;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const terminalShortcutLabelOptions = useMemo(
@@ -3438,8 +3440,6 @@ export default function ChatView(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
-  const terminalSurfaceActive =
-    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
   const detachedTerminalSurface =
     terminalSurfaceVisible && activeThreadRef ? (
       <PersistentThreadTerminalSurface
@@ -3456,37 +3456,40 @@ export default function ChatView(props: ChatViewProps) {
         onDockToDrawer={dockTerminalToDrawer}
       />
     ) : null;
-  const workspaceSurfaceActive = Boolean(props.workspaceSurfaceContent) || terminalSurfaceActive;
-  const workspaceSurfaceOverlay =
-    props.workspaceSurfaceContent || detachedTerminalSurface ? (
-      <div
-        className={cn(
-          "absolute inset-0 z-10 flex min-h-0 flex-col bg-background",
-          !workspaceSurfaceActive && "pointer-events-none invisible",
-        )}
-      >
-        {props.workspaceSurfaceContent ? (
-          <div
-            className={cn(
-              "absolute inset-0 flex min-h-0 flex-col",
-              terminalSurfaceActive && "pointer-events-none invisible",
-            )}
-          >
-            {props.workspaceSurfaceContent}
-          </div>
-        ) : null}
-        {detachedTerminalSurface ? (
-          <div
-            className={cn(
-              "absolute inset-0 flex min-h-0 flex-col",
-              !terminalSurfaceActive && "pointer-events-none invisible",
-            )}
-          >
-            {detachedTerminalSurface}
-          </div>
-        ) : null}
-      </div>
-    ) : null;
+  const workspaceContentActive =
+    Boolean(props.workspaceSurfaceContent) &&
+    workspaceDockState.activeTab !== "chat" &&
+    workspaceDockState.activeTab !== WORKSPACE_TERMINAL_TAB_ID;
+  const workspaceSurfaceActive = workspaceContentActive || terminalSurfaceActive;
+  const workspaceSurfaceOverlay = workspaceSurfaceActive ? (
+    <div
+      className={cn(
+        "absolute inset-0 z-10 flex min-h-0 flex-col bg-background",
+        !workspaceSurfaceActive && "pointer-events-none invisible",
+      )}
+    >
+      {props.workspaceSurfaceContent ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !workspaceContentActive && "pointer-events-none invisible",
+          )}
+        >
+          {props.workspaceSurfaceContent}
+        </div>
+      ) : null}
+      {detachedTerminalSurface ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !terminalSurfaceActive && "pointer-events-none invisible",
+          )}
+        >
+          {detachedTerminalSurface}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
