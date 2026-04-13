@@ -163,9 +163,7 @@ describe("WorkspaceCreateDialog", () => {
       await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("From branch")).toBeInTheDocument();
-      await expect
-        .element(page.getByLabelText("Branch", { exact: true }))
-        .not.toBeInTheDocument();
+      await expect.element(page.getByLabelText("Branch", { exact: true })).not.toBeInTheDocument();
     } finally {
       await mounted.unmount();
     }
