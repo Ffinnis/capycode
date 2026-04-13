@@ -1,14 +1,14 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 
-const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
+const PERSISTED_STATE_KEY = "capycode:ui-state:v1";
 const LEGACY_PERSISTED_STATE_KEYS = [
-  "t3code:renderer-state:v8",
-  "t3code:renderer-state:v7",
-  "t3code:renderer-state:v6",
-  "t3code:renderer-state:v5",
-  "t3code:renderer-state:v4",
-  "t3code:renderer-state:v3",
+  "capycode:renderer-state:v8",
+  "capycode:renderer-state:v7",
+  "capycode:renderer-state:v6",
+  "capycode:renderer-state:v5",
+  "capycode:renderer-state:v4",
+  "capycode:renderer-state:v3",
   "codething:renderer-state:v4",
   "codething:renderer-state:v3",
   "codething:renderer-state:v2",
@@ -341,10 +341,7 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
       state.threadChangedFilesExpandedById,
       nextThreadChangedFilesExpandedById,
     ) &&
-    recordsEqual(
-      state.selectedGitRepositoryCwdByThreadId,
-      nextSelectedGitRepositoryCwdByThreadId,
-    )
+    recordsEqual(state.selectedGitRepositoryCwdByThreadId, nextSelectedGitRepositoryCwdByThreadId)
   ) {
     return state;
   }

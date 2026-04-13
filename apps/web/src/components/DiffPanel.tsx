@@ -347,9 +347,7 @@ function GitRepositoryRow(props: {
           <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground/70">
             {formatRepositoryKind(props.repository.kind)}
           </span>
-          {dirty ? (
-            <span className="shrink-0 text-[10px] text-warning">dirty</span>
-          ) : null}
+          {dirty ? <span className="shrink-0 text-[10px] text-warning">dirty</span> : null}
           {prOpen ? <span className="shrink-0 text-[10px] text-primary">PR open</span> : null}
         </div>
         <div className="flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground/65">
@@ -375,7 +373,8 @@ function GitFileRow(props: {
   onToggleSelectedForAction?: (path: string) => void;
 }) {
   const { entry, selected, onSelect } = props;
-  const submoduleSummary = entry.file.kind === "submodule" ? formatSubmoduleSummary(entry.file) : null;
+  const submoduleSummary =
+    entry.file.kind === "submodule" ? formatSubmoduleSummary(entry.file) : null;
   return (
     <button
       type="button"
@@ -1302,7 +1301,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }
     return rootRepositoryCwd;
   }, [repositoriesQuery.data?.repositories, rootRepositoryCwd, selectedRepositoryCwd]);
-  const activeCwd = panelMode === "git" ? effectiveSelectedRepositoryCwd ?? catalogCwd : catalogCwd;
+  const activeCwd =
+    panelMode === "git" ? (effectiveSelectedRepositoryCwd ?? catalogCwd) : catalogCwd;
   const gitStatusQuery = useGitStatus({
     environmentId: activeThread?.environmentId ?? null,
     cwd: activeCwd,

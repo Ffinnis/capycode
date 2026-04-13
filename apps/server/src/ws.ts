@@ -783,12 +783,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       });
 
       const refreshGitStatus = (cwd: string) =>
-        gitRepositoryCatalog.invalidateAll().pipe(
-          Effect.andThen(gitStatusBroadcaster.refreshStatus(cwd)),
-          Effect.ignoreCause({ log: true }),
-          Effect.forkDetach,
-          Effect.asVoid,
-        );
+        gitRepositoryCatalog
+          .invalidateAll()
+          .pipe(
+            Effect.andThen(gitStatusBroadcaster.refreshStatus(cwd)),
+            Effect.ignoreCause({ log: true }),
+            Effect.forkDetach,
+            Effect.asVoid,
+          );
 
       const setActiveWorkspace = (workspaceId: string) =>
         Effect.gen(function* () {
@@ -997,7 +999,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
           if (requestedType === "worktree") {
             const resolvedBaseBranch = yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
-              Effect.mapError((cause) => makeWorkspaceError("Failed to resolve base branch", cause)),
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to resolve base branch", cause),
+              ),
             );
             const baseBranch = input.baseBranch ?? resolvedBaseBranch;
             const targetBranch = input.branch ?? slugifyWorkspaceName(input.name);
@@ -1635,9 +1639,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           if (input.sectionId !== null) {
             const section = yield* loadWorkspaceSectionRecord(sql, input.sectionId);
             if (section.projectId !== workspace.projectId) {
-              return yield* makeWorkspaceError(
-                "Section does not belong to the workspace project",
-              );
+              return yield* makeWorkspaceError("Section does not belong to the workspace project");
             }
           }
           const tabOrder =

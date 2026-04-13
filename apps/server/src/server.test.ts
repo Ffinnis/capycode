@@ -2948,16 +2948,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("enriches replayed project events with repository identity metadata", () =>
     Effect.gen(function* () {
       const repositoryIdentity = {
-        canonicalKey: "github.com/t3tools/t3code",
+        canonicalKey: "github.com/t3tools/capycode",
         locator: {
           source: "git-remote" as const,
           remoteName: "origin",
-          remoteUrl: "git@github.com:T3Tools/t3code.git",
+          remoteUrl: "git@github.com:T3Tools/capycode.git",
         },
-        displayName: "T3Tools/t3code",
+        displayName: "T3Tools/capycode",
         provider: "github",
         owner: "T3Tools",
-        name: "t3code",
+        name: "capycode",
       };
 
       yield* buildAppUnderTest({
@@ -3055,7 +3055,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
           Effect.succeed({
             worktree: {
-              branch: "t3code/bootstrap-branch",
+              branch: "capycode/bootstrap-branch",
               path: "/tmp/bootstrap-worktree",
             },
           }),
@@ -3121,7 +3121,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 prepareWorktree: {
                   projectCwd: "/tmp/project",
                   baseBranch: "main",
-                  branch: "t3code/bootstrap-branch",
+                  branch: "capycode/bootstrap-branch",
                 },
                 runSetupScript: true,
               },
@@ -3144,7 +3144,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           branch: "main",
-          newBranch: "t3code/bootstrap-branch",
+          newBranch: "capycode/bootstrap-branch",
           path: null,
         });
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
@@ -3176,7 +3176,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "capycode/bootstrap-branch",
             path: "/tmp/bootstrap-worktree",
           },
         }),
@@ -3236,7 +3236,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "capycode/bootstrap-branch",
               },
               runSetupScript: true,
             },
@@ -3269,7 +3269,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "capycode/bootstrap-branch",
             path: "/tmp/bootstrap-worktree",
           },
         }),
@@ -3352,7 +3352,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "capycode/bootstrap-branch",
               },
               runSetupScript: true,
             },
@@ -3435,7 +3435,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "capycode/bootstrap-branch",
               },
               runSetupScript: false,
             },
@@ -3518,16 +3518,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       let resolveCalls = 0;
       const repositoryIdentity = {
-        canonicalKey: "github.com/t3tools/t3code",
+        canonicalKey: "github.com/t3tools/capycode",
         locator: {
           source: "git-remote" as const,
           remoteName: "origin",
-          remoteUrl: "git@github.com:t3tools/t3code.git",
+          remoteUrl: "git@github.com:t3tools/capycode.git",
         },
-        displayName: "t3tools/t3code",
+        displayName: "t3tools/capycode",
         provider: "github" as const,
         owner: "t3tools",
-        name: "t3code",
+        name: "capycode",
       };
 
       yield* buildAppUnderTest({
@@ -3590,16 +3590,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("enriches subscribed project meta updates with repository identity metadata", () =>
     Effect.gen(function* () {
       const repositoryIdentity = {
-        canonicalKey: "github.com/t3tools/t3code",
+        canonicalKey: "github.com/t3tools/capycode",
         locator: {
           source: "git-remote" as const,
           remoteName: "upstream",
-          remoteUrl: "git@github.com:T3Tools/t3code.git",
+          remoteUrl: "git@github.com:T3Tools/capycode.git",
         },
-        displayName: "T3Tools/t3code",
+        displayName: "T3Tools/capycode",
         provider: "github",
         owner: "T3Tools",
-        name: "t3code",
+        name: "capycode",
       };
 
       yield* buildAppUnderTest({

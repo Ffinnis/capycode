@@ -21,27 +21,33 @@ bun install
 
 ### Desktop dev
 
-Desktop dev currently needs the web dev server running in a separate terminal.
+Run this from the repo root:
+
+```bash
+bun run dev:desktop
+```
+
+This starts the web dev server and Electron app together.
 Do not start `apps/server` manually for this flow. The desktop app starts its own backend.
+
+If you need to run the pieces separately for debugging:
 
 Terminal 1:
 
 ```bash
-cd /Users/roman/Documents/ai-agent/capycode/apps/web
 PORT=5733 \
 VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
 VITE_HTTP_URL=http://127.0.0.1:13773 \
 VITE_WS_URL=ws://127.0.0.1:13773 \
-bun run dev -- --host 127.0.0.1 --port 5733
+bun --cwd apps/web run dev -- --host 127.0.0.1 --port 5733
 ```
 
 Terminal 2:
 
 ```bash
-cd /Users/roman/Documents/ai-agent/capycode/apps/desktop
 T3CODE_PORT=13773 \
 VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
-bun run dev
+bun --cwd apps/desktop run dev
 ```
 
 Notes:
@@ -51,26 +57,19 @@ Notes:
 - If desktop dev starts failing after server-side changes, rebuild the server bundle:
 
 ```bash
-cd /Users/roman/Documents/ai-agent/capycode/apps/server
-bun run build
+bun --cwd apps/server run build
 ```
 
 ### Server-only dev
 
 ```bash
-cd /Users/roman/Documents/ai-agent/capycode/apps/server
-T3CODE_PORT=13773 bun run dev
+bun run dev:server
 ```
 
 ### Web-only dev
 
 ```bash
-cd /Users/roman/Documents/ai-agent/capycode/apps/web
-PORT=5733 \
-VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
-VITE_HTTP_URL=http://127.0.0.1:13773 \
-VITE_WS_URL=ws://127.0.0.1:13773 \
-bun run dev -- --host 127.0.0.1 --port 5733
+bun run dev:web
 ```
 
 ## Desktop app

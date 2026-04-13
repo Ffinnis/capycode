@@ -28,7 +28,16 @@ import {
 import { applyClaudePromptEffortPrefix } from "@capycode/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@capycode/shared/projectScripts";
 import { truncate } from "@capycode/shared/String";
-import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";

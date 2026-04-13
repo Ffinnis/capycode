@@ -80,6 +80,7 @@ import {
   reduceDesktopUpdateStateOnUpdateAvailable,
 } from "./updateMachine";
 import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runtimeArch";
+import { resolveWindowActivationAction } from "./windowActivation";
 
 syncShellEnvironment();
 
@@ -125,7 +126,6 @@ const APP_USER_MODEL_ID = "com.capycode.app";
 const LINUX_DESKTOP_ENTRY_NAME = isDevelopment ? "capycode-dev.desktop" : "capycode.desktop";
 const LINUX_WM_CLASS = isDevelopment ? "capycode-dev" : "capycode";
 const USER_DATA_DIR_NAME = isDevelopment ? "capycode-dev" : "capycode";
-const LEGACY_USER_DATA_DIR_NAME = isDevelopment ? "Capycode (Dev)" : "Capycode (Alpha)";
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
 const LOG_DIR = Path.join(STATE_DIR, "logs");
@@ -146,6 +146,7 @@ type LinuxDesktopNamedApp = Electron.App & {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let bootstrapWindowPending = false;
 let backendProcess: ChildProcess.ChildProcess | null = null;
 let backendPort = 0;
 let backendBindHost = DESKTOP_LOOPBACK_HOST;
@@ -639,8 +640,10 @@ function resolveEmbeddedCommitHash(): string | null {
 
   try {
     const raw = FS.readFileSync(packageJsonPath, "utf8");
-    const parsed = JSON.parse(raw) as { t3codeCommitHash?: unknown };
-    return normalizeCommitHash(parsed.t3codeCommitHash);
+    const parsed = JSON.parse(raw) as {
+      capycodeCommitHash?: unknown;
+    };
+    return normalizeCommitHash(parsed.capycodeCommitHash);
   } catch {
     return null;
   }
@@ -969,9 +972,7 @@ function resolveIconPath(ext: "ico" | "icns" | "png"): string | null {
  * parentheses (e.g. `~/.config/T3 Code (Alpha)` on Linux). This is
  * unfriendly for shell usage and violates Linux naming conventions.
  *
- * We override it to a clean lowercase name (`t3code`). If the legacy
- * directory already exists we keep using it so existing users don't
- * lose their Chromium profile data (localStorage, cookies, sessions).
+ * We override it to a clean lowercase name (`capycode`).
  */
 function resolveUserDataPath(): string {
   const appDataBase =
@@ -980,11 +981,6 @@ function resolveUserDataPath(): string {
       : process.platform === "darwin"
         ? Path.join(OS.homedir(), "Library", "Application Support")
         : process.env.XDG_CONFIG_HOME || Path.join(OS.homedir(), ".config");
-
-  const legacyPath = Path.join(appDataBase, LEGACY_USER_DATA_DIR_NAME);
-  if (FS.existsSync(legacyPath)) {
-    return legacyPath;
-  }
 
   return Path.join(appDataBase, USER_DATA_DIR_NAME);
 }
@@ -2034,19 +2030,35 @@ app
     configureApplicationMenu();
     registerDesktopProtocol();
     configureAutoUpdater();
-    void bootstrap().catch((error) => {
-      if (isBackendReadinessAborted(error) && isQuitting) {
-        return;
-      }
-      handleFatalStartupError("bootstrap", error);
-    });
+    bootstrapWindowPending = true;
+    void bootstrap()
+      .catch((error) => {
+        if (isBackendReadinessAborted(error) && isQuitting) {
+          return;
+        }
+        handleFatalStartupError("bootstrap", error);
+      })
+      .finally(() => {
+        bootstrapWindowPending = false;
+      });
 
     app.on("activate", () => {
       const existingWindow = mainWindow ?? BrowserWindow.getAllWindows()[0];
-      if (existingWindow) {
+      const action = resolveWindowActivationAction({
+        hasExistingWindow: existingWindow !== undefined,
+        bootstrapWindowPending,
+      });
+
+      if (action === "reveal-existing-window" && existingWindow) {
         revealWindow(existingWindow);
         return;
       }
+
+      if (action === "wait-for-bootstrap") {
+        writeDesktopLogHeader("activate ignored while bootstrap window is pending");
+        return;
+      }
+
       mainWindow = createWindow();
     });
   })

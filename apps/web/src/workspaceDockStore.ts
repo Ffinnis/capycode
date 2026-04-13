@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const PERSISTED_STATE_KEY = "t3code:workspace-dock:v1";
+const PERSISTED_STATE_KEY = "capycode:workspace-dock:v1";
 const DEFAULT_FILES_PANEL_WIDTH = 280;
 const DEFAULT_CONTEXT_PANEL_WIDTH = 640;
 

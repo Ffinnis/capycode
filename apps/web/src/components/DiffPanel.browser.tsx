@@ -233,7 +233,13 @@ describe("GitDiffView", () => {
       <GitDiffView
         hasActiveThread
         activeCwd="/repo/project"
+        environmentId={null}
         isGitRepo
+        repositories={[]}
+        repositoriesLoading={false}
+        repositoriesError={null}
+        selectedRepositoryCwd={null}
+        onSelectRepository={() => undefined}
         actionBar={<div>Panel actions</div>}
         baseBranch="main"
         baseBranchOptions={["main", "release"]}
@@ -285,7 +291,13 @@ describe("GitDiffView", () => {
         <GitDiffView
           hasActiveThread
           activeCwd="/repo/project"
+          environmentId={null}
           isGitRepo
+          repositories={[]}
+          repositoriesLoading={false}
+          repositoriesError={null}
+          selectedRepositoryCwd={null}
+          onSelectRepository={() => undefined}
           actionBar={<div>Panel actions</div>}
           baseBranch="main"
           baseBranchOptions={["main", "release"]}
@@ -360,7 +372,13 @@ describe("GitDiffView", () => {
       <GitDiffView
         hasActiveThread
         activeCwd="/repo/project"
+        environmentId={null}
         isGitRepo
+        repositories={[]}
+        repositoriesLoading={false}
+        repositoriesError={null}
+        selectedRepositoryCwd={null}
+        onSelectRepository={() => undefined}
         actionBar={<div data-testid="git-panel-action-bar">Panel actions</div>}
         baseBranch="main"
         baseBranchOptions={["main"]}

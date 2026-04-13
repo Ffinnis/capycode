@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   selectProjectsAcrossEnvironments,
   selectSidebarThreadsAcrossEnvironments,
+  selectThreadIdsByProjectRef,
   selectSidebarThreadsForProjectRef,
   selectSidebarThreadsForProjectRefs,
   type AppState,
@@ -326,6 +327,17 @@ describe("environment grouping", () => {
       const threads = selectSidebarThreadsForProjectRef(state, ref);
       expect(threads).toHaveLength(2);
       expect(threads.map((t) => t.id)).toEqual([threadP1, threadP2]);
+    });
+
+    it("keeps grouped project thread ownership scoped to the referenced environment", () => {
+      const state = makeFixtureState();
+
+      expect(
+        selectThreadIdsByProjectRef(state, scopeProjectRef(primaryEnvId, sharedProjectPrimaryId)),
+      ).toEqual([threadP1, threadP2]);
+      expect(
+        selectThreadIdsByProjectRef(state, scopeProjectRef(remoteEnvId, sharedProjectRemoteId)),
+      ).toEqual([threadR1]);
     });
 
     it("returns empty array for null ref", () => {

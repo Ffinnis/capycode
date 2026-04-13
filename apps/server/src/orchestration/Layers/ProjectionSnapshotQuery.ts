@@ -266,11 +266,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspaces.last_opened_at AS "lastOpenedAt",
           workspaces.deleting_at AS "deletingAt"
         FROM workspaces
+        INNER JOIN projection_projects
+          ON projection_projects.project_id = workspaces.project_id
         LEFT JOIN worktrees
           ON worktrees.id = workspaces.worktree_id
         LEFT JOIN workspace_project_state
           ON workspace_project_state.project_id = workspaces.project_id
-        WHERE workspaces.deleting_at IS NULL
+        WHERE
+          workspaces.deleting_at IS NULL
+          AND projection_projects.deleted_at IS NULL
         ORDER BY workspaces.project_id ASC, workspaces.tab_order ASC, workspaces.id ASC
       `,
   });
@@ -281,15 +285,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     execute: () =>
       sql`
         SELECT
-          id,
-          project_id AS "projectId",
-          name,
-          tab_order AS "tabOrder",
-          is_collapsed AS "isCollapsed",
-          color,
-          created_at AS "createdAt"
+          workspace_sections.id AS "id",
+          workspace_sections.project_id AS "projectId",
+          workspace_sections.name AS "name",
+          workspace_sections.tab_order AS "tabOrder",
+          workspace_sections.is_collapsed AS "isCollapsed",
+          workspace_sections.color AS "color",
+          workspace_sections.created_at AS "createdAt"
         FROM workspace_sections
-        ORDER BY project_id ASC, tab_order ASC, id ASC
+        INNER JOIN projection_projects
+          ON projection_projects.project_id = workspace_sections.project_id
+        WHERE projection_projects.deleted_at IS NULL
+        ORDER BY workspace_sections.project_id ASC, workspace_sections.tab_order ASC, workspace_sections.id ASC
       `,
   });
 

@@ -867,6 +867,42 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           if (Option.isNone(existingRow)) {
             return;
           }
+          yield* sql`
+            DELETE FROM workspace_project_state
+            WHERE project_id = ${event.payload.projectId}
+          `.pipe(
+            Effect.mapError(
+              toPersistenceSqlError(
+                "ProjectionPipeline.applyProjectsProjection:deleteWorkspaceProjectState",
+              ),
+            ),
+          );
+          yield* sql`
+            DELETE FROM workspace_sections
+            WHERE project_id = ${event.payload.projectId}
+          `.pipe(
+            Effect.mapError(
+              toPersistenceSqlError(
+                "ProjectionPipeline.applyProjectsProjection:deleteWorkspaceSections",
+              ),
+            ),
+          );
+          yield* sql`
+            DELETE FROM workspaces
+            WHERE project_id = ${event.payload.projectId}
+          `.pipe(
+            Effect.mapError(
+              toPersistenceSqlError("ProjectionPipeline.applyProjectsProjection:deleteWorkspaces"),
+            ),
+          );
+          yield* sql`
+            DELETE FROM worktrees
+            WHERE project_id = ${event.payload.projectId}
+          `.pipe(
+            Effect.mapError(
+              toPersistenceSqlError("ProjectionPipeline.applyProjectsProjection:deleteWorktrees"),
+            ),
+          );
           yield* projectionProjectRepository.upsert({
             ...existingRow.value,
             deletedAt: event.payload.deletedAt,

@@ -32,7 +32,9 @@ interface RepoMarker extends DirectoryCandidate {
   readonly hasGitRepo: boolean;
 }
 
-class RepositoryCatalogFilesystemError extends Data.TaggedError("RepositoryCatalogFilesystemError")<{
+class RepositoryCatalogFilesystemError extends Data.TaggedError(
+  "RepositoryCatalogFilesystemError",
+)<{
   readonly operation: "read-directory" | "has-git-marker";
   readonly absolutePath: string;
   readonly cause: unknown;
@@ -143,24 +145,24 @@ export const makeGitRepositoryCatalog = Effect.fn("makeGitRepositoryCatalog")(fu
     return rootCwd.length > 0 ? resolvePath(rootCwd) : null;
   });
 
-  const listDeclaredSubmodules = Effect.fn("GitRepositoryCatalog.listDeclaredSubmodules")(function* (
-    rootCwd: string,
-  ): Effect.fn.Return<ReadonlySet<string>> {
-    const result = yield* gitCore
-      .execute({
-        operation: "GitRepositoryCatalog.listDeclaredSubmodules",
-        cwd: rootCwd,
-        args: ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
-        allowNonZeroExit: true,
-      })
-      .pipe(Effect.catch(() => Effect.succeed(null)));
+  const listDeclaredSubmodules = Effect.fn("GitRepositoryCatalog.listDeclaredSubmodules")(
+    function* (rootCwd: string): Effect.fn.Return<ReadonlySet<string>> {
+      const result = yield* gitCore
+        .execute({
+          operation: "GitRepositoryCatalog.listDeclaredSubmodules",
+          cwd: rootCwd,
+          args: ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+          allowNonZeroExit: true,
+        })
+        .pipe(Effect.catch(() => Effect.succeed(null)));
 
-    if (!result || result.code !== 0) {
-      return new Set<string>();
-    }
+      if (!result || result.code !== 0) {
+        return new Set<string>();
+      }
 
-    return new Set(parseDeclaredSubmodulePaths(result.stdout));
-  });
+      return new Set(parseDeclaredSubmodulePaths(result.stdout));
+    },
+  );
 
   const discoverNestedRepos = Effect.fn("GitRepositoryCatalog.discoverNestedRepos")(function* (
     rootCwd: string,
@@ -178,7 +180,9 @@ export const makeGitRepositoryCatalog = Effect.fn("makeGitRepositoryCatalog")(fu
           Effect.tryPromise({
             try: async (): Promise<DirectoryScanResult> => ({
               relativeDir,
-              directoryNames: await readDirectoryNames(relativeDir ? join(rootCwd, relativeDir) : rootCwd),
+              directoryNames: await readDirectoryNames(
+                relativeDir ? join(rootCwd, relativeDir) : rootCwd,
+              ),
             }),
             catch: (cause) =>
               new RepositoryCatalogFilesystemError({
@@ -202,7 +206,9 @@ export const makeGitRepositoryCatalog = Effect.fn("makeGitRepositoryCatalog")(fu
           if (!directoryName || IGNORED_DIRECTORY_NAMES.has(directoryName)) {
             return [];
           }
-          const relativePath = toPosixPath(relativeDir ? join(relativeDir, directoryName) : directoryName);
+          const relativePath = toPosixPath(
+            relativeDir ? join(relativeDir, directoryName) : directoryName,
+          );
           return [{ relativePath, absolutePath: join(rootCwd, relativePath) }];
         }),
       );
@@ -279,10 +285,7 @@ export const makeGitRepositoryCatalog = Effect.fn("makeGitRepositoryCatalog")(fu
     );
 
     const normalizedRootCwd = toPosixPath(resolvePath(rootCwd));
-    const repoCwds = [
-      normalizedRootCwd,
-      ...nestedRepos.filter((cwd) => cwd !== normalizedRootCwd),
-    ];
+    const repoCwds = [normalizedRootCwd, ...nestedRepos.filter((cwd) => cwd !== normalizedRootCwd)];
     const discoveredRepos: Array<{ cwd: string; depth: number }> = [];
     const repositories: GitRepositoryEntry[] = [];
 
@@ -346,20 +349,23 @@ export const makeGitRepositoryCatalog = Effect.fn("makeGitRepositoryCatalog")(fu
     "GitRepositoryCatalog.invalidateAll",
   )(function* () {
     const cacheKeys = yield* Ref.get(knownCacheKeysRef);
-    yield* Effect.forEach(cacheKeys, (cacheKey) => Cache.invalidate(repositoryCatalogCache, cacheKey), {
-      concurrency: "unbounded",
-      discard: true,
-    });
+    yield* Effect.forEach(
+      cacheKeys,
+      (cacheKey) => Cache.invalidate(repositoryCatalogCache, cacheKey),
+      {
+        concurrency: "unbounded",
+        discard: true,
+      },
+    );
   });
 
   return {
     listRepositories,
     invalidateAll,
   } satisfies GitRepositoryCatalogShape;
-}) as () => Effect.Effect<
-  GitRepositoryCatalogShape,
-  never,
-  GitCore | RepositoryIdentityResolver
->;
+}) as () => Effect.Effect<GitRepositoryCatalogShape, never, GitCore | RepositoryIdentityResolver>;
 
-export const GitRepositoryCatalogLive = Layer.effect(GitRepositoryCatalog, makeGitRepositoryCatalog());
+export const GitRepositoryCatalogLive = Layer.effect(
+  GitRepositoryCatalog,
+  makeGitRepositoryCatalog(),
+);

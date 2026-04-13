@@ -29,7 +29,7 @@
       "outputs": ["dist/**", "dist-electron/**"]
     },
     "dev": {
-      "dependsOn": ["@t3tools/contracts#build"],
+      "dependsOn": ["@capycode/contracts#build"],
       "cache": false,
       "persistent": true
     },

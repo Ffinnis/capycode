@@ -176,10 +176,10 @@ Warm-shifted ANSI color palette for the terminal drawer.
 
 ### Core theme infrastructure
 
-| File                             | Change                                                                                                                                                                                   |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/hooks/useTheme.ts` | Add `colorScheme` state ("default" \| "capybara"), persist to `t3code:color-scheme` in localStorage, apply `data-theme` attribute to `<html>`, export `colorScheme` and `setColorScheme` |
-| `apps/web/src/index.css`         | Add `[data-theme="capybara"]` and `[data-theme="capybara"] @variant dark` blocks with all CSS variable overrides                                                                         |
+| File                             | Change                                                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web/src/hooks/useTheme.ts` | Add `colorScheme` state ("default" \| "capybara"), persist to `capycode:color-scheme` in localStorage, apply `data-theme` attribute to `<html>`, export `colorScheme` and `setColorScheme` |
+| `apps/web/src/index.css`         | Add `[data-theme="capybara"]` and `[data-theme="capybara"] @variant dark` blocks with all CSS variable overrides                                                                           |
 
 ### Syntax highlighting
 

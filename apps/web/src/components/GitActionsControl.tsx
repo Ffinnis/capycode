@@ -270,11 +270,13 @@ function formatGitActionError(error: unknown): string {
 }
 
 function formatSubmoduleSelectionSummary(file: {
-  submodule?: {
-    commitChanged: boolean;
-    trackedChanges: boolean;
-    untrackedChanges: boolean;
-  };
+  submodule?:
+    | {
+        commitChanged: boolean;
+        trackedChanges: boolean;
+        untrackedChanges: boolean;
+      }
+    | undefined;
 }): string | null {
   if (!file.submodule) {
     return null;
@@ -1324,7 +1326,9 @@ export default function GitActionsControl({
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-2">
-                                  <span className="truncate font-mono text-[11px]">{file.path}</span>
+                                  <span className="truncate font-mono text-[11px]">
+                                    {file.path}
+                                  </span>
                                   {file.kind === "submodule" ? (
                                     <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground/70">
                                       Repo

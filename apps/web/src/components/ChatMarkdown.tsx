@@ -27,9 +27,12 @@ import { capybaraShikiLight } from "../lib/capybaraShikiLight";
 import { capybaraShikiDark } from "../lib/capybaraShikiDark";
 import { resolveMarkdownFileLinkTarget, rewriteMarkdownFileUriHref } from "../markdown-links";
 
+type CustomThemeLoader = Parameters<typeof registerCustomTheme>[1];
+type CustomTheme = Awaited<ReturnType<CustomThemeLoader>>;
+
 // Register capybara themes for Shiki highlighting
-registerCustomTheme("capybara-light", () => Promise.resolve(capybaraShikiLight));
-registerCustomTheme("capybara-dark", () => Promise.resolve(capybaraShikiDark));
+registerCustomTheme("capybara-light", () => Promise.resolve(capybaraShikiLight as CustomTheme));
+registerCustomTheme("capybara-dark", () => Promise.resolve(capybaraShikiDark as CustomTheme));
 import { readLocalApi } from "../localApi";
 
 class CodeHighlightErrorBoundary extends React.Component<

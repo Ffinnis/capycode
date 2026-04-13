@@ -141,7 +141,7 @@ function resolvePullRequestWorktreeLocalBranchName(
 
   const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
   const suffix = sanitizedHeadBranch.length > 0 ? sanitizedHeadBranch : "head";
-  return `t3code/pr-${pullRequest.number}/${suffix}`;
+  return `capycode/pr-${pullRequest.number}/${suffix}`;
 }
 
 function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
@@ -675,23 +675,21 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const invalidateLocalStatusResultCache = (cwd: string) =>
     Cache.invalidate(localStatusResultCache, normalizeStatusCacheKey(cwd));
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (cwd: string) {
-    const details = yield* gitCore
-      .statusDetails(cwd)
-      .pipe(
-        Effect.timeoutOrElse({
-          duration: REMOTE_STATUS_DETAILS_TIMEOUT,
-          orElse: () => gitCore.statusDetailsLocal(cwd),
-        }),
-        Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)),
-        Effect.catchIf(
-          (error): error is GitCommandError => error._tag === "GitCommandError",
-          (error) =>
-            Effect.logDebug("git remote status skipped", {
-              cwd,
-              detail: error.message,
-            }).pipe(Effect.as(null)),
-        ),
-      );
+    const details = yield* gitCore.statusDetails(cwd).pipe(
+      Effect.timeoutOrElse({
+        duration: REMOTE_STATUS_DETAILS_TIMEOUT,
+        orElse: () => gitCore.statusDetailsLocal(cwd),
+      }),
+      Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)),
+      Effect.catchIf(
+        (error): error is GitCommandError => error._tag === "GitCommandError",
+        (error) =>
+          Effect.logDebug("git remote status skipped", {
+            cwd,
+            detail: error.message,
+          }).pipe(Effect.as(null)),
+      ),
+    );
     if (details === null || !details.isRepo) {
       return null;
     }
@@ -1269,7 +1267,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       modelSelection,
     });
 
-    const bodyFile = path.join(tempDir, `t3code-pr-body-${process.pid}-${randomUUID()}.md`);
+    const bodyFile = path.join(tempDir, `capycode-pr-body-${process.pid}-${randomUUID()}.md`);
     yield* fileSystem
       .writeFileString(bodyFile, generated.body)
       .pipe(

@@ -8,8 +8,8 @@ type ThemeSnapshot = {
   colorScheme: ColorScheme;
 };
 
-const STORAGE_KEY = "t3code:theme";
-const COLOR_SCHEME_STORAGE_KEY = "t3code:color-scheme";
+const STORAGE_KEY = "capycode:theme";
+const COLOR_SCHEME_STORAGE_KEY = "capycode:color-scheme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
   theme: "system",

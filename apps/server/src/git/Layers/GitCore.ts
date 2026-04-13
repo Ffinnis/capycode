@@ -305,7 +305,9 @@ function buildChangedFiles(input: {
     const rawEntry = rawByPath.get(entry.path);
     files.set(entry.path, {
       path: entry.path,
-      ...(rawEntry?.oldPath ?? entry.oldPath ? { oldPath: rawEntry?.oldPath ?? entry.oldPath } : {}),
+      ...((rawEntry?.oldPath ?? entry.oldPath)
+        ? { oldPath: rawEntry?.oldPath ?? entry.oldPath }
+        : {}),
       status: entry.status,
       additions: stats.insertions,
       deletions: stats.deletions,
@@ -317,7 +319,9 @@ function buildChangedFiles(input: {
     const rawEntry = rawByPath.get(entry.path);
     files.set(entry.path, {
       path: entry.path,
-      ...(rawEntry?.oldPath ?? entry.oldPath ? { oldPath: rawEntry?.oldPath ?? entry.oldPath } : {}),
+      ...((rawEntry?.oldPath ?? entry.oldPath)
+        ? { oldPath: rawEntry?.oldPath ?? entry.oldPath }
+        : {}),
       status: entry.status,
       additions: entry.additions ?? 0,
       deletions: entry.deletions ?? 0,
@@ -678,7 +682,7 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const traceFilePath = yield* fs.makeTempFileScoped({
-    prefix: `t3code-git-trace2-${process.pid}-`,
+    prefix: `capycode-git-trace2-${process.pid}-`,
     suffix: ".json",
   });
   const hookStartByChildKey = new Map<string, { hookName: string; startedAtMs: number }>();

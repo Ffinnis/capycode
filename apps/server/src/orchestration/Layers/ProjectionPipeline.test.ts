@@ -2185,6 +2185,145 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 
+  it.effect("project.delete removes workspace metadata for the deleted project", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = new Date().toISOString();
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-delete-project-create"),
+        projectId: ProjectId.make("project-delete-with-workspaces"),
+        title: "Delete Project",
+        workspaceRoot: "/tmp/project-delete-with-workspaces",
+        defaultModelSelection: null,
+        createdAt,
+      });
+
+      yield* sql`
+        INSERT INTO workspace_sections (
+          id,
+          project_id,
+          name,
+          tab_order,
+          is_collapsed,
+          color,
+          created_at
+        )
+        VALUES (
+          'section-delete-project',
+          'project-delete-with-workspaces',
+          'Extra',
+          1,
+          0,
+          NULL,
+          ${createdAt}
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO worktrees (
+          id,
+          project_id,
+          path,
+          branch,
+          base_branch,
+          created_at,
+          created_by_capycode
+        )
+        VALUES (
+          'worktree-delete-project',
+          'project-delete-with-workspaces',
+          '/tmp/project-delete-with-workspaces-feature',
+          'feature/delete-project',
+          'main',
+          ${createdAt},
+          0
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO workspaces (
+          id,
+          project_id,
+          worktree_id,
+          type,
+          branch,
+          name,
+          tab_order,
+          is_default,
+          created_at,
+          updated_at,
+          last_opened_at,
+          deleting_at,
+          section_id
+        )
+        VALUES (
+          'workspace-delete-project',
+          'project-delete-with-workspaces',
+          'worktree-delete-project',
+          'worktree',
+          'feature/delete-project',
+          'Feature Delete Project',
+          1,
+          0,
+          ${createdAt},
+          ${createdAt},
+          ${createdAt},
+          NULL,
+          'section-delete-project'
+        )
+      `;
+
+      yield* sql`
+        UPDATE workspace_project_state
+        SET active_workspace_id = 'workspace-delete-project'
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+
+      yield* engine.dispatch({
+        type: "project.delete",
+        commandId: CommandId.make("cmd-delete-project-delete"),
+        projectId: ProjectId.make("project-delete-with-workspaces"),
+      });
+
+      const deletedProjectRows = yield* sql<{ readonly deletedAt: string | null }>`
+        SELECT deleted_at AS "deletedAt"
+        FROM projection_projects
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+      assert.equal(deletedProjectRows.length, 1);
+      assert.notEqual(deletedProjectRows[0]?.deletedAt, null);
+
+      const workspaceRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workspaces
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+      const sectionRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workspace_sections
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+      const worktreeRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM worktrees
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+      const stateRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workspace_project_state
+        WHERE project_id = 'project-delete-with-workspaces'
+      `;
+
+      assert.deepEqual(workspaceRows, [{ count: 0 }]);
+      assert.deepEqual(sectionRows, [{ count: 0 }]);
+      assert.deepEqual(worktreeRows, [{ count: 0 }]);
+      assert.deepEqual(stateRows, [{ count: 0 }]);
+    }),
+  );
+
   it.effect("projects persist updated scripts from project.meta.update", () =>
     Effect.gen(function* () {
       const engine = yield* OrchestrationEngineService;

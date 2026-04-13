@@ -43,10 +43,10 @@ At the top of `apps/web/src/hooks/useTheme.ts`, after the existing `Theme` type 
 type ColorScheme = "default" | "capybara";
 ```
 
-After `const STORAGE_KEY = "t3code:theme";` (line 9), add:
+After `const STORAGE_KEY = "capycode:theme";` (line 9), add:
 
 ```ts
-const COLOR_SCHEME_STORAGE_KEY = "t3code:color-scheme";
+const COLOR_SCHEME_STORAGE_KEY = "capycode:color-scheme";
 ```
 
 After `let lastDesktopTheme: Theme | null = null;` (line 20), add:

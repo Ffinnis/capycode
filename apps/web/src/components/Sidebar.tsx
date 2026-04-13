@@ -75,6 +75,7 @@ import {
   selectSidebarThreadsForProjectRef,
   selectSidebarThreadsForProjectRefs,
   selectSidebarThreadsAcrossEnvironments,
+  selectThreadIdsByProjectRef,
   selectWorkspaceSectionsForProjectRef,
   selectWorkspacesAcrossEnvironments,
   selectWorkspacesForProjectRef,
@@ -1502,6 +1503,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       ),
     ),
   );
+  const logicalProjectThreadIds = useStore(
+    useShallow(
+      useMemo(
+        () => (state: import("../store").AppState) =>
+          project.memberProjectRefs.flatMap((ref) => selectThreadIdsByProjectRef(state, ref)),
+        [project.memberProjectRefs],
+      ),
+    ),
+  );
   // For grouped projects that span multiple environments, also fetch
   // threads from the other member project refs.
   const otherMemberRefs = useMemo(
@@ -2654,7 +2664,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         }
         if (clicked !== "delete") return;
 
-        if (projectThreads.length > 0) {
+        if (logicalProjectThreadIds.length > 0) {
           toastManager.add({
             type: "warning",
             title: "Project is not empty",
@@ -2669,22 +2679,24 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         if (!confirmed) return;
 
         try {
-          const projectDraftThread = getDraftThreadByProjectRef(
-            scopeProjectRef(project.environmentId, project.id),
-          );
-          if (projectDraftThread) {
-            clearComposerDraftForThread(projectDraftThread.draftId);
+          for (const projectRef of project.memberProjectRefs) {
+            const projectDraftThread = getDraftThreadByProjectRef(projectRef);
+            if (projectDraftThread) {
+              clearComposerDraftForThread(projectDraftThread.draftId);
+            }
+            clearProjectDraftThreadId(projectRef);
           }
-          clearProjectDraftThreadId(scopeProjectRef(project.environmentId, project.id));
-          const projectApi = readEnvironmentApi(project.environmentId);
-          if (!projectApi) {
-            throw new Error("Project API unavailable.");
+          for (const projectRef of project.memberProjectRefs) {
+            const projectApi = readEnvironmentApi(projectRef.environmentId);
+            if (!projectApi) {
+              throw new Error("Project API unavailable.");
+            }
+            await projectApi.orchestration.dispatchCommand({
+              type: "project.delete",
+              commandId: newCommandId(),
+              projectId: projectRef.projectId,
+            });
           }
-          await projectApi.orchestration.dispatchCommand({
-            type: "project.delete",
-            commandId: newCommandId(),
-            projectId: project.id,
-          });
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Unknown error removing project.";
@@ -2709,8 +2721,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       project.cwd,
       project.environmentId,
       project.id,
+      project.memberProjectRefs,
       project.name,
-      projectThreads.length,
+      logicalProjectThreadIds.length,
       requestSidebarContextMenu,
       refreshWorkspaceSnapshot,
       suppressProjectClickForContextMenuRef,
@@ -4225,7 +4238,7 @@ export default function Sidebar() {
     [routeThreadRef],
   );
   const focusMostRecentThreadForProject = useCallback(
-    (projectRef: { environmentId: EnvironmentId; projectId: ProjectId }) => {
+    async (projectRef: { environmentId: EnvironmentId; projectId: ProjectId }) => {
       const physicalKey = scopedProjectKey(
         scopeProjectRef(projectRef.environmentId, projectRef.projectId),
       );
@@ -4234,12 +4247,13 @@ export default function Sidebar() {
         (threadsByProjectKey.get(logicalKey) ?? []).filter((thread) => thread.archivedAt === null),
         sidebarThreadSortOrder,
       )[0];
-      if (!latestThread) return;
+      if (!latestThread) return false;
 
-      void navigate({
+      await navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(scopeThreadRef(latestThread.environmentId, latestThread.id)),
       });
+      return true;
     },
     [sidebarThreadSortOrder, navigate, threadsByProjectKey, physicalToLogicalKey],
   );
@@ -4263,10 +4277,15 @@ export default function Sidebar() {
 
       const existing = projects.find((project) => project.cwd === cwd);
       if (existing) {
-        focusMostRecentThreadForProject({
+        const openedExistingThread = await focusMostRecentThreadForProject({
           environmentId: existing.environmentId,
           projectId: existing.id,
         });
+        if (!openedExistingThread) {
+          await handleNewThread(scopeProjectRef(existing.environmentId, existing.id), {
+            envMode: defaultThreadEnvMode,
+          });
+        }
         finishAddingProject();
         return;
       }
