@@ -150,6 +150,7 @@ import {
   getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
+  resolveActiveProjectThreadBranch,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
@@ -1894,6 +1895,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  const activeProjectThreadBranch = useMemo(
+    () =>
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: activeRouteThreadKey,
+        projectThreads,
+      }),
+    [activeRouteThreadKey, projectThreads],
+  );
   const workspaceSnapshots = useMemo(
     () => buildSidebarWorkspaceSnapshots(project, projectWorkspaces),
     [project, projectWorkspaces],
@@ -3385,7 +3394,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         open={workspaceCreateDialogState !== null}
         mode={workspaceCreateDialogState?.mode ?? "worktree"}
         activeWorkspaceBranch={activeProjectWorkspace?.branch ?? null}
-        threadBranch={projectThreads.find((thread) => thread.branch !== null)?.branch ?? null}
+        threadBranch={activeProjectThreadBranch}
         onCreated={() => refreshWorkspaceSnapshot(project.environmentId)}
         onOpenChange={(open) => {
           if (!open) {

@@ -90,7 +90,7 @@ vi.mock("~/lib/gitStatusState", () => ({
 }));
 
 describe("WorkspaceCreateDialog", () => {
-  afterEach(() => {
+  beforeEach(() => {
     createWorkspaceSpy.mockReset();
     createWorkspaceSpy.mockImplementation(() => Promise.resolve(undefined));
     onCreatedSpy.mockReset();
@@ -143,8 +143,8 @@ describe("WorkspaceCreateDialog", () => {
     );
 
     try {
-      await expect.element(page.getByText("New worktree workspace")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Workspace name (optional)")).toBeInTheDocument();
+      await expect.element(page.getByText("Create worktree")).toBeInTheDocument();
+      await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("From branch")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch")).not.toBeInTheDocument();
@@ -174,8 +174,8 @@ describe("WorkspaceCreateDialog", () => {
     );
 
     try {
-      await expect.element(page.getByText("New branch workspace")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Workspace name (optional)")).toBeInTheDocument();
+      await expect.element(page.getByText("Switch branch")).toBeInTheDocument();
+      await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch")).toBeInTheDocument();
       await expect.element(page.getByLabelText("Branch name")).not.toBeInTheDocument();
       await expect.element(page.getByLabelText("From branch")).not.toBeInTheDocument();

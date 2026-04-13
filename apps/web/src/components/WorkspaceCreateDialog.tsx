@@ -132,7 +132,7 @@ export function WorkspaceCreateDialog({
     () =>
       deriveWorkspaceAutoName({
         mode,
-        branchName: mode === "worktree" ? draft.branchName : draft.selectedBranch ?? "",
+        branchName: mode === "worktree" ? draft.branchName : (draft.selectedBranch ?? ""),
         projectName: project.name,
         workspaceCount,
       }),
@@ -212,7 +212,6 @@ export function WorkspaceCreateDialog({
       projectId: project.id,
       projectName: project.name,
       workspaceCount,
-      availableBranchNames,
     });
     if (!submission.ok) {
       setSubmitError(submission.error);
@@ -222,8 +221,13 @@ export function WorkspaceCreateDialog({
     setIsSubmitting(true);
     try {
       await api.workspaces.create(submission.payload);
-      await onCreated();
       onOpenChange(false);
+
+      try {
+        await onCreated();
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : "Failed to refresh after creation.");
+      }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to create workspace.");
     } finally {
@@ -243,9 +247,7 @@ export function WorkspaceCreateDialog({
       <DialogPopup className="max-w-md" showCloseButton={false}>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>
-              {mode === "worktree" ? "Create worktree" : "Switch branch"}
-            </DialogTitle>
+            <DialogTitle>{mode === "worktree" ? "Create worktree" : "Switch branch"}</DialogTitle>
             <DialogDescription>{project.name}</DialogDescription>
           </DialogHeader>
           <DialogPanel className="space-y-4">
@@ -444,7 +446,9 @@ function WorkspaceBranchPicker(input: {
           <span
             className={cn(
               "truncate text-left",
-              input.selectedBranch ? "font-mono text-[13px] text-foreground" : "text-muted-foreground",
+              input.selectedBranch
+                ? "font-mono text-[13px] text-foreground"
+                : "text-muted-foreground",
             )}
           >
             {input.selectedBranch ?? input.placeholder}

@@ -94,7 +94,6 @@ export function buildWorkspaceCreateSubmission(input: {
   projectId: string;
   projectName: string;
   workspaceCount: number;
-  availableBranchNames: ReadonlySet<string>;
 }): WorkspaceCreateValidationResult {
   const workspaceName = normalizeOptionalString(input.draft.workspaceName);
 
@@ -128,8 +127,8 @@ export function buildWorkspaceCreateSubmission(input: {
   }
 
   const branch = normalizeOptionalString(input.draft.selectedBranch);
-  if (!branch || !input.availableBranchNames.has(branch)) {
-    return { ok: false, error: "Select an existing branch." };
+  if (!branch) {
+    return { ok: false, error: "Select a branch." };
   }
 
   return {

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { scopedThreadKey, scopeThreadRef } from "@capycode/client-runtime";
 import {
   createThreadJumpHintVisibilityController,
   ensureWorkspaceThreadListOpen,
   getVisibleSidebarThreadIds,
   getVisibleWorkspacePanelThreadIds,
   resolveAdjacentThreadId,
+  resolveActiveProjectThreadBranch,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
@@ -283,6 +285,62 @@ describe("resolveSidebarNewThreadSeedContext", () => {
     ).toEqual({
       envMode: "worktree",
     });
+  });
+});
+
+describe("resolveActiveProjectThreadBranch", () => {
+  it("uses the active project thread branch instead of the first branched thread", () => {
+    expect(
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: scopedThreadKey(
+          scopeThreadRef(EnvironmentId.make("environment-local"), ThreadId.make("thread-active")),
+        ),
+        projectThreads: [
+          {
+            id: ThreadId.make("thread-earlier"),
+            environmentId: EnvironmentId.make("environment-local"),
+            branch: "feature/earlier",
+          },
+          {
+            id: ThreadId.make("thread-active"),
+            environmentId: EnvironmentId.make("environment-local"),
+            branch: "feature/active",
+          },
+        ],
+      }),
+    ).toBe("feature/active");
+  });
+
+  it("falls back to null when the active thread is missing or has no branch", () => {
+    expect(
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: scopedThreadKey(
+          scopeThreadRef(EnvironmentId.make("environment-local"), ThreadId.make("thread-missing")),
+        ),
+        projectThreads: [
+          {
+            id: ThreadId.make("thread-earlier"),
+            environmentId: EnvironmentId.make("environment-local"),
+            branch: "feature/earlier",
+          },
+        ],
+      }),
+    ).toBeNull();
+
+    expect(
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: scopedThreadKey(
+          scopeThreadRef(EnvironmentId.make("environment-local"), ThreadId.make("thread-active")),
+        ),
+        projectThreads: [
+          {
+            id: ThreadId.make("thread-active"),
+            environmentId: EnvironmentId.make("environment-local"),
+            branch: null,
+          },
+        ],
+      }),
+    ).toBeNull();
   });
 });
 

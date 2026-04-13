@@ -152,7 +152,6 @@ describe("buildWorkspaceCreateSubmission", () => {
         projectId: "project-1",
         projectName: "Capycode",
         workspaceCount: 2,
-        availableBranchNames: new Set(["main", "feature/ai-modal"]),
       }),
     ).toEqual({
       ok: true,
@@ -179,7 +178,6 @@ describe("buildWorkspaceCreateSubmission", () => {
         projectId: "project-1",
         projectName: "Capycode",
         workspaceCount: 4,
-        availableBranchNames: new Set(["main", "release/2026"]),
       }),
     ).toEqual({
       ok: true,
@@ -205,7 +203,6 @@ describe("buildWorkspaceCreateSubmission", () => {
         projectId: "project-1",
         projectName: "Capycode",
         workspaceCount: 1,
-        availableBranchNames: new Set(["main"]),
       }),
     ).toEqual({
       ok: false,
@@ -219,16 +216,15 @@ describe("buildWorkspaceCreateSubmission", () => {
           workspaceName: "",
           branchName: "",
           baseBranch: null,
-          selectedBranch: "missing-branch",
+          selectedBranch: "   ",
         },
         projectId: "project-1",
         projectName: "Capycode",
         workspaceCount: 1,
-        availableBranchNames: new Set(["main"]),
       }),
     ).toEqual({
       ok: false,
-      error: "Select an existing branch.",
+      error: "Select a branch.",
     });
   });
 });
