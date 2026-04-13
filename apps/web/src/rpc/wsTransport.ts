@@ -159,10 +159,10 @@ export class WsTransport {
 
           const formattedError = formatErrorMessage(error);
           if (isBenignStreamCompletionError(formattedError)) {
-            console.debug("WebSocket RPC benign stream completion - exiting subscription loop", {
+            console.debug("WebSocket RPC benign stream completion - resubscribing", {
               error: formattedError,
             });
-            return;
+            continue;
           }
           if (!isTransportConnectionErrorMessage(formattedError)) {
             console.warn("WebSocket RPC subscription failed", {

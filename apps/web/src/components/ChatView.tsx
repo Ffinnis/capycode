@@ -171,6 +171,7 @@ import {
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
+import { getWorkspaceTerminalSurfaceState } from "./workspaceTerminalSurfaceState";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -1356,9 +1357,12 @@ export default function ChatView(props: ChatViewProps) {
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
       : (storeServerTerminalLaunchContext ?? null);
-  const terminalSurfaceVisible = terminalSurfaceOpen && workspaceDockState.terminalTabOpen;
-  const terminalSurfaceActive =
-    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const { mounted: terminalSurfaceVisible, active: terminalSurfaceActive } =
+    getWorkspaceTerminalSurfaceState({
+      terminalSurfaceOpen,
+      terminalTabOpen: workspaceDockState.terminalTabOpen,
+      activeTab: workspaceDockState.activeTab,
+    });
   const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceActive;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;

@@ -275,6 +275,35 @@ export function getVisibleSidebarThreadIds<TThreadId>(
   );
 }
 
+export function getVisibleWorkspacePanelThreadIds<TWorkspaceKey, TSectionId, TThreadId>(input: {
+  items: readonly (
+    | { kind: "workspace"; workspaceKey: TWorkspaceKey }
+    | { kind: "section"; sectionId: TSectionId; isCollapsed: boolean }
+  )[];
+  workspacesBySectionId: ReadonlyMap<TSectionId, readonly { workspaceKey: TWorkspaceKey }[]>;
+  openWorkspaceKeys: ReadonlySet<TWorkspaceKey>;
+  threadIdsByWorkspaceKey: ReadonlyMap<TWorkspaceKey, readonly TThreadId[]>;
+}): TThreadId[] {
+  return input.items.flatMap((item) => {
+    if (item.kind === "workspace") {
+      return input.openWorkspaceKeys.has(item.workspaceKey)
+        ? (input.threadIdsByWorkspaceKey.get(item.workspaceKey) ?? [])
+        : [];
+    }
+
+    if (item.isCollapsed) {
+      return [];
+    }
+
+    const sectionWorkspaces = input.workspacesBySectionId.get(item.sectionId) ?? [];
+    return sectionWorkspaces.flatMap((workspace) =>
+      input.openWorkspaceKeys.has(workspace.workspaceKey)
+        ? (input.threadIdsByWorkspaceKey.get(workspace.workspaceKey) ?? [])
+        : [],
+    );
+  });
+}
+
 export function resolveAdjacentThreadId<T>(input: {
   threadIds: readonly T[];
   currentThreadId: T | null;

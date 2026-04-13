@@ -183,7 +183,7 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
         } else if (
           current.activeTab !== "chat" &&
           current.activeTab !== WORKSPACE_TERMINAL_TAB_ID &&
-          !nextScope.openFileTabs.includes(current.activeTab)
+          (!input.filePath || !nextScope.openFileTabs.includes(current.activeTab))
         ) {
           nextScope.activeTab = "chat";
         }
