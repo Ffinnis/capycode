@@ -205,7 +205,6 @@ describe("getVisibleWorkspacePanelThreadIds", () => {
     expect(visibleThreadIds).toEqual([]);
   });
 });
-
 describe("resolveSidebarNewThreadEnvMode", () => {
   it("uses the app default when the caller does not request a specific mode", () => {
     expect(

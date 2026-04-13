@@ -189,6 +189,12 @@ describe("UsageSettingsPanel", () => {
     await expect.element(page.getByRole("heading", { name: "Usage" })).toBeInTheDocument();
     await expect.element(page.getByRole("heading", { name: "Codex" })).toBeInTheDocument();
     await expect.element(page.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
+    await expect
+      .element(host.querySelector<SVGSVGElement>('svg[viewBox="0 0 256 260"]'))
+      .not.toBeNull();
+    await expect
+      .element(host.querySelector<SVGSVGElement>('svg[viewBox="0 0 256 257"]'))
+      .not.toBeNull();
     await expect.element(page.getByText("Models").first()).toBeInTheDocument();
     await expect.element(page.getByText("Recent sessions").first()).toBeInTheDocument();
     await expect

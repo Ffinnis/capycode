@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     name: Format, Lint, Typecheck, Build
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-ffinnis
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -65,7 +65,7 @@ jobs:
 
   tests:
     name: Test, Browser Test
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-ffinnis
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -117,7 +117,7 @@ jobs:
 
   release_smoke:
     name: Release Smoke
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-ffinnis
     timeout-minutes: 10
     steps:
       - name: Checkout

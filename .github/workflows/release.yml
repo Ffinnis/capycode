@@ -18,7 +18,7 @@ permissions:
 jobs:
   preflight:
     name: Preflight
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-ffinnis
     timeout-minutes: 10
     outputs:
       version: ${{ steps.release_meta.outputs.version }}
@@ -101,7 +101,7 @@ jobs:
             target: dmg
             arch: x64
           - label: Linux x64
-            runner: ubuntu-24.04
+            runner: namespace-profile-ffinnis
             platform: linux
             target: AppImage
             arch: x64

@@ -7,12 +7,13 @@ import type {
 import { DEFAULT_USAGE_RANGE } from "@capycode/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { BarChart3Icon, BotIcon, FeatherIcon, RefreshCcwIcon } from "lucide-react";
+import { BarChart3Icon, RefreshCcwIcon } from "lucide-react";
 import { startTransition, useMemo, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { useUsageDashboard, usageDashboardQueryKey } from "../../hooks/useUsageDashboard";
+import { getProviderBrandIcon } from "../providerBrandIcon";
 import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 
@@ -25,9 +26,9 @@ const RANGE_OPTIONS: ReadonlyArray<{ label: string; value: UsageRange }> = [
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-const providerMeta: Record<ProviderKind, { label: string; icon: typeof BotIcon }> = {
-  codex: { label: "Codex", icon: BotIcon },
-  claudeAgent: { label: "Claude", icon: FeatherIcon },
+const providerMeta: Record<ProviderKind, { label: string }> = {
+  codex: { label: "Codex" },
+  claudeAgent: { label: "Claude" },
 };
 
 function formatInteger(value: number) {
@@ -332,7 +333,7 @@ function UsageProviderSection(props: {
   onOpenConnections: () => void;
 }) {
   const meta = providerMeta[props.provider.provider];
-  const ProviderIcon = meta.icon;
+  const ProviderIcon = getProviderBrandIcon(props.provider.provider);
   const topModel = props.provider.topModels[0] ?? null;
   const latestSession = props.provider.sessions[0] ?? null;
   const rollingWindow =
