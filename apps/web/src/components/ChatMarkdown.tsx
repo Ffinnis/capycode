@@ -22,7 +22,14 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { useTheme } from "../hooks/useTheme";
+import { registerCustomTheme } from "@pierre/diffs";
+import { capybaraShikiLight } from "../lib/capybaraShikiLight";
+import { capybaraShikiDark } from "../lib/capybaraShikiDark";
 import { resolveMarkdownFileLinkTarget, rewriteMarkdownFileUriHref } from "../markdown-links";
+
+// Register capybara themes for Shiki highlighting
+registerCustomTheme("capybara-light", () => Promise.resolve(capybaraShikiLight));
+registerCustomTheme("capybara-dark", () => Promise.resolve(capybaraShikiDark));
 import { readLocalApi } from "../localApi";
 
 class CodeHighlightErrorBoundary extends React.Component<
@@ -116,7 +123,12 @@ function getHighlighterPromise(language: string): Promise<DiffsHighlighter> {
   if (cached) return cached;
 
   const promise = getSharedHighlighter({
-    themes: [resolveDiffThemeName("dark"), resolveDiffThemeName("light")],
+    themes: [
+      resolveDiffThemeName("dark"),
+      resolveDiffThemeName("light"),
+      resolveDiffThemeName("dark", "capybara"),
+      resolveDiffThemeName("light", "capybara"),
+    ],
     langs: [language as SupportedLanguages],
     preferredHighlighter: "shiki-js",
   }).catch((err) => {
@@ -237,8 +249,8 @@ function SuspenseShikiCodeBlock({
 }
 
 function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
-  const { resolvedTheme } = useTheme();
-  const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const { resolvedTheme, colorScheme } = useTheme();
+  const diffThemeName = resolveDiffThemeName(resolvedTheme, colorScheme);
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
