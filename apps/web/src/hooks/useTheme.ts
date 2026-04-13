@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 type Theme = "light" | "dark" | "system";
+type ColorScheme = "default" | "capybara";
 type ThemeSnapshot = {
   theme: Theme;
   systemDark: boolean;
+  colorScheme: ColorScheme;
 };
 
 const STORAGE_KEY = "t3code:theme";
+const COLOR_SCHEME_STORAGE_KEY = "t3code:color-scheme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
   theme: "system",
   systemDark: false,
+  colorScheme: "default",
 };
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
@@ -36,6 +40,22 @@ function getStored(): Theme {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw === "light" || raw === "dark" || raw === "system") return raw;
   return DEFAULT_THEME_SNAPSHOT.theme;
+}
+
+function getStoredColorScheme(): ColorScheme {
+  if (!hasThemeStorage()) return "default";
+  const raw = localStorage.getItem(COLOR_SCHEME_STORAGE_KEY);
+  if (raw === "default" || raw === "capybara") return raw;
+  return "default";
+}
+
+function applyColorScheme(scheme: ColorScheme) {
+  if (typeof document === "undefined") return;
+  if (scheme === "default") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", scheme);
+  }
 }
 
 function ensureThemeColorMetaTag(): HTMLMetaElement {
@@ -124,18 +144,25 @@ function syncDesktopTheme(theme: Theme) {
 // Apply immediately on module load to prevent flash
 if (typeof document !== "undefined" && hasThemeStorage()) {
   applyTheme(getStored());
+  applyColorScheme(getStoredColorScheme());
 }
 
 function getSnapshot(): ThemeSnapshot {
   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
   const theme = getStored();
   const systemDark = theme === "system" ? getSystemDark() : false;
+  const colorScheme = getStoredColorScheme();
 
-  if (lastSnapshot && lastSnapshot.theme === theme && lastSnapshot.systemDark === systemDark) {
+  if (
+    lastSnapshot &&
+    lastSnapshot.theme === theme &&
+    lastSnapshot.systemDark === systemDark &&
+    lastSnapshot.colorScheme === colorScheme
+  ) {
     return lastSnapshot;
   }
 
-  lastSnapshot = { theme, systemDark };
+  lastSnapshot = { theme, systemDark, colorScheme };
   return lastSnapshot;
 }
 
@@ -161,6 +188,10 @@ function subscribe(listener: () => void): () => void {
       applyTheme(getStored(), true);
       emitChange();
     }
+    if (e.key === COLOR_SCHEME_STORAGE_KEY) {
+      applyColorScheme(getStoredColorScheme());
+      emitChange();
+    }
   };
   window.addEventListener("storage", handleStorage);
 
@@ -174,6 +205,7 @@ function subscribe(listener: () => void): () => void {
 export function useTheme() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const theme = snapshot.theme;
+  const colorScheme = snapshot.colorScheme;
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
@@ -185,10 +217,24 @@ export function useTheme() {
     emitChange();
   }, []);
 
+  const setColorScheme = useCallback((next: ColorScheme) => {
+    if (!hasThemeStorage()) return;
+    localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, next);
+    applyColorScheme(next);
+    syncBrowserChromeTheme();
+    emitChange();
+  }, []);
+
   // Keep DOM in sync on mount/change
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
-  return { theme, setTheme, resolvedTheme } as const;
+  useEffect(() => {
+    applyColorScheme(colorScheme);
+  }, [colorScheme]);
+
+  return { theme, setTheme, resolvedTheme, colorScheme, setColorScheme } as const;
 }
+
+export type { ColorScheme };
