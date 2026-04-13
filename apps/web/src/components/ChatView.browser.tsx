@@ -2210,7 +2210,50 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("lets the server own setup after preparing a pull request worktree thread", async () => {
+  it("shows the current worktree badge in the header instead of the composer toolbar", async () => {
+    const baseSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-worktree-header" as MessageId,
+      targetText: "header worktree target",
+    });
+    const threads = baseSnapshot.threads.slice();
+    const firstThread = threads[0];
+    if (!firstThread) {
+      throw new Error("Expected a seeded thread in the browser fixture.");
+    }
+    threads[0] = {
+      ...firstThread,
+      worktreePath: "/repo/worktrees/feature-header",
+    };
+    const snapshot = {
+      ...baseSnapshot,
+      threads,
+    };
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot,
+    });
+
+    try {
+      await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("span")).find(
+            (element) => element.textContent?.trim() === "Current worktree",
+          ) as HTMLSpanElement | null,
+        'Unable to find "Current worktree" header badge.',
+      );
+
+      expect(
+        Array.from(document.querySelectorAll("button")).find(
+          (button) => button.textContent?.trim() === "Current worktree",
+        ),
+      ).toBeUndefined();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("prepares pull request drafts in the current checkout only", async () => {
     useComposerDraftStore.setState({
       draftThreadsByThreadKey: {
         [THREAD_KEY]: {
@@ -2299,14 +2342,14 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       checkoutItem.click();
 
-      const worktreeButton = await waitForElement(
+      const localButton = await waitForElement(
         () =>
           Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "Worktree",
+            (button) => button.textContent?.trim() === "Local",
           ) as HTMLButtonElement | null,
-        "Unable to find Worktree button.",
+        "Unable to find Local button.",
       );
-      worktreeButton.click();
+      localButton.click();
 
       await vi.waitFor(
         () => {
@@ -2317,8 +2360,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
             _tag: WS_METHODS.gitPreparePullRequestThread,
             cwd: "/repo/project",
             reference: "1359",
-            mode: "worktree",
-            threadId: THREAD_ID,
+            mode: "local",
           });
         },
         { timeout: 8_000, interval: 16 },
@@ -2335,7 +2377,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("sends bootstrap turn-starts and waits for server setup on first-send worktree drafts", async () => {
+  it("does not bootstrap worktree creation for legacy worktree-mode drafts", async () => {
     useTerminalStateStore.setState({
       terminalStateByThreadKey: {},
     });
@@ -2410,14 +2452,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
               createThread: {
                 projectId: PROJECT_ID,
               },
-              prepareWorktree: {
-                projectCwd: "/repo/project",
-                baseBranch: "main",
-                branch: expect.stringMatching(/^capycode\/[0-9a-f]{8}$/),
-              },
-              runSetupScript: true,
             },
           });
+          expect(dispatchRequest?.bootstrap?.prepareWorktree).toBeUndefined();
+          expect(dispatchRequest?.bootstrap?.runSetupScript).toBeUndefined();
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -2639,6 +2677,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
             ],
           };
         }
+        if (body._tag === WS_METHODS.gitCheckout) {
+          return {
+            branch: "release/next",
+          };
+        }
         return undefined;
       },
     });
@@ -2647,9 +2690,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const branchButton = await waitForElement(
         () =>
           Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "From main",
+            (button) => button.textContent?.trim() === "main",
           ) as HTMLButtonElement | null,
-        'Unable to find branch selector button with "From main".',
+        'Unable to find branch selector button with "main".',
       );
       branchButton.click();
 
@@ -2676,8 +2719,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       await vi.waitFor(
         () => {
-          const updatedButton = Array.from(document.querySelectorAll("button")).find((button) =>
-            button.textContent?.trim().includes("From release/next"),
+          const updatedButton = Array.from(document.querySelectorAll("button")).find(
+            (button) => button.textContent?.trim() === "release/next",
           );
           expect(updatedButton).toBeTruthy();
         },

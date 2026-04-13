@@ -490,13 +490,9 @@ export default function GitActionsControl({
   const isPullRunning =
     useIsMutating({ mutationKey: gitMutationKeys.pull(activeEnvironmentId, gitCwd) }) > 0;
   const isGitActionRunning = isRunStackedActionRunning || isPullRunning;
-  const isSelectingWorktreeBase =
-    !activeServerThread &&
-    activeDraftThread?.envMode === "worktree" &&
-    activeDraftThread.worktreePath === null;
 
   useEffect(() => {
-    if (!enableAmbientSync || isGitActionRunning || isSelectingWorktreeBase) {
+    if (!enableAmbientSync || isGitActionRunning) {
       return;
     }
 
@@ -514,7 +510,6 @@ export default function GitActionsControl({
     activeDraftThread?.branch,
     gitStatusForActions,
     isGitActionRunning,
-    isSelectingWorktreeBase,
     enableAmbientSync,
     persistThreadBranchSync,
   ]);

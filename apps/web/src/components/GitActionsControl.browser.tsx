@@ -460,7 +460,7 @@ describe("GitActionsControl thread-scoped progress toast", () => {
     }
   });
 
-  it("does not overwrite a selected base branch while a new worktree draft is being configured", async () => {
+  it("syncs the draft branch from git status even for legacy worktree-mode drafts", async () => {
     hasServerThreadRef.current = false;
     activeDraftThreadRef.current = {
       threadId: SHARED_THREAD_ID,
@@ -485,7 +485,13 @@ describe("GitActionsControl thread-scoped progress toast", () => {
     try {
       await Promise.resolve();
 
-      expect(setDraftThreadContextSpy).not.toHaveBeenCalled();
+      expect(setDraftThreadContextSpy).toHaveBeenCalledWith(
+        scopeThreadRef(ENVIRONMENT_A, SHARED_THREAD_ID),
+        {
+          branch: BRANCH_NAME,
+          worktreePath: null,
+        },
+      );
       expect(setThreadBranchSpy).not.toHaveBeenCalled();
     } finally {
       await screen.unmount();

@@ -127,7 +127,6 @@ import {
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
-  type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
@@ -145,14 +144,13 @@ import { ChatHeader } from "./chat/ChatHeader";
 import { OpenSurfaceTabs } from "./OpenSurfaceTabs";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
-import { resolveEffectiveEnvMode, resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
+import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { ProviderStatusBanner } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
-  buildTemporaryWorktreeBranchName,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -776,22 +774,26 @@ export default function ChatView(props: ChatViewProps) {
   }, []);
 
   const openOrReuseProjectDraftThread = useCallback(
-    async (input: { branch: string; worktreePath: string | null; envMode: DraftThreadEnvMode }) => {
+    async (input: { branch: string; worktreePath: string | null }) => {
       if (!activeProject) {
         throw new Error("No active project is available for this pull request.");
       }
       const activeProjectRef = scopeProjectRef(activeProject.environmentId, activeProject.id);
       const logicalProjectKey = deriveLogicalProjectKey(activeProject);
       const storedDraftSession = getDraftSessionByLogicalProjectKey(logicalProjectKey);
+      const nextDraftThreadContext = {
+        ...input,
+        envMode: "local" as const,
+      };
       if (storedDraftSession) {
-        setDraftThreadContext(storedDraftSession.draftId, input);
+        setDraftThreadContext(storedDraftSession.draftId, nextDraftThreadContext);
         setLogicalProjectDraftThreadId(
           logicalProjectKey,
           activeProjectRef,
           storedDraftSession.draftId,
           {
             threadId: storedDraftSession.threadId,
-            ...input,
+            ...nextDraftThreadContext,
           },
         );
         if (routeKind !== "draft" || draftId !== storedDraftSession.draftId) {
@@ -809,13 +811,13 @@ export default function ChatView(props: ChatViewProps) {
         activeDraftSession?.logicalProjectKey === logicalProjectKey &&
         draftId
       ) {
-        setDraftThreadContext(draftId, input);
+        setDraftThreadContext(draftId, nextDraftThreadContext);
         setLogicalProjectDraftThreadId(logicalProjectKey, activeProjectRef, draftId, {
           threadId: activeDraftSession.threadId,
           createdAt: activeDraftSession.createdAt,
           runtimeMode: activeDraftSession.runtimeMode,
           interactionMode: activeDraftSession.interactionMode,
-          ...input,
+          ...nextDraftThreadContext,
         });
         return activeDraftSession.threadId;
       }
@@ -827,7 +829,7 @@ export default function ChatView(props: ChatViewProps) {
         createdAt: new Date().toISOString(),
         runtimeMode: DEFAULT_RUNTIME_MODE,
         interactionMode: DEFAULT_INTERACTION_MODE,
-        ...input,
+        ...nextDraftThreadContext,
       });
       await navigate({
         to: "/draft/$draftId",
@@ -850,11 +852,7 @@ export default function ChatView(props: ChatViewProps) {
 
   const _handlePreparedPullRequestThread = useCallback(
     async (input: { branch: string; worktreePath: string | null }) => {
-      await openOrReuseProjectDraftThread({
-        branch: input.branch,
-        worktreePath: input.worktreePath,
-        envMode: input.worktreePath ? "worktree" : "local",
-      });
+      await openOrReuseProjectDraftThread(input);
     },
     [openOrReuseProjectDraftThread],
   );
@@ -2281,14 +2279,6 @@ export default function ChatView(props: ChatViewProps) {
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
   }, []);
-
-  const activeWorktreePath = activeThread?.worktreePath ?? null;
-  const envMode: DraftThreadEnvMode = resolveEffectiveEnvMode({
-    activeWorktreePath,
-    hasServerThread: isServerThread,
-    draftThreadEnvMode: isLocalDraftThread ? draftThread?.envMode : undefined,
-  });
-
   useEffect(() => {
     if (!activeThreadId) {
       setTerminalLaunchContext(null);
@@ -2602,22 +2592,9 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeProject) return;
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
-    const baseBranchForWorktree =
-      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath
-        ? activeThread.branch
-        : null;
-
-    // In worktree mode, require an explicit base branch so we don't silently
-    // fall back to local execution when branch selection is missing.
-    const shouldCreateWorktree =
-      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath;
-    if (shouldCreateWorktree && !activeThread.branch) {
-      setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
-    }
 
     sendInFlightRef.current = true;
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
+    beginLocalDispatch({ preparingWorktree: false });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -2734,36 +2711,21 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       const turnAttachments = await turnAttachmentsPromise;
-      const bootstrap =
-        isLocalDraftThread || baseBranchForWorktree
-          ? {
-              ...(isLocalDraftThread
-                ? {
-                    createThread: {
-                      projectId: activeProject.id,
-                      workspaceId: activeWorkspace?.id ?? null,
-                      title,
-                      modelSelection: threadCreateModelSelection,
-                      runtimeMode,
-                      interactionMode,
-                      branch: activeThread.branch,
-                      worktreePath: activeThread.worktreePath,
-                      createdAt: activeThread.createdAt,
-                    },
-                  }
-                : {}),
-              ...(baseBranchForWorktree
-                ? {
-                    prepareWorktree: {
-                      projectCwd: activeProject.cwd,
-                      baseBranch: baseBranchForWorktree,
-                      branch: buildTemporaryWorktreeBranchName(),
-                    },
-                    runSetupScript: true,
-                  }
-                : {}),
-            }
-          : undefined;
+      const bootstrap = isLocalDraftThread
+        ? {
+            createThread: {
+              projectId: activeProject.id,
+              workspaceId: activeWorkspace?.id ?? null,
+              title,
+              modelSelection: threadCreateModelSelection,
+              runtimeMode,
+              interactionMode,
+              branch: activeThread.branch,
+              worktreePath: activeThread.worktreePath,
+              createdAt: activeThread.createdAt,
+            },
+          }
+        : undefined;
       beginLocalDispatch({ preparingWorktree: false });
       await api.orchestration.dispatchCommand({
         type: "thread.turn.start",
@@ -3304,25 +3266,6 @@ export default function ChatView(props: ChatViewProps) {
       settings,
     ],
   );
-  const _onEnvModeChange = useCallback(
-    (mode: DraftThreadEnvMode) => {
-      if (isLocalDraftThread) {
-        setDraftThreadContext(composerDraftTarget, {
-          envMode: mode,
-          ...(mode === "worktree" && draftThread?.worktreePath ? { worktreePath: null } : {}),
-        });
-      }
-      scheduleComposerFocus();
-    },
-    [
-      composerDraftTarget,
-      draftThread?.worktreePath,
-      isLocalDraftThread,
-      scheduleComposerFocus,
-      setDraftThreadContext,
-    ],
-  );
-
   const onToggleWorkGroup = useCallback((groupId: string) => {
     setExpandedWorkGroups((existing) => ({
       ...existing,
@@ -3509,6 +3452,7 @@ export default function ChatView(props: ChatViewProps) {
           activeThreadId={activeThread.id}
           {...(routeKind === "draft" && draftId ? { draftId } : {})}
           activeThreadTitle={activeThread.title}
+          activeWorktreePath={activeThreadWorktreePath ?? null}
           activeProjectName={activeProject?.name}
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
@@ -3638,7 +3582,6 @@ export default function ChatView(props: ChatViewProps) {
                   environmentId={environmentId}
                   threadId={threadId}
                   {...(draftId ? { draftId } : {})}
-                  onEnvModeChange={_onEnvModeChange}
                   envLocked={envLocked}
                   onCheckoutPullRequestRequest={_openPullRequestDialog}
                   onComposerFocusRequest={scheduleComposerFocus}
@@ -3717,7 +3660,6 @@ export default function ChatView(props: ChatViewProps) {
                     key={pullRequestDialogState.key}
                     open
                     environmentId={environmentId}
-                    threadId={activeThread.id}
                     cwd={activeProject?.cwd ?? null}
                     initialReference={pullRequestDialogState.initialReference}
                     onOpenChange={(open) => {

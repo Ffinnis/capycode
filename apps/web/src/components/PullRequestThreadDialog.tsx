@@ -1,4 +1,4 @@
-import type { EnvironmentId, GitResolvePullRequestResult, ThreadId } from "@capycode/contracts";
+import type { EnvironmentId, GitResolvePullRequestResult } from "@capycode/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,7 +25,6 @@ import { Spinner } from "./ui/spinner";
 interface PullRequestThreadDialogProps {
   open: boolean;
   environmentId: EnvironmentId;
-  threadId: ThreadId;
   cwd: string | null;
   initialReference: string | null;
   onOpenChange: (open: boolean) => void;
@@ -35,7 +34,6 @@ interface PullRequestThreadDialogProps {
 export function PullRequestThreadDialog({
   open,
   environmentId,
-  threadId,
   cwd,
   initialReference,
   onOpenChange,
@@ -45,7 +43,7 @@ export function PullRequestThreadDialog({
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const [reference, setReference] = useState(initialReference ?? "");
   const [referenceDirty, setReferenceDirty] = useState(false);
-  const [preparingMode, setPreparingMode] = useState<"local" | "worktree" | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
   const [debouncedReference, referenceDebouncer] = useDebouncedValue(
     reference,
     { wait: 450 },
@@ -56,7 +54,7 @@ export function PullRequestThreadDialog({
     if (!open) return;
     setReference(initialReference ?? "");
     setReferenceDirty(false);
-    setPreparingMode(null);
+    setIsPreparing(false);
   }, [initialReference, open]);
 
   useEffect(() => {
@@ -122,41 +120,36 @@ export function PullRequestThreadDialog({
     }
   }, [resolvedPullRequest?.state]);
 
-  const handleConfirm = useCallback(
-    async (mode: "local" | "worktree") => {
-      if (!parsedReference) {
-        setReferenceDirty(true);
-        return;
-      }
-      if (!parsedReference || !resolvedPullRequest || !cwd) {
-        return;
-      }
-      setPreparingMode(mode);
-      try {
-        const result = await preparePullRequestThreadMutation.mutateAsync({
-          reference: parsedReference,
-          mode,
-          ...(mode === "worktree" ? { threadId } : {}),
-        });
-        await onPrepared({
-          branch: result.branch,
-          worktreePath: result.worktreePath,
-        });
-        onOpenChange(false);
-      } finally {
-        setPreparingMode(null);
-      }
-    },
-    [
-      cwd,
-      onOpenChange,
-      onPrepared,
-      parsedReference,
-      preparePullRequestThreadMutation,
-      resolvedPullRequest,
-      threadId,
-    ],
-  );
+  const handleConfirm = useCallback(async () => {
+    if (!parsedReference) {
+      setReferenceDirty(true);
+      return;
+    }
+    if (!resolvedPullRequest || !cwd) {
+      return;
+    }
+    setIsPreparing(true);
+    try {
+      const result = await preparePullRequestThreadMutation.mutateAsync({
+        reference: parsedReference,
+        mode: "local",
+      });
+      await onPrepared({
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+      });
+      onOpenChange(false);
+    } finally {
+      setIsPreparing(false);
+    }
+  }, [
+    cwd,
+    onOpenChange,
+    onPrepared,
+    parsedReference,
+    preparePullRequestThreadMutation,
+    resolvedPullRequest,
+  ]);
 
   const validationMessage = !referenceDirty
     ? null
@@ -190,8 +183,7 @@ export function PullRequestThreadDialog({
         <DialogHeader>
           <DialogTitle>Checkout Pull Request</DialogTitle>
           <DialogDescription>
-            Resolve a GitHub pull request, then create the draft thread in the main repo or in a
-            dedicated worktree.
+            Resolve a GitHub pull request, then create the draft thread in the current checkout.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
@@ -211,7 +203,7 @@ export function PullRequestThreadDialog({
                 }
                 event.preventDefault();
                 if (!isResolving && !preparePullRequestThreadMutation.isPending) {
-                  void handleConfirm("local");
+                  void handleConfirm();
                 }
               }}
             />
@@ -258,7 +250,7 @@ export function PullRequestThreadDialog({
             size="sm"
             variant="outline"
             onClick={() => {
-              void handleConfirm("local");
+              void handleConfirm();
             }}
             disabled={
               !cwd ||
@@ -267,22 +259,7 @@ export function PullRequestThreadDialog({
               preparePullRequestThreadMutation.isPending
             }
           >
-            {preparingMode === "local" ? "Preparing local..." : "Local"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              void handleConfirm("worktree");
-            }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadMutation.isPending
-            }
-          >
-            {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
+            {isPreparing ? "Preparing current checkout..." : "Local"}
           </Button>
         </DialogFooter>
       </DialogPopup>

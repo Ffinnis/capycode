@@ -4,11 +4,7 @@ import {
   dedupeRemoteBranchesWithLocalMatches,
   deriveLocalBranchNameFromRemoteRef,
   resolveEnvironmentOptionLabel,
-  resolveBranchSelectionTarget,
   resolveCurrentWorkspaceLabel,
-  resolveDraftEnvModeAfterBranchChange,
-  resolveEffectiveEnvMode,
-  resolveEnvModeLabel,
   resolveBranchToolbarValue,
   shouldIncludeBranchPickerItem,
 } from "./BranchToolbar.logic";
@@ -16,70 +12,23 @@ import {
 const localEnvironmentId = EnvironmentId.make("environment-local");
 const remoteEnvironmentId = EnvironmentId.make("environment-remote");
 
-describe("resolveDraftEnvModeAfterBranchChange", () => {
-  it("switches to local mode when returning from an existing worktree to the main worktree", () => {
-    expect(
-      resolveDraftEnvModeAfterBranchChange({
-        nextWorktreePath: null,
-        currentWorktreePath: "/repo/.t3/worktrees/feature-a",
-        effectiveEnvMode: "worktree",
-      }),
-    ).toBe("local");
-  });
-
-  it("keeps new-worktree mode when selecting a base branch before worktree creation", () => {
-    expect(
-      resolveDraftEnvModeAfterBranchChange({
-        nextWorktreePath: null,
-        currentWorktreePath: null,
-        effectiveEnvMode: "worktree",
-      }),
-    ).toBe("worktree");
-  });
-
-  it("uses worktree mode when selecting a branch already attached to a worktree", () => {
-    expect(
-      resolveDraftEnvModeAfterBranchChange({
-        nextWorktreePath: "/repo/.t3/worktrees/feature-a",
-        currentWorktreePath: null,
-        effectiveEnvMode: "local",
-      }),
-    ).toBe("worktree");
-  });
-});
-
 describe("resolveBranchToolbarValue", () => {
-  it("defaults new-worktree mode to current git branch when no explicit base branch is set", () => {
+  it("uses the current git branch when it is known", () => {
     expect(
       resolveBranchToolbarValue({
-        envMode: "worktree",
-        activeWorktreePath: null,
         activeThreadBranch: null,
         currentGitBranch: "main",
       }),
     ).toBe("main");
   });
 
-  it("keeps an explicitly selected worktree base branch", () => {
+  it("falls back to the thread branch when git status is not available", () => {
     expect(
       resolveBranchToolbarValue({
-        envMode: "worktree",
-        activeWorktreePath: null,
         activeThreadBranch: "feature/base",
-        currentGitBranch: "main",
+        currentGitBranch: null,
       }),
     ).toBe("feature/base");
-  });
-
-  it("shows the actual checked-out branch when not selecting a new worktree base", () => {
-    expect(
-      resolveBranchToolbarValue({
-        envMode: "local",
-        activeWorktreePath: null,
-        activeThreadBranch: "feature/base",
-        currentGitBranch: "main",
-      }),
-    ).toBe("main");
   });
 });
 
@@ -115,35 +64,6 @@ describe("resolveEnvironmentOptionLabel", () => {
         savedLabel: "Build box",
       }),
     ).toBe("Build box");
-  });
-});
-
-describe("resolveEffectiveEnvMode", () => {
-  it("treats draft threads already attached to a worktree as current-checkout mode", () => {
-    expect(
-      resolveEffectiveEnvMode({
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
-        hasServerThread: false,
-        draftThreadEnvMode: "worktree",
-      }),
-    ).toBe("local");
-  });
-
-  it("keeps explicit new-worktree mode for draft threads without a worktree path", () => {
-    expect(
-      resolveEffectiveEnvMode({
-        activeWorktreePath: null,
-        hasServerThread: false,
-        draftThreadEnvMode: "worktree",
-      }),
-    ).toBe("worktree");
-  });
-});
-
-describe("resolveEnvModeLabel", () => {
-  it("uses explicit workspace labels", () => {
-    expect(resolveEnvModeLabel("local")).toBe("Current checkout");
-    expect(resolveEnvModeLabel("worktree")).toBe("New worktree");
   });
 });
 
@@ -277,76 +197,6 @@ describe("dedupeRemoteBranchesWithLocalMatches", () => {
       "upstream/feature",
       "my-org/upstream/feature",
     ]);
-  });
-});
-
-describe("resolveBranchSelectionTarget", () => {
-  it("reuses an existing secondary worktree for the selected branch", () => {
-    expect(
-      resolveBranchSelectionTarget({
-        activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
-        branch: {
-          isDefault: false,
-          worktreePath: "/repo/.t3/worktrees/feature-b",
-        },
-      }),
-    ).toEqual({
-      checkoutCwd: "/repo/.t3/worktrees/feature-b",
-      nextWorktreePath: "/repo/.t3/worktrees/feature-b",
-      reuseExistingWorktree: true,
-    });
-  });
-
-  it("switches back to the main repo when the branch already lives there", () => {
-    expect(
-      resolveBranchSelectionTarget({
-        activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
-        branch: {
-          isDefault: true,
-          worktreePath: "/repo",
-        },
-      }),
-    ).toEqual({
-      checkoutCwd: "/repo",
-      nextWorktreePath: null,
-      reuseExistingWorktree: true,
-    });
-  });
-
-  it("checks out the default branch in the main repo when leaving a secondary worktree", () => {
-    expect(
-      resolveBranchSelectionTarget({
-        activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
-        branch: {
-          isDefault: true,
-          worktreePath: null,
-        },
-      }),
-    ).toEqual({
-      checkoutCwd: "/repo",
-      nextWorktreePath: null,
-      reuseExistingWorktree: false,
-    });
-  });
-
-  it("keeps checkout in the current worktree for non-default branches", () => {
-    expect(
-      resolveBranchSelectionTarget({
-        activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
-        branch: {
-          isDefault: false,
-          worktreePath: null,
-        },
-      }),
-    ).toEqual({
-      checkoutCwd: "/repo/.t3/worktrees/feature-a",
-      nextWorktreePath: "/repo/.t3/worktrees/feature-a",
-      reuseExistingWorktree: false,
-    });
   });
 });
 
