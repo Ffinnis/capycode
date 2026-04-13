@@ -486,6 +486,7 @@ interface SidebarThreadRowProps {
   ) => Promise<void>;
   cancelRename: () => void;
   attemptArchiveThread: (threadRef: ScopedThreadRef) => Promise<void>;
+  attemptDeleteThread: (threadRef: ScopedThreadRef) => Promise<void>;
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
 }
 
@@ -511,6 +512,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     commitRename,
     cancelRename,
     attemptArchiveThread,
+    attemptDeleteThread,
     openPrLink,
     thread,
   } = props;
@@ -719,6 +721,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
     [attemptArchiveThread, threadRef],
   );
+  const handleDeleteClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void attemptDeleteThread(threadRef);
+    },
+    [attemptDeleteThread, threadRef],
+  );
   const rowButtonRender = useMemo(() => <div role="button" tabIndex={0} />, []);
 
   return (
@@ -835,6 +845,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     </Tooltip>
                   )
                 ) : null}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        data-thread-selection-safe
+                        data-testid={`thread-delete-${thread.id}`}
+                        aria-label={`Delete ${thread.title}`}
+                        className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                        onPointerDown={stopPropagationOnPointerDown}
+                        onClick={handleDeleteClick}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
+                    }
+                  />
+                  <TooltipPopup side="top">Delete</TooltipPopup>
+                </Tooltip>
               </div>
             )}
             <span className={threadMetaClassName}>
@@ -918,6 +946,7 @@ interface SidebarProjectThreadListProps {
   ) => Promise<void>;
   cancelRename: () => void;
   attemptArchiveThread: (threadRef: ScopedThreadRef) => Promise<void>;
+  attemptDeleteThread: (threadRef: ScopedThreadRef) => Promise<void>;
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
 }
 
@@ -950,6 +979,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     commitRename,
     cancelRename,
     attemptArchiveThread,
+    attemptDeleteThread,
     openPrLink,
   } = props;
 
@@ -996,6 +1026,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
               commitRename={commitRename}
               cancelRename={cancelRename}
               attemptArchiveThread={attemptArchiveThread}
+              attemptDeleteThread={attemptDeleteThread}
               openPrLink={openPrLink}
             />
           );
@@ -1026,6 +1057,7 @@ interface WorkspaceRowProps extends Pick<
   | "commitRename"
   | "cancelRename"
   | "attemptArchiveThread"
+  | "attemptDeleteThread"
   | "openPrLink"
 > {
   workspace: SidebarWorkspaceSnapshot;
@@ -1083,6 +1115,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     commitRename,
     cancelRename,
     attemptArchiveThread,
+    attemptDeleteThread,
     openPrLink,
     toggleWorkspaceThreadList,
     setWorkspaceActive,
@@ -1232,7 +1265,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
             render={
               <button
                 type="button"
-                data-testid="new-thread-button"
+                data-testid={`new-thread-button-${workspace.id}`}
                 aria-label={`Create new thread in ${workspace.name}`}
                 className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={(event) => {
@@ -1307,6 +1340,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
         commitRename={commitRename}
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
+        attemptDeleteThread={attemptDeleteThread}
         openPrLink={openPrLink}
       />
     </div>
@@ -3011,6 +3045,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         commitRename={commitRename}
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
+        attemptDeleteThread={_attemptDeleteThread}
         openPrLink={openPrLink}
         toggleWorkspaceThreadList={toggleWorkspaceThreadList}
         setWorkspaceActive={setWorkspaceActive}

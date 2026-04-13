@@ -103,6 +103,7 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import { PersistentThreadTerminalSurface } from "./PersistentThreadTerminalSurface";
+import { BranchToolbar } from "./BranchToolbar";
 import { ChevronDownIcon } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
 import { toastManager } from "./ui/toast";
@@ -169,6 +170,7 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -523,7 +525,7 @@ export default function ChatView(props: ChatViewProps) {
   const planSidebarOpenOnNextThreadRef = useRef(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
-  const [_pullRequestDialogState, setPullRequestDialogState] =
+  const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
   const [terminalLaunchContext, setTerminalLaunchContext] = useState<TerminalLaunchContext | null>(
     null,
@@ -1355,7 +1357,9 @@ export default function ChatView(props: ChatViewProps) {
       ? terminalLaunchContext
       : (storeServerTerminalLaunchContext ?? null);
   const terminalSurfaceVisible = terminalSurfaceOpen && workspaceDockState.terminalTabOpen;
-  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceOpen;
+  const terminalSurfaceActive =
+    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceActive;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const terminalShortcutLabelOptions = useMemo(
@@ -3436,8 +3440,6 @@ export default function ChatView(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
-  const terminalSurfaceActive =
-    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
   const detachedTerminalSurface =
     terminalSurfaceVisible && activeThreadRef ? (
       <PersistentThreadTerminalSurface
@@ -3454,37 +3456,40 @@ export default function ChatView(props: ChatViewProps) {
         onDockToDrawer={dockTerminalToDrawer}
       />
     ) : null;
-  const workspaceSurfaceActive = Boolean(props.workspaceSurfaceContent) || terminalSurfaceActive;
-  const workspaceSurfaceOverlay =
-    props.workspaceSurfaceContent || detachedTerminalSurface ? (
-      <div
-        className={cn(
-          "absolute inset-0 z-10 flex min-h-0 flex-col bg-background",
-          !workspaceSurfaceActive && "pointer-events-none invisible",
-        )}
-      >
-        {props.workspaceSurfaceContent ? (
-          <div
-            className={cn(
-              "absolute inset-0 flex min-h-0 flex-col",
-              terminalSurfaceActive && "pointer-events-none invisible",
-            )}
-          >
-            {props.workspaceSurfaceContent}
-          </div>
-        ) : null}
-        {detachedTerminalSurface ? (
-          <div
-            className={cn(
-              "absolute inset-0 flex min-h-0 flex-col",
-              !terminalSurfaceActive && "pointer-events-none invisible",
-            )}
-          >
-            {detachedTerminalSurface}
-          </div>
-        ) : null}
-      </div>
-    ) : null;
+  const workspaceContentActive =
+    Boolean(props.workspaceSurfaceContent) &&
+    workspaceDockState.activeTab !== "chat" &&
+    workspaceDockState.activeTab !== WORKSPACE_TERMINAL_TAB_ID;
+  const workspaceSurfaceActive = workspaceContentActive || terminalSurfaceActive;
+  const workspaceSurfaceOverlay = workspaceSurfaceActive ? (
+    <div
+      className={cn(
+        "absolute inset-0 z-10 flex min-h-0 flex-col bg-background",
+        !workspaceSurfaceActive && "pointer-events-none invisible",
+      )}
+    >
+      {props.workspaceSurfaceContent ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !workspaceContentActive && "pointer-events-none invisible",
+          )}
+        >
+          {props.workspaceSurfaceContent}
+        </div>
+      ) : null}
+      {detachedTerminalSurface ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !terminalSurfaceActive && "pointer-events-none invisible",
+          )}
+        >
+          {detachedTerminalSurface}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
@@ -3625,6 +3630,17 @@ export default function ChatView(props: ChatViewProps) {
               <div
                 className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}
               >
+                <BranchToolbar
+                  environmentId={environmentId}
+                  threadId={threadId}
+                  {...(draftId ? { draftId } : {})}
+                  onEnvModeChange={_onEnvModeChange}
+                  envLocked={envLocked}
+                  onCheckoutPullRequestRequest={_openPullRequestDialog}
+                  onComposerFocusRequest={scheduleComposerFocus}
+                  availableEnvironments={logicalProjectEnvironments}
+                  onEnvironmentChange={_onEnvironmentChange}
+                />
                 <ChatComposer
                   ref={composerRef}
                   composerDraftTarget={composerDraftTarget}
@@ -3692,6 +3708,22 @@ export default function ChatView(props: ChatViewProps) {
                   setThreadError={setThreadError}
                   onExpandImage={onExpandTimelineImage}
                 />
+                {pullRequestDialogState ? (
+                  <PullRequestThreadDialog
+                    key={pullRequestDialogState.key}
+                    open
+                    environmentId={environmentId}
+                    threadId={activeThread.id}
+                    cwd={activeProject?.cwd ?? null}
+                    initialReference={pullRequestDialogState.initialReference}
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setPullRequestDialogState(null);
+                      }
+                    }}
+                    onPrepared={_handlePreparedPullRequestThread}
+                  />
+                ) : null}
               </div>
             </div>
             {workspaceSurfaceOverlay}

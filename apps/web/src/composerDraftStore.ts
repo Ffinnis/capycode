@@ -2740,25 +2740,40 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
       merge: (persistedState, currentState) => {
         const normalizedPersisted =
           normalizeCurrentPersistedComposerDraftStoreState(persistedState);
-        const draftsByThreadKey = Object.fromEntries(
+        const hydratedDraftsByThreadKey = Object.fromEntries(
           Object.entries(normalizedPersisted.draftsByThreadKey).map(([threadKey, draft]) => [
             threadKey,
             toHydratedThreadDraft(draft),
           ]),
         );
-        const draftThreadsByThreadKey = Object.fromEntries(
+        const hydratedDraftThreadsByThreadKey = Object.fromEntries(
           Object.entries(normalizedPersisted.draftThreadsByThreadKey).map(
             ([threadKey, draftThread]) => [threadKey, toHydratedDraftThreadState(draftThread)],
           ),
         ) as Record<string, DraftThreadState>;
         return {
           ...currentState,
-          draftsByThreadKey,
-          draftThreadsByThreadKey,
-          logicalProjectDraftThreadKeyByLogicalProjectKey:
-            normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
-          stickyModelSelectionByProvider: normalizedPersisted.stickyModelSelectionByProvider ?? {},
-          stickyActiveProvider: normalizedPersisted.stickyActiveProvider ?? null,
+          // Persist hydration can complete after the user has already created or
+          // updated an in-memory draft. Preserve the live state in those cases
+          // instead of letting older persisted data clobber it.
+          draftsByThreadKey: {
+            ...hydratedDraftsByThreadKey,
+            ...currentState.draftsByThreadKey,
+          },
+          draftThreadsByThreadKey: {
+            ...hydratedDraftThreadsByThreadKey,
+            ...currentState.draftThreadsByThreadKey,
+          },
+          logicalProjectDraftThreadKeyByLogicalProjectKey: {
+            ...normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
+            ...currentState.logicalProjectDraftThreadKeyByLogicalProjectKey,
+          },
+          stickyModelSelectionByProvider: {
+            ...normalizedPersisted.stickyModelSelectionByProvider,
+            ...currentState.stickyModelSelectionByProvider,
+          },
+          stickyActiveProvider:
+            currentState.stickyActiveProvider ?? normalizedPersisted.stickyActiveProvider ?? null,
         };
       },
     },
