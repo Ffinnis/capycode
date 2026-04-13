@@ -214,7 +214,48 @@ const savedEnvironmentHarness = vi.hoisted(() => {
   };
 });
 
+function createSelectorSnapshotReader<TState extends object>() {
+  const selectorResultsBySnapshot = new WeakMap<
+    TState,
+    WeakMap<(state: TState) => unknown, unknown>
+  >();
+
+  return (snapshot: TState, selector: (state: TState) => unknown) => {
+    const cachedResults = selectorResultsBySnapshot.get(snapshot);
+    if (cachedResults?.has(selector)) {
+      return cachedResults.get(selector);
+    }
+
+    const nextValue = selector(snapshot);
+    if (cachedResults) {
+      cachedResults.set(selector, nextValue);
+      return nextValue;
+    }
+
+    selectorResultsBySnapshot.set(snapshot, new WeakMap([[selector, nextValue]]));
+    return nextValue;
+  };
+}
+
+const readSavedEnvironmentLabels = (state: { byId: Record<string, string> }) => ({
+  labels: Object.values(state.byId),
+});
+
+describe("createSelectorSnapshotReader", () => {
+  it("returns the same selector result reference for the same snapshot and selector", () => {
+    const readSelectorValue = createSelectorSnapshotReader<{ byId: Record<string, string> }>();
+    const snapshot = { byId: { "environment-1": "Local" } };
+
+    const firstValue = readSelectorValue(snapshot, readSavedEnvironmentLabels);
+    const secondValue = readSelectorValue(snapshot, readSavedEnvironmentLabels);
+
+    expect(secondValue).toBe(firstValue);
+  });
+});
+
 vi.mock("../../environments/runtime", () => {
+  const readRegistrySelectorValue = createSelectorSnapshotReader<{ byId: Record<string, any> }>();
+  const readRuntimeSelectorValue = createSelectorSnapshotReader<{ byId: Record<string, any> }>();
   const primaryConnection = {
     kind: "primary" as const,
     knownEnvironment: {
@@ -266,16 +307,28 @@ vi.mock("../../environments/runtime", () => {
     ) =>
       useSyncExternalStore(
         savedEnvironmentHarness.subscribe,
-        () => selector(savedEnvironmentHarness.getRegistrySnapshot()),
-        () => selector(savedEnvironmentHarness.getRegistrySnapshot()),
+        () => {
+          const snapshot = savedEnvironmentHarness.getRegistrySnapshot();
+          return readRegistrySelectorValue(snapshot, selector);
+        },
+        () => {
+          const snapshot = savedEnvironmentHarness.getRegistrySnapshot();
+          return readRegistrySelectorValue(snapshot, selector);
+        },
       ),
     useSavedEnvironmentRuntimeStore: (
       selector: (state: { byId: Record<string, any> }) => unknown,
     ) =>
       useSyncExternalStore(
         savedEnvironmentHarness.subscribe,
-        () => selector(savedEnvironmentHarness.getRuntimeSnapshot()),
-        () => selector(savedEnvironmentHarness.getRuntimeSnapshot()),
+        () => {
+          const snapshot = savedEnvironmentHarness.getRuntimeSnapshot();
+          return readRuntimeSelectorValue(snapshot, selector);
+        },
+        () => {
+          const snapshot = savedEnvironmentHarness.getRuntimeSnapshot();
+          return readRuntimeSelectorValue(snapshot, selector);
+        },
       ),
   };
 });

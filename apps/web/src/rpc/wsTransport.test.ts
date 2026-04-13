@@ -757,6 +757,91 @@ describe("WsTransport", () => {
     await transport.dispose();
   });
 
+  it("re-subscribes after benign stream completion errors", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const listener = vi.fn();
+    let attempts = 0;
+
+    const unsubscribe = transport.subscribe(
+      () =>
+        Stream.suspend(() => {
+          attempts += 1;
+          if (attempts === 1) {
+            return Stream.fromIterable([
+              {
+                version: 1 as const,
+                sequence: 1,
+                type: "welcome" as const,
+                payload: {
+                  environment: {
+                    environmentId: "environment-local",
+                    label: "Local environment",
+                    platform: { os: "darwin" as const, arch: "arm64" as const },
+                    serverVersion: "0.0.0-test",
+                    capabilities: { repositoryIdentity: true },
+                  },
+                  cwd: "/tmp/one",
+                  projectName: "one",
+                },
+              },
+            ]).pipe(
+              Stream.concat(
+                Stream.fail(
+                  new Error(
+                    '~effect/Cause/Done: SchemaError(Expected array, got {"_id":"Cause","_tag":"Die"})',
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return Stream.fromIterable([
+            {
+              version: 1 as const,
+              sequence: 2,
+              type: "welcome" as const,
+              payload: {
+                environment: {
+                  environmentId: "environment-local",
+                  label: "Local environment",
+                  platform: { os: "darwin" as const, arch: "arm64" as const },
+                  serverVersion: "0.0.0-test",
+                  capabilities: { repositoryIdentity: true },
+                },
+                cwd: "/tmp/two",
+                projectName: "two",
+              },
+            },
+          ]).pipe(Stream.concat(Stream.never));
+        }),
+      listener,
+      { retryDelay: 10 },
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+
+    getSocket().open();
+
+    await waitFor(() => {
+      expect(attempts).toBeGreaterThanOrEqual(2);
+    });
+    await waitFor(() => {
+      expect(listener).toHaveBeenCalledTimes(2);
+    });
+    expect(debugSpy).toHaveBeenCalledWith(
+      "WebSocket RPC benign stream completion - resubscribing",
+      expect.objectContaining({
+        error: expect.stringContaining("~effect/Cause/Done"),
+      }),
+    );
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
   it("logs a transport disconnect once even when multiple subscriptions fail together", async () => {
     const transport = createTransport("ws://localhost:3020");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);

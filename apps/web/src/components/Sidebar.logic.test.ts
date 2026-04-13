@@ -4,6 +4,7 @@ import {
   createThreadJumpHintVisibilityController,
   ensureWorkspaceThreadListOpen,
   getVisibleSidebarThreadIds,
+  getVisibleWorkspacePanelThreadIds,
   resolveAdjacentThreadId,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
@@ -167,6 +168,41 @@ describe("workspace thread list open state", () => {
     const nextOpenWorkspaceKeys = toggleWorkspaceThreadListOpen(openWorkspaceKeys, "workspace-a");
 
     expect(isWorkspaceThreadListOpen(nextOpenWorkspaceKeys, "workspace-a")).toBe(false);
+  });
+});
+
+describe("getVisibleWorkspacePanelThreadIds", () => {
+  it("includes all open workspace thread lists in visual order", () => {
+    const visibleThreadIds = getVisibleWorkspacePanelThreadIds({
+      items: [
+        { kind: "workspace", workspaceKey: "workspace-a" },
+        { kind: "section", sectionId: "section-1", isCollapsed: false },
+        { kind: "workspace", workspaceKey: "workspace-d" },
+      ] as const,
+      workspacesBySectionId: new Map([
+        ["section-1", [{ workspaceKey: "workspace-b" }, { workspaceKey: "workspace-c" }] as const],
+      ]),
+      openWorkspaceKeys: new Set(["workspace-a", "workspace-c", "workspace-d"]),
+      threadIdsByWorkspaceKey: new Map([
+        ["workspace-a", ["thread-a1"]],
+        ["workspace-b", ["thread-b1"]],
+        ["workspace-c", ["thread-c1", "thread-c2"]],
+        ["workspace-d", ["thread-d1"]],
+      ]),
+    });
+
+    expect(visibleThreadIds).toEqual(["thread-a1", "thread-c1", "thread-c2", "thread-d1"]);
+  });
+
+  it("skips threads for workspaces inside collapsed sections", () => {
+    const visibleThreadIds = getVisibleWorkspacePanelThreadIds({
+      items: [{ kind: "section", sectionId: "section-1", isCollapsed: true }] as const,
+      workspacesBySectionId: new Map([["section-1", [{ workspaceKey: "workspace-a" }] as const]]),
+      openWorkspaceKeys: new Set(["workspace-a"]),
+      threadIdsByWorkspaceKey: new Map([["workspace-a", ["thread-a1"]]]),
+    });
+
+    expect(visibleThreadIds).toEqual([]);
   });
 });
 

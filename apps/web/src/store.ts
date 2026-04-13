@@ -1700,6 +1700,12 @@ export function selectWorkspacesAcrossEnvironments(state: AppState): Workspace[]
   );
 }
 
+export function selectWorkspaceSectionsAcrossEnvironments(state: AppState): WorkspaceSection[] {
+  return getEnvironmentEntries(state).flatMap(([, environmentState]) =>
+    Object.values(environmentState.workspaceSectionById),
+  );
+}
+
 /** Like `selectThreadsAcrossEnvironments` but returns stable `ThreadShell` references from the store (no derived data). */
 export function selectThreadShellsAcrossEnvironments(state: AppState): ThreadShell[] {
   return getEnvironmentEntries(state).flatMap(([, environmentState]) =>

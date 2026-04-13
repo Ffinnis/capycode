@@ -76,6 +76,7 @@ import {
   selectSidebarThreadsForProjectRefs,
   selectSidebarThreadsAcrossEnvironments,
   selectThreadIdsByProjectRef,
+  selectWorkspaceSectionsAcrossEnvironments,
   selectWorkspaceSectionsForProjectRef,
   selectWorkspacesAcrossEnvironments,
   selectWorkspacesForProjectRef,
@@ -145,6 +146,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
   ensureWorkspaceThreadListOpen,
+  getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
@@ -314,6 +316,159 @@ function workspaceSortableId(workspace: Pick<SidebarWorkspaceSnapshot, "workspac
 
 function sectionSortableId(section: Pick<SidebarWorkspaceSectionSnapshot, "sectionKey">): string {
   return `section:${section.sectionKey}`;
+}
+
+function buildSidebarWorkspaceSnapshots(
+  project: Pick<SidebarProjectSnapshot, "environmentId" | "projectKey">,
+  projectWorkspaces: readonly Workspace[],
+): SidebarWorkspaceSnapshot[] {
+  return projectWorkspaces
+    .map((workspace) => ({
+      ...workspace,
+      workspaceKey: scopedWorkspaceKey(workspace.environmentId, workspace.id),
+      projectKey: project.projectKey,
+      environmentLabel:
+        workspace.environmentId === project.environmentId ? null : workspace.environmentId,
+    }))
+    .toSorted((left, right) => {
+      if (left.environmentId !== right.environmentId) {
+        return left.environmentId.localeCompare(right.environmentId);
+      }
+      const byTabOrder = left.tabOrder - right.tabOrder;
+      if (byTabOrder !== 0) {
+        return byTabOrder;
+      }
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function buildSidebarWorkspaceSections(
+  project: Pick<SidebarProjectSnapshot, "environmentId" | "projectKey">,
+  projectWorkspaceSections: readonly WorkspaceSection[],
+): SidebarWorkspaceSectionSnapshot[] {
+  return projectWorkspaceSections
+    .map((section) => ({
+      ...section,
+      sectionKey: scopedWorkspaceKey(section.environmentId, section.id),
+      projectKey: project.projectKey,
+      environmentLabel:
+        section.environmentId === project.environmentId ? null : section.environmentId,
+    }))
+    .toSorted((left, right) => {
+      if (left.environmentId !== right.environmentId) {
+        return left.environmentId.localeCompare(right.environmentId);
+      }
+      const byTabOrder = left.tabOrder - right.tabOrder;
+      if (byTabOrder !== 0) {
+        return byTabOrder;
+      }
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function buildSidebarWorkspaceByScopedId(
+  workspaceSnapshots: readonly SidebarWorkspaceSnapshot[],
+): Map<string, SidebarWorkspaceSnapshot> {
+  return new Map(
+    workspaceSnapshots.map(
+      (workspace) =>
+        [scopedWorkspaceKey(workspace.environmentId, workspace.id), workspace] as const,
+    ),
+  );
+}
+
+function buildDefaultWorkspaceKeyByProjectIdentity(
+  workspaceSnapshots: readonly SidebarWorkspaceSnapshot[],
+): Map<string, string> {
+  const next = new Map<string, string>();
+  for (const workspace of workspaceSnapshots) {
+    const projectIdentity = `${workspace.environmentId}:${workspace.projectId}`;
+    if (!next.has(projectIdentity) || workspace.isDefault) {
+      next.set(projectIdentity, workspace.workspaceKey);
+    }
+  }
+  return next;
+}
+
+function buildSidebarWorkspacesBySectionId(
+  workspaceSnapshots: readonly SidebarWorkspaceSnapshot[],
+): Map<string, SidebarWorkspaceSnapshot[]> {
+  const next = new Map<string, SidebarWorkspaceSnapshot[]>();
+  for (const workspace of workspaceSnapshots) {
+    if (workspace.sectionId === null) {
+      continue;
+    }
+    const existing = next.get(workspace.sectionId);
+    if (existing) {
+      existing.push(workspace);
+    } else {
+      next.set(workspace.sectionId, [workspace]);
+    }
+  }
+  for (const workspaces of next.values()) {
+    workspaces.sort(
+      (left, right) => left.tabOrder - right.tabOrder || left.name.localeCompare(right.name),
+    );
+  }
+  return next;
+}
+
+function buildSidebarProjectWorkspaceItems(
+  workspaceSections: readonly SidebarWorkspaceSectionSnapshot[],
+  workspaceSnapshots: readonly SidebarWorkspaceSnapshot[],
+): readonly SidebarProjectWorkspaceItem[] {
+  return [
+    ...workspaceSections.map((section) => ({
+      kind: "section" as const,
+      key: section.sectionKey,
+      tabOrder: section.tabOrder,
+      section,
+    })),
+    ...workspaceSnapshots
+      .filter((workspace) => workspace.sectionId === null)
+      .map((workspace) => ({
+        kind: "workspace" as const,
+        key: workspace.workspaceKey,
+        tabOrder: workspace.tabOrder,
+        workspace,
+      })),
+  ].toSorted((left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key));
+}
+
+function buildSidebarWorkspaceThreadsByKey(input: {
+  visibleProjectThreads: readonly SidebarThreadSummary[];
+  workspaceByScopedId: ReadonlyMap<string, SidebarWorkspaceSnapshot>;
+  defaultWorkspaceKeyByProjectIdentity: ReadonlyMap<string, string>;
+  threadSortOrder: SidebarThreadSortOrder;
+}): Map<string, SidebarThreadSummary[]> {
+  const next = new Map<string, SidebarThreadSummary[]>();
+  for (const thread of input.visibleProjectThreads) {
+    const workspaceKey =
+      thread.workspaceId &&
+      input.workspaceByScopedId.has(scopedWorkspaceKey(thread.environmentId, thread.workspaceId))
+        ? input.workspaceByScopedId.get(
+            scopedWorkspaceKey(thread.environmentId, thread.workspaceId),
+          )?.workspaceKey
+        : input.defaultWorkspaceKeyByProjectIdentity.get(
+            `${thread.environmentId}:${thread.projectId}`,
+          );
+    if (!workspaceKey) {
+      continue;
+    }
+    const existing = next.get(workspaceKey);
+    if (existing) {
+      existing.push(thread);
+    } else {
+      next.set(workspaceKey, [thread]);
+    }
+  }
+
+  return new Map(
+    [...next.entries()].map(([workspaceKey, threads]) => [
+      workspaceKey,
+      sortThreadsForSidebar(threads, input.threadSortOrder),
+    ]),
+  );
 }
 
 function draftSessionMatchesWorkspace(
@@ -1143,9 +1298,6 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
         }`}
         onClick={() => {
           toggleWorkspaceThreadList(workspace.workspaceKey);
-          if (workspaceExpanded) {
-            return;
-          }
           void setWorkspaceActive(workspace).catch((error) => {
             toastManager.add({
               type: "error",
@@ -1735,70 +1887,22 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
-  const workspaceSnapshots = useMemo<SidebarWorkspaceSnapshot[]>(
-    () =>
-      projectWorkspaces
-        .map((workspace) => ({
-          ...workspace,
-          workspaceKey: scopedWorkspaceKey(workspace.environmentId, workspace.id),
-          projectKey: project.projectKey,
-          environmentLabel:
-            workspace.environmentId === project.environmentId ? null : workspace.environmentId,
-        }))
-        .toSorted((left, right) => {
-          if (left.environmentId !== right.environmentId) {
-            return left.environmentId.localeCompare(right.environmentId);
-          }
-          const byTabOrder = left.tabOrder - right.tabOrder;
-          if (byTabOrder !== 0) {
-            return byTabOrder;
-          }
-          return left.name.localeCompare(right.name);
-        }),
-    [project.environmentId, project.projectKey, projectWorkspaces],
+  const workspaceSnapshots = useMemo(
+    () => buildSidebarWorkspaceSnapshots(project, projectWorkspaces),
+    [project, projectWorkspaces],
   );
-  const workspaceSections = useMemo<SidebarWorkspaceSectionSnapshot[]>(
-    () =>
-      projectWorkspaceSections
-        .map((section) => ({
-          ...section,
-          sectionKey: scopedWorkspaceKey(section.environmentId, section.id),
-          projectKey: project.projectKey,
-          environmentLabel:
-            section.environmentId === project.environmentId ? null : section.environmentId,
-        }))
-        .toSorted((left, right) => {
-          if (left.environmentId !== right.environmentId) {
-            return left.environmentId.localeCompare(right.environmentId);
-          }
-          const byTabOrder = left.tabOrder - right.tabOrder;
-          if (byTabOrder !== 0) {
-            return byTabOrder;
-          }
-          return left.name.localeCompare(right.name);
-        }),
-    [project.environmentId, project.projectKey, projectWorkspaceSections],
+  const workspaceSections = useMemo(
+    () => buildSidebarWorkspaceSections(project, projectWorkspaceSections),
+    [project, projectWorkspaceSections],
   );
   const workspaceByScopedId = useMemo(
-    () =>
-      new Map(
-        workspaceSnapshots.map(
-          (workspace) =>
-            [scopedWorkspaceKey(workspace.environmentId, workspace.id), workspace] as const,
-        ),
-      ),
+    () => buildSidebarWorkspaceByScopedId(workspaceSnapshots),
     [workspaceSnapshots],
   );
-  const defaultWorkspaceKeyByProjectIdentity = useMemo(() => {
-    const next = new Map<string, string>();
-    for (const workspace of workspaceSnapshots) {
-      const projectIdentity = `${workspace.environmentId}:${workspace.projectId}`;
-      if (!next.has(projectIdentity) || workspace.isDefault) {
-        next.set(projectIdentity, workspace.workspaceKey);
-      }
-    }
-    return next;
-  }, [workspaceSnapshots]);
+  const defaultWorkspaceKeyByProjectIdentity = useMemo(
+    () => buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
+    [workspaceSnapshots],
+  );
   const activeWorkspaceKey = useMemo(() => {
     const routeThread = activeRouteThreadKey
       ? (sidebarThreadByKey.get(activeRouteThreadKey) ?? null)
@@ -1830,77 +1934,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     }
     openWorkspaceThreadList(activeWorkspaceKey);
   }, [activeWorkspaceKey, openWorkspaceThreadList]);
-  const workspaceThreadsByKey = useMemo(() => {
-    const next = new Map<string, SidebarThreadSummary[]>();
-    for (const thread of visibleProjectThreads) {
-      const workspaceKey =
-        thread.workspaceId &&
-        workspaceByScopedId.has(scopedWorkspaceKey(thread.environmentId, thread.workspaceId))
-          ? workspaceByScopedId.get(scopedWorkspaceKey(thread.environmentId, thread.workspaceId))
-              ?.workspaceKey
-          : defaultWorkspaceKeyByProjectIdentity.get(`${thread.environmentId}:${thread.projectId}`);
-      if (!workspaceKey) {
-        continue;
-      }
-      const existing = next.get(workspaceKey);
-      if (existing) {
-        existing.push(thread);
-      } else {
-        next.set(workspaceKey, [thread]);
-      }
-    }
-    return new Map(
-      [...next.entries()].map(([workspaceKey, threads]) => [
-        workspaceKey,
-        sortThreadsForSidebar(threads, threadSortOrder),
-      ]),
-    );
-  }, [
-    defaultWorkspaceKeyByProjectIdentity,
-    threadSortOrder,
-    visibleProjectThreads,
-    workspaceByScopedId,
-  ]);
-  const workspacesBySectionId = useMemo(() => {
-    const next = new Map<string, SidebarWorkspaceSnapshot[]>();
-    for (const workspace of workspaceSnapshots) {
-      if (workspace.sectionId === null) {
-        continue;
-      }
-      const existing = next.get(workspace.sectionId);
-      if (existing) {
-        existing.push(workspace);
-      } else {
-        next.set(workspace.sectionId, [workspace]);
-      }
-    }
-    for (const workspaces of next.values()) {
-      workspaces.sort(
-        (left, right) => left.tabOrder - right.tabOrder || left.name.localeCompare(right.name),
-      );
-    }
-    return next;
-  }, [workspaceSnapshots]);
-  const projectWorkspaceItems = useMemo<readonly SidebarProjectWorkspaceItem[]>(
+  const workspaceThreadsByKey = useMemo(
     () =>
-      [
-        ...workspaceSections.map((section) => ({
-          kind: "section" as const,
-          key: section.sectionKey,
-          tabOrder: section.tabOrder,
-          section,
-        })),
-        ...workspaceSnapshots
-          .filter((workspace) => workspace.sectionId === null)
-          .map((workspace) => ({
-            kind: "workspace" as const,
-            key: workspace.workspaceKey,
-            tabOrder: workspace.tabOrder,
-            workspace,
-          })),
-      ].toSorted(
-        (left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key),
-      ),
+      buildSidebarWorkspaceThreadsByKey({
+        visibleProjectThreads,
+        workspaceByScopedId,
+        defaultWorkspaceKeyByProjectIdentity,
+        threadSortOrder,
+      }),
+    [
+      defaultWorkspaceKeyByProjectIdentity,
+      threadSortOrder,
+      visibleProjectThreads,
+      workspaceByScopedId,
+    ],
+  );
+  const workspacesBySectionId = useMemo(
+    () => buildSidebarWorkspacesBySectionId(workspaceSnapshots),
+    [workspaceSnapshots],
+  );
+  const projectWorkspaceItems = useMemo(
+    () => buildSidebarProjectWorkspaceItems(workspaceSections, workspaceSnapshots),
     [workspaceSections, workspaceSnapshots],
   );
 
@@ -4012,6 +4066,7 @@ export default function Sidebar() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
   const sidebarWorkspaces = useStore(useShallow(selectWorkspacesAcrossEnvironments));
+  const sidebarWorkspaceSections = useStore(useShallow(selectWorkspaceSectionsAcrossEnvironments));
   const activeEnvironmentId = useStore((store) => store.activeEnvironmentId);
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -4454,41 +4509,64 @@ export default function Sidebar() {
           );
           return (physicalToLogicalKey.get(physicalKey) ?? physicalKey) === project.projectKey;
         });
-        const routeThread = routeThreadKey
-          ? (sidebarThreadByKey.get(routeThreadKey) ?? null)
-          : null;
-        const activeWorkspace =
-          (routeThread?.workspaceId
-            ? projectWorkspaceEntries.find(
-                (workspace) =>
-                  workspace.environmentId === routeThread.environmentId &&
-                  workspace.id === routeThread.workspaceId,
-              )
-            : undefined) ??
-          projectWorkspaceEntries.find((workspace) => workspace.isActive) ??
-          projectWorkspaceEntries[0];
-        if (!activeWorkspace) {
+        if (projectWorkspaceEntries.length === 0) {
           return [];
         }
-        const projectThreads = sortThreadsForSidebar(
-          (threadsByProjectKey.get(project.projectKey) ?? []).filter(
-            (thread) =>
-              thread.archivedAt === null &&
-              thread.environmentId === activeWorkspace.environmentId &&
-              thread.workspaceId === activeWorkspace.id,
+        const projectWorkspaceSectionEntries = sidebarWorkspaceSections.filter((section) => {
+          const physicalKey = scopedProjectKey(
+            scopeProjectRef(section.environmentId, section.projectId),
+          );
+          return (physicalToLogicalKey.get(physicalKey) ?? physicalKey) === project.projectKey;
+        });
+        const workspaceSnapshots = buildSidebarWorkspaceSnapshots(project, projectWorkspaceEntries);
+        const workspaceSections = buildSidebarWorkspaceSections(
+          project,
+          projectWorkspaceSectionEntries,
+        );
+        const projectWorkspaceItems = buildSidebarProjectWorkspaceItems(
+          workspaceSections,
+          workspaceSnapshots,
+        );
+        const workspacesBySectionId = buildSidebarWorkspacesBySectionId(workspaceSnapshots);
+        const workspaceThreadsByKey = buildSidebarWorkspaceThreadsByKey({
+          visibleProjectThreads: (threadsByProjectKey.get(project.projectKey) ?? []).filter(
+            (thread) => thread.archivedAt === null,
           ),
-          sidebarThreadSortOrder,
+          workspaceByScopedId: buildSidebarWorkspaceByScopedId(workspaceSnapshots),
+          defaultWorkspaceKeyByProjectIdentity:
+            buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
+          threadSortOrder: sidebarThreadSortOrder,
+        });
+        const threadKeysByWorkspaceKey = new Map(
+          [...workspaceThreadsByKey.entries()].map(([workspaceKey, threads]) => [
+            workspaceKey,
+            threads.map((thread) =>
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            ),
+          ]),
         );
-        return projectThreads.map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        );
+
+        return getVisibleWorkspacePanelThreadIds({
+          items: projectWorkspaceItems.map((item) =>
+            item.kind === "workspace"
+              ? { kind: "workspace" as const, workspaceKey: item.workspace.workspaceKey }
+              : {
+                  kind: "section" as const,
+                  sectionId: item.section.id,
+                  isCollapsed: item.section.isCollapsed,
+                },
+          ),
+          workspacesBySectionId,
+          openWorkspaceKeys: openWorkspaceThreadLists,
+          threadIdsByWorkspaceKey: threadKeysByWorkspaceKey,
+        });
       }),
     [
+      openWorkspaceThreadLists,
       physicalToLogicalKey,
       projectExpandedById,
       sidebarThreadSortOrder,
-      routeThreadKey,
-      sidebarThreadByKey,
+      sidebarWorkspaceSections,
       sidebarWorkspaces,
       sortedProjects,
       threadsByProjectKey,

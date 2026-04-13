@@ -65,7 +65,6 @@ jobs:
 
   tests:
     name: Test, Browser Test
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -107,11 +106,13 @@ jobs:
         run: bun run test
 
       - name: Install browser test runtime
+        if: github.event_name == 'pull_request'
         run: |
           cd apps/web
           bunx playwright install --with-deps chromium
 
       - name: Browser test
+        if: github.event_name == 'pull_request'
         run: bun run --cwd apps/web test:browser
 
   release_smoke:

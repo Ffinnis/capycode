@@ -22,6 +22,7 @@ import {
 import { FilePreviewPanel } from "./files/FilePreviewPanel";
 import { FileTreePanel } from "./files/FileTreePanel";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { getWorkspaceTerminalSurfaceState } from "./workspaceTerminalSurfaceState";
 import { type DraftId } from "~/composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -30,11 +31,11 @@ import {
 } from "~/diffRouteSearch";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { useTheme } from "~/hooks/useTheme";
+import { cn } from "~/lib/utils";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRoutes";
 import {
   getWorkspaceDockScopeKey,
   getWorkspaceDockScopeState,
-  WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "~/workspaceDockStore";
 import { SidebarInset } from "~/components/ui/sidebar";
@@ -241,10 +242,12 @@ export function ThreadWorkspaceShell(props: {
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
   const previewFilePath = activeFilePath;
   const contextOpen = diffOpen;
-  const terminalSurfaceActive =
-    terminalOpen &&
-    workspaceDockState.terminalTabOpen &&
-    workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const { mounted: terminalSurfaceMounted, active: terminalSurfaceActive } =
+    getWorkspaceTerminalSurfaceState({
+      terminalSurfaceOpen: terminalOpen,
+      terminalTabOpen: workspaceDockState.terminalTabOpen,
+      activeTab: workspaceDockState.activeTab,
+    });
   const sheetOpen = diffOpen || filesOpen || terminalSurfaceActive || activeFilePath !== null;
   const workspaceSurfaceContent =
     previewFilePath && props.activeWorkspaceRoot ? (
@@ -297,42 +300,63 @@ export function ThreadWorkspaceShell(props: {
     ) : null
   ) : null;
 
-  const sheetContent: ReactNode = terminalSurfaceActive ? (
-    <PersistentThreadTerminalSurface
-      threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
-      threadId={props.threadId}
-      visible
-      mode="surface"
-      launchContext={null}
-      focusRequestId={0}
-      onDockToDrawer={() => {
-        navigateWithinThreadRoute({ terminal: undefined });
-      }}
-    />
-  ) : previewFilePath &&
-    props.activeWorkspaceRoot &&
-    workspaceDockState.activeContext !== "diff" ? (
-    <FilePreviewPanel
-      environmentId={props.environmentId}
-      cwd={props.activeWorkspaceRoot}
-      relativePath={previewFilePath}
-      onBack={closeFilePreview}
-      variant="main"
-    />
-  ) : diffOpen && workspaceDockState.activeContext === "diff" ? (
-    shouldRenderDiffContent ? (
-      <LazyDiffPanel mode="sheet" />
-    ) : null
-  ) : filesOpen && props.activeWorkspaceRoot ? (
-    <FileTreePanel
-      environmentId={props.environmentId}
-      cwd={props.activeWorkspaceRoot}
-      scopeKey={workspaceDockScopeKey}
-      selectedFilePath={activeFilePath}
-      resolvedTheme={resolvedTheme}
-      onOpenFile={openWorkspaceFile}
-    />
-  ) : null;
+  const nonTerminalSheetContent =
+    previewFilePath && props.activeWorkspaceRoot && workspaceDockState.activeContext !== "diff" ? (
+      <FilePreviewPanel
+        environmentId={props.environmentId}
+        cwd={props.activeWorkspaceRoot}
+        relativePath={previewFilePath}
+        onBack={closeFilePreview}
+        variant="main"
+      />
+    ) : diffOpen && workspaceDockState.activeContext === "diff" ? (
+      shouldRenderDiffContent ? (
+        <LazyDiffPanel mode="sheet" />
+      ) : null
+    ) : filesOpen && props.activeWorkspaceRoot ? (
+      <FileTreePanel
+        environmentId={props.environmentId}
+        cwd={props.activeWorkspaceRoot}
+        scopeKey={workspaceDockScopeKey}
+        selectedFilePath={activeFilePath}
+        resolvedTheme={resolvedTheme}
+        onOpenFile={openWorkspaceFile}
+      />
+    ) : null;
+  const sheetContent: ReactNode = terminalSurfaceMounted ? (
+    <div className="relative flex h-full min-h-0 flex-1 flex-col">
+      {nonTerminalSheetContent ? (
+        <div
+          className={cn(
+            "flex h-full min-h-0 flex-1 flex-col",
+            terminalSurfaceActive && "pointer-events-none invisible",
+          )}
+        >
+          {nonTerminalSheetContent}
+        </div>
+      ) : null}
+      <div
+        className={cn(
+          "absolute inset-0 flex min-h-0 flex-col",
+          !terminalSurfaceActive && "pointer-events-none invisible",
+        )}
+      >
+        <PersistentThreadTerminalSurface
+          threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
+          threadId={props.threadId}
+          visible={terminalSurfaceActive}
+          mode="surface"
+          launchContext={null}
+          focusRequestId={0}
+          onDockToDrawer={() => {
+            navigateWithinThreadRoute({ terminal: undefined });
+          }}
+        />
+      </div>
+    </div>
+  ) : (
+    nonTerminalSheetContent
+  );
 
   return (
     <WorkspaceShell

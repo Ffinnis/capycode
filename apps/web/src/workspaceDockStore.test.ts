@@ -108,4 +108,20 @@ describe("workspaceDockStore", () => {
     expect(scope.terminalTabOpen).toBe(true);
     expect(scope.activeTab).toBe("chat");
   });
+
+  it("syncs the active tab back to chat when the route drops filePath", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.openFile(SCOPE, "src/app.ts");
+
+    store.syncRouteState(SCOPE, {
+      filesOpen: true,
+      diffOpen: false,
+      terminalOpen: false,
+      filePath: null,
+    });
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.openFileTabs).toEqual(["src/app.ts"]);
+    expect(scope.activeTab).toBe("chat");
+  });
 });
