@@ -775,7 +775,8 @@ export function GeneralSettingsPanel() {
             >
               <SelectTrigger className="w-full sm:w-40" aria-label="Color scheme">
                 <SelectValue>
-                  {COLOR_SCHEME_OPTIONS.find((option) => option.value === colorScheme)?.label ?? "Default"}
+                  {COLOR_SCHEME_OPTIONS.find((option) => option.value === colorScheme)?.label ??
+                    "Default"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -900,9 +901,7 @@ export function GeneralSettingsPanel() {
           control={
             <Switch
               checked={settings.extendedTraceMode}
-              onCheckedChange={(checked) =>
-                updateSettings({ extendedTraceMode: Boolean(checked) })
-              }
+              onCheckedChange={(checked) => updateSettings({ extendedTraceMode: Boolean(checked) })}
               aria-label="Show extended trace mode"
             />
           }

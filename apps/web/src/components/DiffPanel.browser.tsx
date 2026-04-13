@@ -39,7 +39,9 @@ const {
       worktreePath: string | null;
     },
   },
-  workspaceRef: { current: null as null | { id: string; branch: string | null; worktreePath: string | null } },
+  workspaceRef: {
+    current: null as null | { id: string; branch: string | null; worktreePath: string | null },
+  },
   gitActionControlPropsRef: { current: null as unknown },
   updateSettingsSpy: vi.fn(),
   gitFilterChangeSpy: vi.fn(),
@@ -70,7 +72,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("~/hooks/useTheme", () => ({
-  useTheme: vi.fn(() => ({ resolvedTheme: "light" })),
+  useTheme: vi.fn(() => ({ resolvedTheme: "light", colorScheme: "default" })),
 }));
 
 vi.mock("~/hooks/useSettings", () => ({
@@ -100,7 +102,10 @@ vi.mock("~/store", () => ({
       },
     }),
   ),
-  selectEnvironmentState: vi.fn((state: { environmentStateById: Record<string, unknown> }, environmentId: string) => state.environmentStateById[environmentId]),
+  selectEnvironmentState: vi.fn(
+    (state: { environmentStateById: Record<string, unknown> }, environmentId: string) =>
+      state.environmentStateById[environmentId],
+  ),
   selectProjectByRef: vi.fn(() => ({
     cwd: "/repo/project",
   })),
@@ -266,6 +271,7 @@ describe("GitDiffView", () => {
         diffRenderMode="stacked"
         diffWordWrap={false}
         resolvedTheme="light"
+        colorScheme="default"
         patchViewportRef={{ current: null }}
         onOpenFileInEditor={() => undefined}
       />,
@@ -329,6 +335,7 @@ describe("GitDiffView", () => {
           diffRenderMode="stacked"
           diffWordWrap={false}
           resolvedTheme="light"
+          colorScheme="default"
           patchViewportRef={{ current: null }}
           onOpenFileInEditor={() => undefined}
         />,
@@ -395,6 +402,7 @@ describe("GitDiffView", () => {
         diffRenderMode="stacked"
         diffWordWrap={false}
         resolvedTheme="light"
+        colorScheme="default"
         patchViewportRef={{ current: null }}
         onOpenFileInEditor={() => undefined}
       />,
@@ -440,6 +448,7 @@ describe("IterationsDiffView", () => {
         diffRenderMode="stacked"
         diffWordWrap={false}
         resolvedTheme="light"
+        colorScheme="default"
         selectedFilePath={null}
         patchViewportRef={{ current: null }}
         onOpenFileInEditor={() => undefined}

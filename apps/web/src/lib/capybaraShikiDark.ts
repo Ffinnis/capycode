@@ -1,6 +1,4 @@
-import type { ThemeRegistration } from "shiki";
-
-export const capybaraShikiDark: ThemeRegistration = {
+export const capybaraShikiDark = {
   name: "capybara-dark",
   type: "dark",
   colors: {

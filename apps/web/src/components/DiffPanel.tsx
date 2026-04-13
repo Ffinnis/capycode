@@ -293,9 +293,7 @@ function GitFileRow(props: {
       type="button"
       className={cn(
         "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-        selected
-          ? "bg-accent text-accent-foreground"
-          : "text-foreground/90 hover:bg-accent/50",
+        selected ? "bg-accent text-accent-foreground" : "text-foreground/90 hover:bg-accent/50",
       )}
       onClick={() =>
         onSelect({
@@ -493,11 +491,13 @@ export function IterationsDiffView(props: {
   }>;
   inferredCheckpointTurnCountByTurnId: Record<string, number | undefined>;
   selectedTurnId: TurnId | null;
-  selectedTurn: {
-    turnId: TurnId;
-    completedAt: string;
-    checkpointTurnCount?: number | undefined;
-  } | undefined;
+  selectedTurn:
+    | {
+        turnId: TurnId;
+        completedAt: string;
+        checkpointTurnCount?: number | undefined;
+      }
+    | undefined;
   settingsTimestampFormat: "locale" | "12-hour" | "24-hour";
   onSelectTurn: (turnId: TurnId) => void;
   onSelectWholeConversation: () => void;
@@ -792,9 +792,7 @@ export function GitDiffView(props: {
     const selectablePaths = isSelectable
       ? entries.filter((e) => e.category !== "committed").map((e) => e.file.path)
       : [];
-    const selectedCount = selectablePaths.filter(
-      (p) => props.selectedFilePaths?.has(p),
-    ).length;
+    const selectedCount = selectablePaths.filter((p) => props.selectedFilePaths?.has(p)).length;
     const allSectionSelected =
       selectablePaths.length > 0 && selectedCount === selectablePaths.length;
     const someSectionSelected = selectedCount > 0 && !allSectionSelected;
@@ -1200,7 +1198,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         : null,
     [conversationCheckpointTurnCount, selectedTurn],
   );
-  const activeCheckpointRange = selectedTurn ? selectedCheckpointRange : conversationCheckpointRange;
+  const activeCheckpointRange = selectedTurn
+    ? selectedCheckpointRange
+    : conversationCheckpointRange;
   const conversationCacheScope = useMemo(() => {
     if (selectedTurn || orderedTurnDiffSummaries.length === 0) {
       return null;
@@ -1290,7 +1290,10 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }),
   );
   const effectiveGitBaseBranch =
-    selectedGitBaseBranch ?? reviewStatusQuery.data?.baseBranch ?? commitsQuery.data?.baseBranch ?? null;
+    selectedGitBaseBranch ??
+    reviewStatusQuery.data?.baseBranch ??
+    commitsQuery.data?.baseBranch ??
+    null;
   const commitFilesQuery = useQuery(
     gitCommitFilesQueryOptions({
       environmentId: activeThread?.environmentId ?? null,
@@ -1344,7 +1347,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         staged: reviewStatusQuery.data?.staged ?? [],
         unstaged: reviewStatusQuery.data?.unstaged ?? [],
       }),
-    [reviewStatusQuery.data?.againstBase, reviewStatusQuery.data?.staged, reviewStatusQuery.data?.unstaged],
+    [
+      reviewStatusQuery.data?.againstBase,
+      reviewStatusQuery.data?.staged,
+      reviewStatusQuery.data?.unstaged,
+    ],
   );
   const stagedEntries = useMemo(
     () =>
@@ -1459,24 +1466,21 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     });
   }, []);
 
-  const batchToggleGitFiles = useCallback(
-    (paths: ReadonlyArray<string>, selected: boolean) => {
-      startTransition(() => {
-        setSelectedGitFilePaths((current) => {
-          const next = new Set(current);
-          for (const path of paths) {
-            if (selected) {
-              next.add(path);
-            } else {
-              next.delete(path);
-            }
+  const batchToggleGitFiles = useCallback((paths: ReadonlyArray<string>, selected: boolean) => {
+    startTransition(() => {
+      setSelectedGitFilePaths((current) => {
+        const next = new Set(current);
+        for (const path of paths) {
+          if (selected) {
+            next.add(path);
+          } else {
+            next.delete(path);
           }
-          return next;
-        });
+        }
+        return next;
       });
-    },
-    [],
-  );
+    });
+  }, []);
 
   const selectedGitFilePathList = useMemo(() => [...selectedGitFilePaths], [selectedGitFilePaths]);
   const selectedGitFilesCount = selectedGitFilePathList.length;
