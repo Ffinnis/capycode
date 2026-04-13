@@ -226,7 +226,9 @@ export function WorkspaceCreateDialog({
       try {
         await onCreated();
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : "Failed to refresh after creation.");
+        setSubmitError(
+          error instanceof Error ? error.message : "Failed to refresh after creation.",
+        );
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to create workspace.");
