@@ -57,6 +57,7 @@ export default defineConfig({
   ],
   optimizeDeps: {
     include: [
+      "@base-ui/react/combobox",
       "@pierre/diffs",
       "@pierre/diffs/react",
       "@pierre/diffs/worker/worker.js",

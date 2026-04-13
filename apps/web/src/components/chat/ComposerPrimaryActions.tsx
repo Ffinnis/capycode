@@ -127,7 +127,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <Button
           type="submit"
           size="sm"
-          className={cn("rounded-full", compact ? "h-9 px-3 sm:h-8" : "h-9 px-4 sm:h-8")}
+          className={cn("rounded-full px-4", compact ? "h-8" : "h-9 sm:h-8")}
           disabled={isSendBusy || isConnecting}
         >
           {isConnecting || isSendBusy ? "Sending..." : "Refine"}
@@ -140,7 +140,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <Button
           type="submit"
           size="sm"
-          className="h-9 rounded-l-full rounded-r-none px-4 sm:h-8"
+          className={cn("rounded-l-full rounded-r-none px-4", compact ? "h-8" : "h-9 sm:h-8")}
           disabled={isSendBusy || isConnecting}
         >
           {isConnecting || isSendBusy ? "Sending..." : "Implement"}
@@ -151,7 +151,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               <Button
                 size="sm"
                 variant="default"
-                className="h-9 rounded-l-none rounded-r-full border-l-white/12 px-2 sm:h-8"
+                className={cn(
+                  "rounded-l-none rounded-r-full border-l-white/12 px-2",
+                  compact ? "h-8" : "h-9 sm:h-8",
+                )}
                 aria-label="Implementation actions"
                 disabled={isSendBusy || isConnecting}
               />

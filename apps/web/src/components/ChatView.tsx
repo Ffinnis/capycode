@@ -103,6 +103,7 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import { PersistentThreadTerminalSurface } from "./PersistentThreadTerminalSurface";
+import { BranchToolbar } from "./BranchToolbar";
 import { ChevronDownIcon } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
 import { toastManager } from "./ui/toast";
@@ -169,6 +170,7 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -523,7 +525,7 @@ export default function ChatView(props: ChatViewProps) {
   const planSidebarOpenOnNextThreadRef = useRef(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
-  const [_pullRequestDialogState, setPullRequestDialogState] =
+  const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
   const [terminalLaunchContext, setTerminalLaunchContext] = useState<TerminalLaunchContext | null>(
     null,
@@ -3625,6 +3627,17 @@ export default function ChatView(props: ChatViewProps) {
               <div
                 className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}
               >
+                <BranchToolbar
+                  environmentId={environmentId}
+                  threadId={threadId}
+                  {...(draftId ? { draftId } : {})}
+                  onEnvModeChange={_onEnvModeChange}
+                  envLocked={envLocked}
+                  onCheckoutPullRequestRequest={_openPullRequestDialog}
+                  onComposerFocusRequest={scheduleComposerFocus}
+                  availableEnvironments={logicalProjectEnvironments}
+                  onEnvironmentChange={_onEnvironmentChange}
+                />
                 <ChatComposer
                   ref={composerRef}
                   composerDraftTarget={composerDraftTarget}
@@ -3692,6 +3705,22 @@ export default function ChatView(props: ChatViewProps) {
                   setThreadError={setThreadError}
                   onExpandImage={onExpandTimelineImage}
                 />
+                {pullRequestDialogState ? (
+                  <PullRequestThreadDialog
+                    key={pullRequestDialogState.key}
+                    open
+                    environmentId={environmentId}
+                    threadId={activeThread.id}
+                    cwd={activeProject?.cwd ?? null}
+                    initialReference={pullRequestDialogState.initialReference}
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setPullRequestDialogState(null);
+                      }
+                    }}
+                    onPrepared={_handlePreparedPullRequestThread}
+                  />
+                ) : null}
               </div>
             </div>
             {workspaceSurfaceOverlay}

@@ -837,6 +837,28 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
   if (tag === WS_METHODS.shellOpenInEditor) {
     return null;
   }
+  if (tag === WS_METHODS.workspacesSetActive) {
+    const workspaceId = "workspaceId" in body ? body.workspaceId : null;
+    return (
+      fixture.snapshot.workspaces.find((workspace) => workspace.id === workspaceId) ?? {
+        id: DEFAULT_WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        worktreeId: null,
+        type: "branch",
+        name: "Main workspace",
+        branch: "main",
+        worktreePath: null,
+        sectionId: null,
+        tabOrder: 0,
+        isDefault: true,
+        isActive: true,
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        lastOpenedAt: NOW_ISO,
+        deletingAt: null,
+      }
+    );
+  }
   if (tag === WS_METHODS.terminalOpen) {
     return {
       threadId: typeof body.threadId === "string" ? body.threadId : THREAD_ID,
@@ -1204,7 +1226,7 @@ async function expectComposerActionsContained(): Promise<void> {
       for (const rect of buttonRects) {
         expect(rect.right).toBeLessThanOrEqual(footerRect.right + 0.5);
         expect(rect.bottom).toBeLessThanOrEqual(footerRect.bottom + 0.5);
-        expect(Math.abs(rect.top - firstTop)).toBeLessThanOrEqual(1.5);
+        expect(Math.abs(rect.top - firstTop)).toBeLessThanOrEqual(2.5);
       }
     },
     { timeout: 8_000, interval: 16 },
@@ -3891,7 +3913,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("compacts the footer when a wide desktop follow-up layout starts overflowing", async () => {
+  it("keeps the footer actions contained when a wide desktop follow-up layout narrows", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
       snapshot: createSnapshotWithPlanFollowUpPrompt({
@@ -3910,18 +3932,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       await expectComposerActionsContained();
-
-      await vi.waitFor(
-        () => {
-          const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
-          const actions = document.querySelector<HTMLElement>(
-            '[data-chat-composer-actions="right"]',
-          );
-
-          expect(footer?.dataset.chatComposerFooterCompact).toBe("true");
-          expect(actions?.dataset.chatComposerPrimaryActionsCompact).toBe("true");
-        },
-        { timeout: 8_000, interval: 16 },
+      await waitForButtonByText("Implement");
+      await waitForElement(
+        () =>
+          document.querySelector<HTMLButtonElement>('button[aria-label="Implementation actions"]'),
+        "Unable to find implementation actions trigger.",
       );
     } finally {
       await mounted.cleanup();

@@ -95,8 +95,16 @@ function DraftChatThreadRouteView() {
     if (draftSession || canonicalThreadRef) {
       return;
     }
-    void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate]);
+    const timeoutId = window.setTimeout(() => {
+      if (useComposerDraftStore.getState().getDraftSession(draftId) || canonicalThreadRef) {
+        return;
+      }
+      void navigate({ to: "/", replace: true });
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [canonicalThreadRef, draftId, draftSession, navigate]);
 
   if (canonicalThreadRef) {
     return null;
