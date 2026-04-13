@@ -144,6 +144,8 @@ import {
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
+  ensureWorkspaceThreadListOpen,
+  isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -153,6 +155,7 @@ import {
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
   sortThreadsForSidebar,
+  toggleWorkspaceThreadListOpen,
   useThreadJumpHintVisibility,
   ThreadStatusPill,
 } from "./Sidebar.logic";
@@ -167,7 +170,7 @@ import {
   useSavedEnvironmentRuntimeStore,
 } from "../environments/runtime";
 import type { Project, SidebarThreadSummary, Workspace, WorkspaceSection } from "../types";
-const THREAD_PREVIEW_LIMIT = 6;
+
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -879,15 +882,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 });
 
 interface SidebarProjectThreadListProps {
-  projectKey: string;
-  projectExpanded: boolean;
-  hasOverflowingThreads: boolean;
-  hiddenThreadStatus: ThreadStatusPill | null;
   orderedProjectThreadKeys: readonly string[];
   renderedThreads: readonly SidebarThreadSummary[];
   showEmptyThreadState: boolean;
   shouldShowThreadPanel: boolean;
-  isThreadListExpanded: boolean;
   projectCwd: string;
   activeRouteThreadKey: string | null;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
@@ -921,23 +919,16 @@ interface SidebarProjectThreadListProps {
   cancelRename: () => void;
   attemptArchiveThread: (threadRef: ScopedThreadRef) => Promise<void>;
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
-  expandThreadListForProject: (projectKey: string) => void;
-  collapseThreadListForProject: (projectKey: string) => void;
 }
 
 const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
   props: SidebarProjectThreadListProps,
 ) {
   const {
-    projectKey,
-    projectExpanded,
-    hasOverflowingThreads,
-    hiddenThreadStatus,
     orderedProjectThreadKeys,
     renderedThreads,
     showEmptyThreadState,
     shouldShowThreadPanel,
-    isThreadListExpanded,
     projectCwd,
     activeRouteThreadKey,
     threadJumpLabelByKey,
@@ -960,11 +951,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     cancelRename,
     attemptArchiveThread,
     openPrLink,
-    expandThreadListForProject,
-    collapseThreadListForProject,
   } = props;
-  const showMoreButtonRender = useMemo(() => <button type="button" />, []);
-  const showLessButtonRender = useMemo(() => <button type="button" />, []);
 
   return (
     <SidebarMenuSub
@@ -1013,40 +1000,6 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
             />
           );
         })}
-
-      {projectExpanded && hasOverflowingThreads && !isThreadListExpanded && (
-        <SidebarMenuSubItem className="w-full">
-          <SidebarMenuSubButton
-            render={showMoreButtonRender}
-            data-thread-selection-safe
-            size="sm"
-            className="h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
-            onClick={() => {
-              expandThreadListForProject(projectKey);
-            }}
-          >
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              {hiddenThreadStatus && <ThreadStatusLabel status={hiddenThreadStatus} compact />}
-              <span>Show more</span>
-            </span>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      )}
-      {projectExpanded && hasOverflowingThreads && isThreadListExpanded && (
-        <SidebarMenuSubItem className="w-full">
-          <SidebarMenuSubButton
-            render={showLessButtonRender}
-            data-thread-selection-safe
-            size="sm"
-            className="h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
-            onClick={() => {
-              collapseThreadListForProject(projectKey);
-            }}
-          >
-            <span>Show less</span>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      )}
     </SidebarMenuSub>
   );
 });
@@ -1074,18 +1027,15 @@ interface WorkspaceRowProps extends Pick<
   | "cancelRename"
   | "attemptArchiveThread"
   | "openPrLink"
-  | "expandThreadListForProject"
-  | "collapseThreadListForProject"
 > {
   workspace: SidebarWorkspaceSnapshot;
   project: SidebarProjectSnapshot;
   workspaceExpanded: boolean;
   workspaceThreads: readonly SidebarThreadSummary[];
   orderedWorkspaceThreadKeys: readonly string[];
-  hasOverflowingThreads: boolean;
   renderedWorkspaceThreads: readonly SidebarThreadSummary[];
-  hiddenThreadStatus: ThreadStatusPill | null;
   activeWorkspaceKey: string | null;
+  toggleWorkspaceThreadList: (workspaceKey: string) => void;
   setWorkspaceActive: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
   handleCreateThreadForWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
   confirmDeleteWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
@@ -1111,9 +1061,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     workspaceExpanded,
     workspaceThreads,
     orderedWorkspaceThreadKeys,
-    hasOverflowingThreads,
     renderedWorkspaceThreads,
-    hiddenThreadStatus,
     activeWorkspaceKey,
     activeRouteThreadKey,
     threadJumpLabelByKey,
@@ -1136,8 +1084,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     cancelRename,
     attemptArchiveThread,
     openPrLink,
-    expandThreadListForProject,
-    collapseThreadListForProject,
+    toggleWorkspaceThreadList,
     setWorkspaceActive,
     handleCreateThreadForWorkspace,
     confirmDeleteWorkspace,
@@ -1162,6 +1109,10 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
             : "text-muted-foreground/80 hover:bg-accent hover:text-foreground"
         }`}
         onClick={() => {
+          toggleWorkspaceThreadList(workspace.workspaceKey);
+          if (workspaceExpanded) {
+            return;
+          }
           void setWorkspaceActive(workspace).catch((error) => {
             toastManager.add({
               type: "error",
@@ -1331,15 +1282,10 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
         ) : null}
       </div>
       <SidebarProjectThreadList
-        projectKey={workspace.workspaceKey}
-        projectExpanded={workspaceExpanded}
-        hasOverflowingThreads={hasOverflowingThreads}
-        hiddenThreadStatus={hiddenThreadStatus}
         orderedProjectThreadKeys={orderedWorkspaceThreadKeys}
         renderedThreads={renderedWorkspaceThreads}
         showEmptyThreadState={workspaceExpanded && workspaceThreads.length === 0}
         shouldShowThreadPanel={workspaceExpanded}
-        isThreadListExpanded={workspaceExpanded}
         projectCwd={workspace.worktreePath ?? project.cwd}
         activeRouteThreadKey={activeRouteThreadKey}
         threadJumpLabelByKey={threadJumpLabelByKey}
@@ -1362,8 +1308,6 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
         openPrLink={openPrLink}
-        expandThreadListForProject={expandThreadListForProject}
-        collapseThreadListForProject={collapseThreadListForProject}
       />
     </div>
   );
@@ -1372,14 +1316,14 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
   activeRouteThreadKey: string | null;
-  expandedThreadListsByProject: ReadonlySet<string>;
+  openWorkspaceThreadLists: ReadonlySet<string>;
   handleNewThread: ReturnType<typeof useNewThreadHandler>["handleNewThread"];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
-  expandThreadListForProject: (projectKey: string) => void;
-  collapseThreadListForProject: (projectKey: string) => void;
+  openWorkspaceThreadList: (workspaceKey: string) => void;
+  toggleWorkspaceThreadList: (workspaceKey: string) => void;
   dragInProgressRef: React.RefObject<boolean>;
   suppressProjectClickAfterDragRef: React.RefObject<boolean>;
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
@@ -1391,14 +1335,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const {
     project,
     activeRouteThreadKey,
-    expandedThreadListsByProject,
+    openWorkspaceThreadLists,
     handleNewThread,
     archiveThread,
     deleteThread,
     threadJumpLabelByKey,
     attachThreadListAutoAnimateRef,
-    expandThreadListForProject,
-    collapseThreadListForProject,
+    openWorkspaceThreadList,
+    toggleWorkspaceThreadList,
     dragInProgressRef,
     suppressProjectClickAfterDragRef,
     suppressProjectClickForContextMenuRef,
@@ -1846,6 +1790,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     workspaceByScopedId,
     workspaceSnapshots,
   ]);
+  useEffect(() => {
+    if (activeWorkspaceKey === null) {
+      return;
+    }
+    openWorkspaceThreadList(activeWorkspaceKey);
+  }, [activeWorkspaceKey, openWorkspaceThreadList]);
   const workspaceThreadsByKey = useMemo(() => {
     const next = new Map<string, SidebarThreadSummary[]>();
     for (const thread of visibleProjectThreads) {
@@ -3023,29 +2973,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     isDragging: boolean,
   ) => {
     const workspaceThreads = workspaceThreadsByKey.get(workspace.workspaceKey) ?? [];
-    const workspaceExpanded =
-      expandedThreadListsByProject.has(workspace.workspaceKey) ||
-      activeWorkspaceKey === workspace.workspaceKey;
+    const workspaceExpanded = isWorkspaceThreadListOpen(
+      openWorkspaceThreadLists,
+      workspace.workspaceKey,
+    );
     const orderedWorkspaceThreadKeys = workspaceThreads.map((thread) =>
       scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-    );
-    const hasOverflowingThreads = workspaceThreads.length > THREAD_PREVIEW_LIMIT;
-    const renderedWorkspaceThreads =
-      workspaceExpanded || !hasOverflowingThreads
-        ? workspaceThreads
-        : workspaceThreads.slice(0, THREAD_PREVIEW_LIMIT);
-    const hiddenThreadStatus = resolveProjectStatusIndicator(
-      workspaceThreads.slice(renderedWorkspaceThreads.length).map((thread) =>
-        resolveThreadStatusPill({
-          thread: {
-            ...thread,
-            lastVisitedAt:
-              useUiStateStore.getState().threadLastVisitedAtById[
-                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-              ],
-          },
-        }),
-      ),
     );
 
     return (
@@ -3056,9 +2989,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         workspaceExpanded={workspaceExpanded}
         workspaceThreads={workspaceThreads}
         orderedWorkspaceThreadKeys={orderedWorkspaceThreadKeys}
-        hasOverflowingThreads={hasOverflowingThreads}
-        renderedWorkspaceThreads={renderedWorkspaceThreads}
-        hiddenThreadStatus={hiddenThreadStatus}
+        renderedWorkspaceThreads={workspaceThreads}
         activeWorkspaceKey={activeWorkspaceKey}
         activeRouteThreadKey={activeRouteThreadKey}
         threadJumpLabelByKey={threadJumpLabelByKey}
@@ -3081,8 +3012,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
         openPrLink={openPrLink}
-        expandThreadListForProject={expandThreadListForProject}
-        collapseThreadListForProject={collapseThreadListForProject}
+        toggleWorkspaceThreadList={toggleWorkspaceThreadList}
         setWorkspaceActive={setWorkspaceActive}
         handleCreateThreadForWorkspace={handleCreateThreadForWorkspace}
         confirmDeleteWorkspace={confirmDeleteWorkspace}
@@ -3789,13 +3719,13 @@ interface SidebarProjectsContentProps {
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
-  expandedThreadListsByProject: ReadonlySet<string>;
+  openWorkspaceThreadLists: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
   routeThreadKey: string | null;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
-  expandThreadListForProject: (projectKey: string) => void;
-  collapseThreadListForProject: (projectKey: string) => void;
+  openWorkspaceThreadList: (workspaceKey: string) => void;
+  toggleWorkspaceThreadList: (workspaceKey: string) => void;
   dragInProgressRef: React.RefObject<boolean>;
   suppressProjectClickAfterDragRef: React.RefObject<boolean>;
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
@@ -3839,13 +3769,13 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     archiveThread,
     deleteThread,
     sortedProjects,
-    expandedThreadListsByProject,
+    openWorkspaceThreadLists,
     activeRouteProjectKey,
     routeThreadKey,
     threadJumpLabelByKey,
     attachThreadListAutoAnimateRef,
-    expandThreadListForProject,
-    collapseThreadListForProject,
+    openWorkspaceThreadList,
+    toggleWorkspaceThreadList,
     dragInProgressRef,
     suppressProjectClickAfterDragRef,
     suppressProjectClickForContextMenuRef,
@@ -4012,14 +3942,14 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                       activeRouteThreadKey={
                         activeRouteProjectKey === project.projectKey ? routeThreadKey : null
                       }
-                      expandedThreadListsByProject={expandedThreadListsByProject}
+                      openWorkspaceThreadLists={openWorkspaceThreadLists}
                       handleNewThread={handleNewThread}
                       archiveThread={archiveThread}
                       deleteThread={deleteThread}
                       threadJumpLabelByKey={threadJumpLabelByKey}
                       attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                      expandThreadListForProject={expandThreadListForProject}
-                      collapseThreadListForProject={collapseThreadListForProject}
+                      openWorkspaceThreadList={openWorkspaceThreadList}
+                      toggleWorkspaceThreadList={toggleWorkspaceThreadList}
                       dragInProgressRef={dragInProgressRef}
                       suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
                       suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
@@ -4072,9 +4002,9 @@ export default function Sidebar() {
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
   const addProjectInputRef = useRef<HTMLInputElement | null>(null);
-  const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
+  const [openWorkspaceThreadLists, setOpenWorkspaceThreadLists] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
@@ -4822,22 +4752,12 @@ export default function Sidebar() {
     }
   }, [desktopUpdateButtonAction, desktopUpdateButtonDisabled, desktopUpdateState]);
 
-  const expandThreadListForProject = useCallback((projectKey: string) => {
-    setExpandedThreadListsByProject((current) => {
-      if (current.has(projectKey)) return current;
-      const next = new Set(current);
-      next.add(projectKey);
-      return next;
-    });
+  const openWorkspaceThreadList = useCallback((workspaceKey: string) => {
+    setOpenWorkspaceThreadLists((current) => ensureWorkspaceThreadListOpen(current, workspaceKey));
   }, []);
 
-  const collapseThreadListForProject = useCallback((projectKey: string) => {
-    setExpandedThreadListsByProject((current) => {
-      if (!current.has(projectKey)) return current;
-      const next = new Set(current);
-      next.delete(projectKey);
-      return next;
-    });
+  const toggleWorkspaceThreadList = useCallback((workspaceKey: string) => {
+    setOpenWorkspaceThreadLists((current) => toggleWorkspaceThreadListOpen(current, workspaceKey));
   }, []);
 
   return (
@@ -4881,13 +4801,13 @@ export default function Sidebar() {
             archiveThread={archiveThread}
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}
-            expandedThreadListsByProject={expandedThreadListsByProject}
+            openWorkspaceThreadLists={openWorkspaceThreadLists}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}
             threadJumpLabelByKey={visibleThreadJumpLabelByKey}
             attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-            expandThreadListForProject={expandThreadListForProject}
-            collapseThreadListForProject={collapseThreadListForProject}
+            openWorkspaceThreadList={openWorkspaceThreadList}
+            toggleWorkspaceThreadList={toggleWorkspaceThreadList}
             dragInProgressRef={dragInProgressRef}
             suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}

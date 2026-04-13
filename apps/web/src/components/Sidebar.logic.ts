@@ -155,6 +155,40 @@ export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
 }
 
+export function isWorkspaceThreadListOpen<TWorkspaceKey extends string>(
+  openWorkspaceKeys: ReadonlySet<TWorkspaceKey>,
+  workspaceKey: TWorkspaceKey,
+): boolean {
+  return openWorkspaceKeys.has(workspaceKey);
+}
+
+export function ensureWorkspaceThreadListOpen<TWorkspaceKey extends string>(
+  openWorkspaceKeys: ReadonlySet<TWorkspaceKey>,
+  workspaceKey: TWorkspaceKey,
+): ReadonlySet<TWorkspaceKey> {
+  if (openWorkspaceKeys.has(workspaceKey)) {
+    return openWorkspaceKeys;
+  }
+
+  const nextOpenWorkspaceKeys = new Set(openWorkspaceKeys);
+  nextOpenWorkspaceKeys.add(workspaceKey);
+  return nextOpenWorkspaceKeys;
+}
+
+export function toggleWorkspaceThreadListOpen<TWorkspaceKey extends string>(
+  openWorkspaceKeys: ReadonlySet<TWorkspaceKey>,
+  workspaceKey: TWorkspaceKey,
+): ReadonlySet<TWorkspaceKey> {
+  const nextOpenWorkspaceKeys = new Set(openWorkspaceKeys);
+  if (nextOpenWorkspaceKeys.has(workspaceKey)) {
+    nextOpenWorkspaceKeys.delete(workspaceKey);
+  } else {
+    nextOpenWorkspaceKeys.add(workspaceKey);
+  }
+
+  return nextOpenWorkspaceKeys;
+}
+
 export function resolveSidebarNewThreadEnvMode(input: {
   requestedEnvMode?: SidebarNewThreadEnvMode;
   defaultEnvMode: SidebarNewThreadEnvMode;
