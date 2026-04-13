@@ -1,12 +1,24 @@
+import type { ColorScheme } from "../hooks/useTheme";
+
 export const DIFF_THEME_NAMES = {
-  light: "pierre-light",
-  dark: "pierre-dark",
+  default: {
+    light: "pierre-light",
+    dark: "pierre-dark",
+  },
+  capybara: {
+    light: "capybara-light",
+    dark: "capybara-dark",
+  },
 } as const;
 
-export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
+export type DiffThemeName =
+  (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES][keyof (typeof DIFF_THEME_NAMES)["default"]];
 
-export function resolveDiffThemeName(theme: "light" | "dark"): DiffThemeName {
-  return theme === "dark" ? DIFF_THEME_NAMES.dark : DIFF_THEME_NAMES.light;
+export function resolveDiffThemeName(
+  theme: "light" | "dark",
+  colorScheme: ColorScheme = "default",
+): DiffThemeName {
+  return DIFF_THEME_NAMES[colorScheme][theme] as DiffThemeName;
 }
 
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
