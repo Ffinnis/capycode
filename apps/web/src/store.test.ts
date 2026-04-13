@@ -531,6 +531,62 @@ describe("store read model sync", () => {
     expect(threadsOf(next)[0]?.modelSelection.model).toBe("claude-opus-4-6");
   });
 
+  it("maps the sidebar summary provider from thread model selection", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        modelSelection: {
+          provider: "claudeAgent",
+          model: "claude-opus-4-6",
+        },
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel, localEnvironmentId);
+
+    expect(
+      localEnvironmentStateOf(next).sidebarThreadSummaryById[ThreadId.make("thread-1")]?.provider,
+    ).toBe("claudeAgent");
+  });
+
+  it("replaces the sidebar summary when only the provider changes", () => {
+    const initialState = makeState(makeThread());
+    const first = syncServerReadModel(
+      initialState,
+      makeReadModel(
+        makeReadModelThread({
+          modelSelection: {
+            provider: "codex",
+            model: "gpt-5.3-codex",
+          },
+        }),
+      ),
+      localEnvironmentId,
+    );
+    const previousSummary =
+      localEnvironmentStateOf(first).sidebarThreadSummaryById[ThreadId.make("thread-1")];
+
+    const next = syncServerReadModel(
+      first,
+      makeReadModel(
+        makeReadModelThread({
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
+          },
+        }),
+      ),
+      localEnvironmentId,
+    );
+    const nextSummary =
+      localEnvironmentStateOf(next).sidebarThreadSummaryById[ThreadId.make("thread-1")];
+
+    expect(previousSummary).toBeDefined();
+    expect(nextSummary).toBeDefined();
+    expect(nextSummary).not.toBe(previousSummary);
+    expect(nextSummary?.provider).toBe("claudeAgent");
+  });
+
   it("resolves claude aliases when session provider is claudeAgent", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
