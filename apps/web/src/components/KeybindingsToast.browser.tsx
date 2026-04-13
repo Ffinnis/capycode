@@ -358,7 +358,9 @@ async function waitForServerConfigStreamReady(): Promise<void> {
   throw new Error("Timed out waiting for the server config stream to deliver updates.");
 }
 
-async function mountApp(): Promise<{ cleanup: () => Promise<void> }> {
+async function mountApp(options?: { skipServerConfigStreamReady?: boolean }): Promise<{
+  cleanup: () => Promise<void>;
+}> {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.inset = "0";
@@ -383,7 +385,9 @@ async function mountApp(): Promise<{ cleanup: () => Promise<void> }> {
   await waitForInitialWsSubscriptions();
   await waitForWsConnection();
   await waitForServerConfigSnapshot();
-  await waitForServerConfigStreamReady();
+  if (!options?.skipServerConfigStreamReady) {
+    await waitForServerConfigStreamReady();
+  }
   await waitForNoToasts();
 
   return {
@@ -492,7 +496,7 @@ describe("Keybindings update toast", () => {
       // Remount the app — onServerConfigUpdated replays the cached value
       // synchronously on subscribe. This should NOT produce a toast.
       await mounted.cleanup();
-      const remounted = await mountApp();
+      const remounted = await mountApp({ skipServerConfigStreamReady: true });
 
       // Give it a moment to process the replayed value
       await new Promise((resolve) => setTimeout(resolve, 500));

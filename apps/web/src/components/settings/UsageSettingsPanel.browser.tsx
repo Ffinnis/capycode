@@ -186,10 +186,10 @@ describe("UsageSettingsPanel", () => {
       { container: host },
     );
 
-    await expect.element(page.getByText("Provider usage and limits")).toBeInTheDocument();
+    await expect.element(page.getByRole("heading", { name: "Usage" })).toBeInTheDocument();
     await expect.element(page.getByRole("heading", { name: "Codex" })).toBeInTheDocument();
     await expect.element(page.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
-    await expect.element(page.getByText("Model breakdown").first()).toBeInTheDocument();
+    await expect.element(page.getByText("Models").first()).toBeInTheDocument();
     await expect.element(page.getByText("Recent sessions").first()).toBeInTheDocument();
     await expect
       .element(

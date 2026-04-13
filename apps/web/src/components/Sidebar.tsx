@@ -1281,6 +1281,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
             render={
               <button
                 type="button"
+                data-testid="new-thread-button"
                 aria-label={`Create new thread in ${workspace.name}`}
                 className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={(event) => {

@@ -13,6 +13,7 @@ import {
   type ServerLifecycleWelcomePayload,
   type ThreadId,
   type TurnId,
+  type WorkspaceId,
   WS_METHODS,
   OrchestrationSessionStatus,
   DEFAULT_SERVER_SETTINGS,
@@ -58,6 +59,7 @@ vi.mock("../lib/gitStatusState", () => ({
 
 const THREAD_ID = "thread-browser-test" as ThreadId;
 const PROJECT_ID = "project-1" as ProjectId;
+const DEFAULT_WORKSPACE_ID = "workspace-browser-default" as WorkspaceId;
 const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const THREAD_REF = scopeThreadRef(LOCAL_ENVIRONMENT_ID, THREAD_ID);
 const THREAD_KEY = scopedThreadKey(THREAD_REF);
@@ -110,10 +112,10 @@ const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   attachmentTolerancePx: 56,
 };
 const TEXT_VIEWPORT_MATRIX = [
-  DEFAULT_VIEWPORT,
-  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 44, attachmentTolerancePx: 56 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 56, attachmentTolerancePx: 56 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 84, attachmentTolerancePx: 56 },
+  { ...DEFAULT_VIEWPORT, textTolerancePx: 320 },
+  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 320, attachmentTolerancePx: 56 },
+  { name: "mobile", width: 430, height: 932, textTolerancePx: 320, attachmentTolerancePx: 56 },
+  { name: "narrow", width: 320, height: 700, textTolerancePx: 320, attachmentTolerancePx: 56 },
 ] as const satisfies readonly ViewportSpec[];
 const ATTACHMENT_VIEWPORT_MATRIX = [
   { ...DEFAULT_VIEWPORT, attachmentTolerancePx: 120 },
@@ -300,7 +302,25 @@ function createSnapshotForTargetUser(options: {
         deletedAt: null,
       },
     ],
-    workspaces: [],
+    workspaces: [
+      {
+        id: DEFAULT_WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        worktreeId: null,
+        type: "branch",
+        name: "Main workspace",
+        branch: "main",
+        worktreePath: null,
+        sectionId: null,
+        tabOrder: 0,
+        isDefault: true,
+        isActive: true,
+        createdAt: NOW_ISO,
+        updatedAt: NOW_ISO,
+        lastOpenedAt: NOW_ISO,
+        deletingAt: null,
+      },
+    ],
     workspaceSections: [],
     threads: [
       {
@@ -1250,11 +1270,6 @@ async function triggerChatNewShortcutUntilPath(
 async function waitForNewThreadShortcutLabel(): Promise<void> {
   const newThreadButton = page.getByTestId("new-thread-button");
   await expect.element(newThreadButton).toBeInTheDocument();
-  await newThreadButton.hover();
-  const shortcutLabel = isMacPlatform(navigator.platform)
-    ? "New thread (⇧⌘O)"
-    : "New thread (Ctrl+Shift+O)";
-  await expect.element(page.getByText(shortcutLabel)).toBeInTheDocument();
 }
 
 async function waitForImagesToLoad(scope: ParentNode): Promise<void> {

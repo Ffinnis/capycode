@@ -162,7 +162,9 @@ export const PersistentThreadTerminalSurface = memo(function PersistentThreadTer
     [onAddTerminalContext, visible],
   );
 
-  const isPresented = mode === "drawer" ? terminalState.terminalOpen : visible;
+  // Keep the detached terminal mounted while its workspace tab exists so xterm
+  // does not tear down and recreate on chat/file tab switches.
+  const isPresented = mode === "drawer" ? terminalState.terminalOpen : true;
 
   if (!project || !cwd || !isPresented) {
     return null;
