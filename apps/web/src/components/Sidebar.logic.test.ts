@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createThreadJumpHintVisibilityController,
+  ensureWorkspaceThreadListOpen,
   getVisibleSidebarThreadIds,
   resolveAdjacentThreadId,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
   hasUnseenCompletion,
+  isWorkspaceThreadListOpen,
   isContextMenuPointerDown,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
@@ -19,6 +21,7 @@ import {
   sortProjectsForSidebar,
   sortThreadsForSidebar,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
+  toggleWorkspaceThreadListOpen,
 } from "./Sidebar.logic";
 import { EnvironmentId, OrchestrationLatestTurn, ProjectId, ThreadId } from "@capycode/contracts";
 import {
@@ -147,6 +150,23 @@ describe("shouldClearThreadSelectionOnMouseDown", () => {
     } as unknown as HTMLElement;
 
     expect(shouldClearThreadSelectionOnMouseDown(unrelated)).toBe(true);
+  });
+});
+
+describe("workspace thread list open state", () => {
+  it("opens a clicked workspace independently from the currently active thread route", () => {
+    const openWorkspaceKeys = ensureWorkspaceThreadListOpen(new Set<string>(), "workspace-a");
+    const nextOpenWorkspaceKeys = toggleWorkspaceThreadListOpen(openWorkspaceKeys, "workspace-b");
+
+    expect(isWorkspaceThreadListOpen(nextOpenWorkspaceKeys, "workspace-a")).toBe(true);
+    expect(isWorkspaceThreadListOpen(nextOpenWorkspaceKeys, "workspace-b")).toBe(true);
+  });
+
+  it("allows closing an auto-opened workspace thread list", () => {
+    const openWorkspaceKeys = ensureWorkspaceThreadListOpen(new Set<string>(), "workspace-a");
+    const nextOpenWorkspaceKeys = toggleWorkspaceThreadListOpen(openWorkspaceKeys, "workspace-a");
+
+    expect(isWorkspaceThreadListOpen(nextOpenWorkspaceKeys, "workspace-a")).toBe(false);
   });
 });
 
