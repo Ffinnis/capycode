@@ -104,6 +104,12 @@ import {
   ServerUpsertKeybindingResult,
 } from "./server";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings";
+import {
+  UsageDashboardError,
+  UsageDashboardRequest,
+  UsageDashboardSnapshot,
+  UsageStreamEvent,
+} from "./usage";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -167,6 +173,8 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  usageGetDashboard: "usage.getDashboard",
+  usageRefreshDashboard: "usage.refreshDashboard",
 
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
@@ -175,6 +183,7 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  subscribeUsage: "subscribeUsage",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -204,6 +213,18 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: ServerSettingsError,
+});
+
+export const WsUsageGetDashboardRpc = Rpc.make(WS_METHODS.usageGetDashboard, {
+  payload: UsageDashboardRequest,
+  success: UsageDashboardSnapshot,
+  error: UsageDashboardError,
+});
+
+export const WsUsageRefreshDashboardRpc = Rpc.make(WS_METHODS.usageRefreshDashboard, {
+  payload: UsageDashboardRequest,
+  success: UsageDashboardSnapshot,
+  error: UsageDashboardError,
 });
 
 export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
@@ -544,12 +565,20 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsSubscribeUsageRpc = Rpc.make(WS_METHODS.subscribeUsage, {
+  payload: Schema.Struct({}),
+  success: UsageStreamEvent,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpsertKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsUsageGetDashboardRpc,
+  WsUsageRefreshDashboardRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsWorkspacesCreateRpc,
@@ -598,6 +627,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsSubscribeUsageRpc,
   WsOrchestrationGetSnapshotRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetTurnDiffRpc,

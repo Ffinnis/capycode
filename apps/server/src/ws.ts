@@ -5,6 +5,7 @@ import {
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
+  DEFAULT_USAGE_RANGE,
   EventId,
   type OrchestrationCommand,
   type GitActionProgressEvent,
@@ -73,6 +74,7 @@ import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePat
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment";
+import { UsageService } from "./usage/Services/UsageService";
 import { ServerAuth } from "./auth/Services/ServerAuth";
 import {
   BootstrapCredentialService,
@@ -419,6 +421,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const sql = yield* SqlClient.SqlClient;
       const lifecycleEvents = yield* ServerLifecycleEvents;
       const serverSettings = yield* ServerSettingsService;
+      const usageService = yield* UsageService;
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
@@ -1902,6 +1905,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.serverUpdateSettings, serverSettings.updateSettings(patch), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.usageGetDashboard]: ({ range }) =>
+          observeRpcEffect(WS_METHODS.usageGetDashboard, usageService.getDashboard(range), {
+            "rpc.aggregate": "usage",
+          }),
+        [WS_METHODS.usageRefreshDashboard]: ({ range }) =>
+          observeRpcEffect(
+            WS_METHODS.usageRefreshDashboard,
+            usageService.refreshDashboard(range),
+            {
+              "rpc.aggregate": "usage",
+            },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
@@ -2309,6 +2324,30 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
             }),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.subscribeUsage]: (_input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeUsage,
+            Effect.gen(function* () {
+              const snapshot = yield* usageService
+                .getDashboard(DEFAULT_USAGE_RANGE)
+                .pipe(
+                  Effect.catchTag("UsageDashboardError", () =>
+                    Effect.succeed({
+                      providers: [],
+                      fetchedAt: new Date().toISOString(),
+                    }),
+                  ),
+                );
+              return Stream.concat(
+                Stream.make({
+                  type: "snapshot" as const,
+                  snapshot,
+                }),
+                usageService.streamChanges,
+              );
+            }),
+            { "rpc.aggregate": "usage" },
           ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           observeRpcStreamEffect(

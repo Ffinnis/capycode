@@ -6,15 +6,13 @@ import type {
 
 export type GitActionIconName = "commit" | "push" | "pr";
 
-export type GitDialogAction = "commit" | "push" | "create_pr";
-
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "commit_push" | "commit_push_pr";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr";
-  dialogAction?: GitDialogAction;
+  kind: "open_dialog" | "open_pr" | "run_action";
+  action?: GitStackedAction;
 }
 
 export interface GitQuickAction {
@@ -79,6 +77,7 @@ export function buildMenuItems(
   gitStatus: GitStatusResult | null,
   isBusy: boolean,
   hasOriginRemote = true,
+  expandedWorkflow = false,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
 
@@ -104,40 +103,71 @@ export function buildMenuItems(
     !isBehind &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canOpenPr = !isBusy && hasOpenPr;
+  const canCommitAndPush =
+    !isBusy &&
+    hasChanges &&
+    hasBranch &&
+    !isBehind &&
+    (gitStatus.hasUpstream || canPushWithoutUpstream);
+  const canCommitPushPr = canCommitAndPush && !hasOpenPr;
+
+  const commitItem: GitActionMenuItem = {
+    id: "commit",
+    label: "Commit",
+    disabled: !canCommit,
+    icon: "commit",
+    kind: "open_dialog",
+  };
+  const pushItem: GitActionMenuItem = {
+    id: "push",
+    label: "Push",
+    disabled: !canPush,
+    icon: "push",
+    kind: "run_action",
+    action: "push",
+  };
+  const prItem: GitActionMenuItem = hasOpenPr
+    ? {
+        id: "pr",
+        label: "View PR",
+        disabled: !canOpenPr,
+        icon: "pr",
+        kind: "open_pr",
+      }
+    : {
+        id: "pr",
+        label: "Create PR",
+        disabled: !canCreatePr,
+        icon: "pr",
+        kind: "run_action",
+        action: "create_pr",
+      };
+  const items: GitActionMenuItem[] = [commitItem, pushItem, prItem];
+
+  if (!expandedWorkflow) {
+    return items;
+  }
 
   return [
+    commitItem,
     {
-      id: "commit",
-      label: "Commit",
-      disabled: !canCommit,
-      icon: "commit",
-      kind: "open_dialog",
-      dialogAction: "commit",
-    },
-    {
-      id: "push",
-      label: "Push",
-      disabled: !canPush,
+      id: "commit_push",
+      label: "Commit & push",
+      disabled: !canCommitAndPush,
       icon: "push",
-      kind: "open_dialog",
-      dialogAction: "push",
+      kind: "run_action",
+      action: "commit_push",
     },
-    hasOpenPr
-      ? {
-          id: "pr",
-          label: "View PR",
-          disabled: !canOpenPr,
-          icon: "pr",
-          kind: "open_pr",
-        }
-      : {
-          id: "pr",
-          label: "Create PR",
-          disabled: !canCreatePr,
-          icon: "pr",
-          kind: "open_dialog",
-          dialogAction: "create_pr",
-        },
+    {
+      id: "commit_push_pr",
+      label: "Commit, push & PR",
+      disabled: !canCommitPushPr,
+      icon: "pr",
+      kind: "run_action",
+      action: "commit_push_pr",
+    },
+    pushItem,
+    prItem,
   ];
 }
 

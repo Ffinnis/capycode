@@ -7,6 +7,7 @@ import {
   type LocalApi,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
+  type UsageRange,
   WS_METHODS,
 } from "@capycode/contracts";
 import { applyGitStatusStreamEvent } from "@capycode/shared/git";
@@ -38,6 +39,8 @@ type RpcStreamMethod<TTag extends RpcTag> =
   RpcMethod<TTag> extends (input: any, options?: any) => Stream.Stream<infer TEvent, any, any>
     ? (listener: (event: TEvent) => void, options?: StreamSubscriptionOptions) => () => void
     : never;
+
+const DEFAULT_USAGE_RANGE: UsageRange = "30d";
 
 interface GitRunStackedActionOptions {
   readonly onProgress?: (event: GitActionProgressEvent) => void;
@@ -131,6 +134,15 @@ export interface WsRpcClient {
     readonly subscribeConfig: RpcStreamMethod<typeof WS_METHODS.subscribeServerConfig>;
     readonly subscribeLifecycle: RpcStreamMethod<typeof WS_METHODS.subscribeServerLifecycle>;
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
+  };
+  readonly usage: {
+    readonly getDashboard: (range?: UsageRange) => Promise<
+      Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageGetDashboard>>>
+    >;
+    readonly refreshDashboard: (range?: UsageRange) => Promise<
+      Awaited<ReturnType<RpcUnaryMethod<typeof WS_METHODS.usageRefreshDashboard>>>
+    >;
+    readonly subscribe: RpcStreamMethod<typeof WS_METHODS.subscribeUsage>;
   };
   readonly orchestration: {
     readonly getSnapshot: RpcUnaryNoArgMethod<typeof ORCHESTRATION_WS_METHODS.getSnapshot>;
@@ -292,6 +304,18 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           listener,
           options,
         ),
+    },
+    usage: {
+      getDashboard: (range) =>
+        transport.request((client) =>
+          client[WS_METHODS.usageGetDashboard]({ range: range ?? DEFAULT_USAGE_RANGE }),
+        ),
+      refreshDashboard: (range) =>
+        transport.request((client) =>
+          client[WS_METHODS.usageRefreshDashboard]({ range: range ?? DEFAULT_USAGE_RANGE }),
+        ),
+      subscribe: (listener, options) =>
+        transport.subscribe((client) => client[WS_METHODS.subscribeUsage]({}), listener, options),
     },
     orchestration: {
       getSnapshot: () =>

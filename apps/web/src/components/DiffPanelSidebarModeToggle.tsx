@@ -38,7 +38,7 @@ export default function DiffPanelSidebarModeToggle({
   return (
     <div
       className={cn(
-        "pointer-events-auto absolute left-2 top-16 z-10 flex -translate-x-full flex-col gap-1 rounded-lg border border-border/80 bg-background/95 p-1 shadow-md backdrop-blur-sm",
+        "pointer-events-auto absolute left-3 top-3 z-30 flex gap-1 rounded-lg border border-border/80 bg-background/95 p-1 shadow-md backdrop-blur-sm",
         className,
       )}
       data-testid="diff-sidebar-mode-toggle"
@@ -47,7 +47,7 @@ export default function DiffPanelSidebarModeToggle({
     >
       <Toggle
         aria-label="Show iterations diff mode"
-        className="min-w-14 justify-start px-2 text-[10px] sm:text-[10px]"
+        className="min-w-14 justify-start px-2 text-[10px]"
         data-testid="diff-sidebar-mode-iterations"
         pressed={diffPanelMode === "iterations"}
         size="xs"
@@ -62,7 +62,7 @@ export default function DiffPanelSidebarModeToggle({
       </Toggle>
       <Toggle
         aria-label="Show git diff mode"
-        className="min-w-14 justify-start px-2 text-[10px] sm:text-[10px]"
+        className="min-w-14 justify-start px-2 text-[10px]"
         data-testid="diff-sidebar-mode-git"
         pressed={diffPanelMode === "git"}
         size="xs"

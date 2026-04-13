@@ -14,6 +14,7 @@ interface JsonRpcProbeResponse {
 export interface CodexDiscoverySnapshot {
   readonly account: CodexAccountSnapshot;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
+  readonly rateLimits: unknown;
 }
 
 function readErrorMessage(response: JsonRpcProbeResponse): string | undefined {
@@ -125,6 +126,7 @@ export async function probeCodexDiscovery(input: {
     let completed = false;
     let account: CodexAccountSnapshot | undefined;
     let skills: ReadonlyArray<ServerProviderSkill> | undefined;
+    let rateLimits: unknown;
 
     const cleanup = () => {
       output.removeAllListeners();
@@ -152,10 +154,17 @@ export async function probeCodexDiscovery(input: {
       );
 
     const maybeResolve = () => {
-      if (account && skills !== undefined) {
+      if (account && skills !== undefined && rateLimits !== undefined) {
         const resolvedAccount = account;
         const resolvedSkills = skills;
-        finish(() => resolve({ account: resolvedAccount, skills: resolvedSkills }));
+        const resolvedRateLimits = rateLimits;
+        finish(() =>
+          resolve({
+            account: resolvedAccount,
+            skills: resolvedSkills,
+            rateLimits: resolvedRateLimits,
+          }),
+        );
       }
     };
 
@@ -200,6 +209,7 @@ export async function probeCodexDiscovery(input: {
         writeMessage({ method: "initialized" });
         writeMessage({ id: 2, method: "skills/list", params: { cwds: [input.cwd] } });
         writeMessage({ id: 3, method: "account/read", params: {} });
+        writeMessage({ id: 4, method: "account/rateLimits/read", params: {} });
         return;
       }
 
@@ -218,6 +228,19 @@ export async function probeCodexDiscovery(input: {
         }
 
         account = readCodexAccountSnapshot(response.result);
+        maybeResolve();
+        return;
+      }
+
+      if (response.id === 4) {
+        const errorMessage = readErrorMessage(response);
+        if (errorMessage) {
+          rateLimits = {};
+          maybeResolve();
+          return;
+        }
+
+        rateLimits = response.result ?? {};
         maybeResolve();
       }
     });

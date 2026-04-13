@@ -11,6 +11,7 @@ import {
   type ServerProvider,
   type TerminalEvent,
   ThreadId,
+  type UsageDashboardSnapshot,
 } from "@capycode/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -104,6 +105,11 @@ const rpcClientMock = {
     subscribeConfig: vi.fn(),
     subscribeLifecycle: vi.fn(),
     subscribeAuthAccess: vi.fn(),
+  },
+  usage: {
+    getDashboard: vi.fn<() => Promise<UsageDashboardSnapshot>>(),
+    refreshDashboard: vi.fn<() => Promise<UsageDashboardSnapshot>>(),
+    subscribe: vi.fn(() => () => undefined),
   },
   orchestration: {
     getSnapshot: vi.fn(),
@@ -542,6 +548,23 @@ describe("wsApi", () => {
     expect(rpcClientMock.server.updateSettings).toHaveBeenCalledWith({
       enableAssistantStreaming: true,
     });
+  });
+
+  it("forwards usage dashboard RPCs directly to the RPC client", async () => {
+    const snapshot: UsageDashboardSnapshot = {
+      providers: [],
+      fetchedAt: "2026-04-12T00:00:00.000Z",
+    };
+    rpcClientMock.usage.getDashboard.mockResolvedValue(snapshot);
+    rpcClientMock.usage.refreshDashboard.mockResolvedValue(snapshot);
+    const { createLocalApi } = await import("./localApi");
+
+    const api = createLocalApi(rpcClientMock as never);
+
+    await expect(api.usage.getDashboard("30d")).resolves.toEqual(snapshot);
+    await expect(api.usage.refreshDashboard("7d")).resolves.toEqual(snapshot);
+    expect(rpcClientMock.usage.getDashboard).toHaveBeenCalledWith("30d");
+    expect(rpcClientMock.usage.refreshDashboard).toHaveBeenCalledWith("7d");
   });
 
   it("uses the in-app context menu fallback even when the desktop bridge exists", async () => {

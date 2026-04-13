@@ -5,11 +5,15 @@ import { render } from "vitest-browser-react";
 
 const {
   settingsRef,
+  threadRef,
+  workspaceRef,
+  gitActionControlPropsRef,
   updateSettingsSpy,
   gitFilterChangeSpy,
   gitBaseBranchChangeSpy,
   gitCommitSelectSpy,
   gitFileSelectSpy,
+  gitFileSelectionToggleSpy,
 } = vi.hoisted(() => ({
   settingsRef: {
     current: {
@@ -18,11 +22,31 @@ const {
       timestampFormat: "locale" as const,
     },
   },
+  threadRef: {
+    current: {
+      id: "thread-1",
+      environmentId: "environment-local",
+      projectId: "project-1",
+      branch: "feature/panel-actions",
+      workspaceId: null,
+      worktreePath: "/repo/project",
+    } as {
+      id: string;
+      environmentId: string;
+      projectId: string;
+      branch: string | null;
+      workspaceId: string | null;
+      worktreePath: string | null;
+    },
+  },
+  workspaceRef: { current: null as null | { id: string; branch: string | null; worktreePath: string | null } },
+  gitActionControlPropsRef: { current: null as unknown },
   updateSettingsSpy: vi.fn(),
   gitFilterChangeSpy: vi.fn(),
   gitBaseBranchChangeSpy: vi.fn(),
   gitCommitSelectSpy: vi.fn(),
   gitFileSelectSpy: vi.fn(),
+  gitFileSelectionToggleSpy: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -52,24 +76,38 @@ vi.mock("~/hooks/useTheme", () => ({
 vi.mock("~/hooks/useSettings", () => ({
   useSettings: vi.fn(() => settingsRef.current),
   useUpdateSettings: vi.fn(() => ({
-    updateSettings: updateSettingsSpy,
+    updateSettings: (patch: Partial<typeof settingsRef.current>) => {
+      updateSettingsSpy(patch);
+      settingsRef.current = {
+        ...settingsRef.current,
+        ...patch,
+      };
+    },
   })),
 }));
 
 vi.mock("~/store", () => ({
-  useStore: vi.fn((selector: (state: unknown) => unknown) => selector({})),
+  useStore: vi.fn((selector: (state: unknown) => unknown) =>
+    selector({
+      environmentStateById: {
+        "environment-local": {
+          workspaceById: workspaceRef.current
+            ? {
+                [workspaceRef.current.id]: workspaceRef.current,
+              }
+            : {},
+        },
+      },
+    }),
+  ),
+  selectEnvironmentState: vi.fn((state: { environmentStateById: Record<string, unknown> }, environmentId: string) => state.environmentStateById[environmentId]),
   selectProjectByRef: vi.fn(() => ({
     cwd: "/repo/project",
   })),
 }));
 
 vi.mock("~/storeSelectors", () => ({
-  createThreadSelectorByRef: vi.fn(() => () => ({
-    id: "thread-1",
-    environmentId: "environment-local",
-    projectId: "project-1",
-    worktreePath: "/repo/project",
-  })),
+  createThreadSelectorByRef: vi.fn(() => () => threadRef.current),
 }));
 
 vi.mock("~/lib/gitStatusState", () => ({
@@ -106,6 +144,13 @@ vi.mock("~/localApi", () => ({
   readLocalApi: vi.fn(() => null),
 }));
 
+vi.mock("./GitActionsControl", () => ({
+  default: vi.fn((props: unknown) => {
+    gitActionControlPropsRef.current = props;
+    return <div data-testid="mock-git-actions-control">{JSON.stringify(props)}</div>;
+  }),
+}));
+
 describe("DiffPanel", () => {
   afterEach(() => {
     settingsRef.current = {
@@ -113,24 +158,63 @@ describe("DiffPanel", () => {
       diffWordWrap: false,
       timestampFormat: "locale",
     };
+    threadRef.current = {
+      id: "thread-1",
+      environmentId: "environment-local",
+      projectId: "project-1",
+      branch: "feature/panel-actions",
+      workspaceId: null,
+      worktreePath: "/repo/project",
+    };
+    workspaceRef.current = null;
+    gitActionControlPropsRef.current = null;
     updateSettingsSpy.mockReset();
     gitFilterChangeSpy.mockReset();
     gitBaseBranchChangeSpy.mockReset();
     gitCommitSelectSpy.mockReset();
     gitFileSelectSpy.mockReset();
+    gitFileSelectionToggleSpy.mockReset();
   });
 
   it("opens in the remembered git mode and persists switching back to iterations", async () => {
     const { default: DiffPanel } = await import("./DiffPanel");
-    const mounted = await render(<DiffPanel mode="sidebar" />);
+    const mounted = await render(<DiffPanel mode="inline" />);
 
     try {
       await expect.element(page.getByLabelText("Git diff filter")).toBeInTheDocument();
 
       await page.getByRole("button", { name: "Iterations diff mode" }).click();
+      await mounted.rerender(<DiffPanel mode="inline" />);
 
       expect(updateSettingsSpy).toHaveBeenCalledWith({ diffPanelMode: "iterations" });
       await expect.element(page.getByText("No completed turns yet.")).toBeInTheDocument();
+    } finally {
+      await mounted.unmount();
+    }
+  });
+
+  it("resolves the git action cwd from a linked workspace when the thread worktree is unset", async () => {
+    threadRef.current = {
+      ...threadRef.current,
+      workspaceId: "workspace-1",
+      worktreePath: null,
+    };
+    workspaceRef.current = {
+      id: "workspace-1",
+      branch: "feature/workspace-checkout",
+      worktreePath: "/repo/workspaces/feature-workspace",
+    };
+
+    const { default: DiffPanel } = await import("./DiffPanel");
+    const mounted = await render(<DiffPanel mode="sidebar" />);
+
+    try {
+      await expect.element(page.getByTestId("mock-git-actions-control")).toBeInTheDocument();
+      expect(gitActionControlPropsRef.current).toMatchObject({
+        gitCwd: "/repo/workspaces/feature-workspace",
+        effectiveBranch: "feature/panel-actions",
+        variant: "panel",
+      });
     } finally {
       await mounted.unmount();
     }
@@ -145,6 +229,7 @@ describe("GitDiffView", () => {
         hasActiveThread
         activeCwd="/repo/project"
         isGitRepo
+        actionBar={<div>Panel actions</div>}
         baseBranch="main"
         baseBranchOptions={["main", "release"]}
         filterMode="commit"
@@ -167,6 +252,8 @@ describe("GitDiffView", () => {
         commitFiles={[]}
         selectedPreview={null}
         onSelectFile={gitFileSelectSpy}
+        selectedFilePaths={new Set()}
+        onToggleFileSelection={gitFileSelectionToggleSpy}
         reviewStatusLoading={false}
         reviewStatusError={null}
         commitsLoading={false}
@@ -193,6 +280,7 @@ describe("GitDiffView", () => {
           hasActiveThread
           activeCwd="/repo/project"
           isGitRepo
+          actionBar={<div>Panel actions</div>}
           baseBranch="main"
           baseBranchOptions={["main", "release"]}
           filterMode="commit"
@@ -227,6 +315,8 @@ describe("GitDiffView", () => {
           ]}
           selectedPreview={null}
           onSelectFile={gitFileSelectSpy}
+          selectedFilePaths={new Set()}
+          onToggleFileSelection={gitFileSelectionToggleSpy}
           reviewStatusLoading={false}
           reviewStatusError={null}
           commitsLoading={false}
@@ -252,6 +342,68 @@ describe("GitDiffView", () => {
         category: "committed",
         commitHash: "abc123",
       });
+    } finally {
+      await mounted.unmount();
+    }
+  });
+
+  it("shows the sticky action bar and toggles file selection for uncommitted entries", async () => {
+    const { GitDiffView } = await import("./DiffPanel");
+    const mounted = await render(
+      <GitDiffView
+        hasActiveThread
+        activeCwd="/repo/project"
+        isGitRepo
+        actionBar={<div data-testid="git-panel-action-bar">Panel actions</div>}
+        baseBranch="main"
+        baseBranchOptions={["main"]}
+        filterMode="all-changes"
+        onSelectBaseBranch={gitBaseBranchChangeSpy}
+        onSelectFilterMode={gitFilterChangeSpy}
+        allChanges={[
+          {
+            key: "unstaged:current:none:src/selected.ts",
+            category: "unstaged",
+            label: "Unstaged",
+            file: {
+              path: "src/selected.ts",
+              status: "modified",
+              additions: 4,
+              deletions: 1,
+            },
+          },
+        ]}
+        staged={[]}
+        unstaged={[]}
+        commits={[]}
+        selectedCommitHash={null}
+        onSelectCommit={gitCommitSelectSpy}
+        commitFiles={[]}
+        selectedPreview={null}
+        onSelectFile={gitFileSelectSpy}
+        selectedFilePaths={new Set(["src/selected.ts"])}
+        onToggleFileSelection={gitFileSelectionToggleSpy}
+        reviewStatusLoading={false}
+        reviewStatusError={null}
+        commitsLoading={false}
+        commitsError={null}
+        commitFilesLoading={false}
+        commitFilesError={null}
+        diffPatch={undefined}
+        diffLoading={false}
+        diffError={null}
+        diffRenderMode="stacked"
+        diffWordWrap={false}
+        resolvedTheme="light"
+        patchViewportRef={{ current: null }}
+        onOpenFileInEditor={() => undefined}
+      />,
+    );
+
+    try {
+      await expect.element(page.getByTestId("git-panel-action-bar")).toBeInTheDocument();
+      await page.getByTestId("git-file-select-src/selected.ts").click();
+      expect(gitFileSelectionToggleSpy).toHaveBeenCalledWith("src/selected.ts");
     } finally {
       await mounted.unmount();
     }

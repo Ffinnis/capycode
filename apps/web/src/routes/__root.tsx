@@ -29,6 +29,7 @@ import {
   useServerConfigUpdatedSubscription,
   useServerWelcomeSubscription,
 } from "../rpc/serverState";
+import { startUsageStateSync } from "../rpc/usageState";
 import { useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
@@ -174,7 +175,21 @@ function errorDetails(error: unknown): string {
 }
 
 function ServerStateBootstrap() {
-  useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+  const queryClient = useQueryClient();
+
+  useEffect(
+    () =>
+      (() => {
+        const client = getPrimaryEnvironmentConnection().client;
+        const stopServer = startServerStateSync(client.server);
+        const stopUsage = startUsageStateSync(client.usage, queryClient);
+        return () => {
+          stopUsage();
+          stopServer();
+        };
+      })(),
+    [queryClient],
+  );
 
   return null;
 }

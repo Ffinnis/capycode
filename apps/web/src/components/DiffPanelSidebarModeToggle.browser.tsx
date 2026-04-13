@@ -18,7 +18,13 @@ vi.mock("~/hooks/useSettings", () => ({
       selector ? selector(settingsRef.current) : settingsRef.current,
   ),
   useUpdateSettings: vi.fn(() => ({
-    updateSettings: updateSettingsSpy,
+    updateSettings: (patch: Partial<typeof settingsRef.current>) => {
+      updateSettingsSpy(patch);
+      settingsRef.current = {
+        ...settingsRef.current,
+        ...patch,
+      };
+    },
   })),
 }));
 

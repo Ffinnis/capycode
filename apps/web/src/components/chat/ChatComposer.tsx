@@ -75,6 +75,7 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderRegistry";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import { ProviderLimitsButton } from "./ProviderLimitsButton";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../vscode-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -256,6 +257,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
+  provider: ProviderKind;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   isPreparingWorktree: boolean;
   pendingAction: {
@@ -278,6 +280,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   return (
     <>
       {props.activeContextWindow ? <ContextWindowMeter usage={props.activeContextWindow} /> : null}
+      <ProviderLimitsButton provider={props.provider} />
       {props.isPreparingWorktree ? (
         <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>
       ) : null}
@@ -1964,6 +1967,7 @@ export const ChatComposer = memo(
                 >
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
+                    provider={selectedProvider}
                     activeContextWindow={activeContextWindow}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}

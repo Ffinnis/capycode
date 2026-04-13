@@ -32,6 +32,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
+import { resolveEffectiveGitContext } from "~/lib/gitContext";
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
@@ -67,6 +68,7 @@ import {
 } from "../pendingUserInput";
 import {
   selectActiveWorkspaceForProjectRef,
+  selectEnvironmentState,
   selectProjectsAcrossEnvironments,
   selectThreadsAcrossEnvironments,
   useStore,
@@ -845,6 +847,17 @@ export default function ChatView(props: ChatViewProps) {
       [activeProjectRef],
     ),
   );
+  const linkedWorkspace = useStore(
+    useMemo(
+      () => (state) =>
+        activeThread?.workspaceId
+          ? selectEnvironmentState(state, activeThread.environmentId).workspaceById[
+              activeThread.workspaceId
+            ]
+          : undefined,
+      [activeThread?.environmentId, activeThread?.workspaceId],
+    ),
+  );
 
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
@@ -1419,12 +1432,51 @@ export default function ChatView(props: ChatViewProps) {
     if (!completionSummary) return null;
     return deriveCompletionDividerBeforeEntryId(timelineEntries, activeLatestTurn);
   }, [activeLatestTurn, completionSummary, latestTurnSettled, timelineEntries]);
-  const gitCwd = activeProject
-    ? projectScriptCwd({
-        project: { cwd: activeProject.cwd },
-        worktreePath: activeThread?.worktreePath ?? null,
-      })
-    : null;
+  const effectiveGitContext = useMemo(
+    () =>
+      resolveEffectiveGitContext({
+        project: activeProject ? { cwd: activeProject.cwd } : null,
+        thread: activeThread
+          ? {
+              workspaceId: activeThread.workspaceId ?? null,
+              branch: activeThread.branch,
+              worktreePath: activeThread.worktreePath,
+            }
+          : null,
+        draftThread: draftThread
+          ? {
+              workspaceId: null,
+              branch: draftThread.branch,
+              worktreePath: draftThread.worktreePath,
+            }
+          : null,
+        linkedWorkspace: linkedWorkspace
+          ? {
+              id: linkedWorkspace.id,
+              branch: linkedWorkspace.branch,
+              worktreePath: linkedWorkspace.worktreePath,
+            }
+          : null,
+      }),
+    [
+      activeProject?.cwd,
+      activeThread?.branch,
+      activeThread?.workspaceId,
+      activeThread?.worktreePath,
+      draftThread?.branch,
+      draftThread?.worktreePath,
+      linkedWorkspace?.branch,
+      linkedWorkspace?.id,
+      linkedWorkspace?.worktreePath,
+    ],
+  );
+  const gitCwd =
+    activeProject && effectiveGitContext.cwd
+      ? projectScriptCwd({
+          project: { cwd: activeProject.cwd },
+          worktreePath: effectiveGitContext.worktreePath,
+        })
+      : effectiveGitContext.cwd;
   const gitStatusQuery = useGitStatus({ environmentId, cwd: gitCwd });
   const keybindings = useServerKeybindings();
   const availableEditors = useServerAvailableEditors();
@@ -1433,7 +1485,7 @@ export default function ChatView(props: ChatViewProps) {
     [selectedProvider, providerStatuses],
   );
   const activeProjectCwd = activeProject?.cwd ?? null;
-  const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
+  const activeThreadWorktreePath = effectiveGitContext.worktreePath;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId

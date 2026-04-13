@@ -48,6 +48,7 @@ import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths";
 import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner";
 import { ObservabilityLive } from "./observability/Layers/Observability";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment";
+import { UsageServiceLive } from "./usage/Layers/UsageService";
 import {
   authBearerBootstrapRouteLayer,
   authBootstrapRouteLayer,
@@ -189,6 +190,11 @@ const WorkspaceLayerLive = Layer.mergeAll(
   ),
 );
 
+const UsageLayerLive = UsageServiceLive.pipe(
+  Layer.provide(ProviderLayerLive),
+  Layer.provide(ServerSettingsLive),
+);
+
 const AuthLayerLive = ServerAuthLive.pipe(
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provide(ServerSecretStoreLive),
@@ -205,6 +211,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(ServerSettingsLive),
+  Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),

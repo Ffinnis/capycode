@@ -59,6 +59,7 @@ import type {
   ServerProviderUpdatedPayload,
   ServerUpsertKeybindingResult,
 } from "./server";
+import type { UsageDashboardSnapshot, UsageRange } from "./usage";
 import type {
   TerminalClearInput,
   TerminalCloseInput,
@@ -231,6 +232,10 @@ export interface LocalApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+  };
+  usage: {
+    getDashboard: (range?: UsageRange) => Promise<UsageDashboardSnapshot>;
+    refreshDashboard: (range?: UsageRange) => Promise<UsageDashboardSnapshot>;
   };
 }
 

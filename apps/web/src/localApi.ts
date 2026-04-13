@@ -3,6 +3,7 @@ import type { ContextMenuItem, LocalApi } from "@capycode/contracts";
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 import { resetServerStateForTests } from "./rpc/serverState";
+import { resetUsageStateForTests } from "./rpc/usageState";
 import { resetWsConnectionStateForTests } from "./rpc/wsConnectionState";
 import {
   resetSavedEnvironmentRegistryStoreForTests,
@@ -113,6 +114,10 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
       getSettings: rpcClient.server.getSettings,
       updateSettings: rpcClient.server.updateSettings,
     },
+    usage: {
+      getDashboard: rpcClient.usage.getDashboard,
+      refreshDashboard: rpcClient.usage.refreshDashboard,
+    },
   };
 }
 
@@ -147,5 +152,6 @@ export async function __resetLocalApiForTests() {
   resetSavedEnvironmentRegistryStoreForTests();
   resetSavedEnvironmentRuntimeStoreForTests();
   resetServerStateForTests();
+  resetUsageStateForTests();
   resetWsConnectionStateForTests();
 }

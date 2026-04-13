@@ -95,6 +95,7 @@ import {
   ServerEnvironment,
   type ServerEnvironmentShape,
 } from "./environment/Services/ServerEnvironment.ts";
+import { UsageService, type UsageServiceShape } from "./usage/Services/UsageService.ts";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.ts";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
@@ -306,6 +307,7 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    usageService?: Partial<UsageServiceShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -471,6 +473,22 @@ const buildAppUnderTest = (options?: {
         Layer.mock(RepositoryIdentityResolver)({
           resolve: () => Effect.succeed(null),
           ...options?.layers?.repositoryIdentityResolver,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(UsageService)({
+          getDashboard: () =>
+            Effect.succeed({
+              providers: [],
+              fetchedAt: new Date().toISOString(),
+            }),
+          refreshDashboard: () =>
+            Effect.succeed({
+              providers: [],
+              fetchedAt: new Date().toISOString(),
+            }),
+          streamChanges: Stream.empty,
+          ...options?.layers?.usageService,
         }),
       ),
       Layer.provideMerge(SqlitePersistenceMemory),

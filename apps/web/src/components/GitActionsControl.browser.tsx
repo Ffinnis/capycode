@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@capycode/client-runtime";
-import { ThreadId } from "@capycode/contracts";
+import { type GitRunStackedActionResult, type GitStatusResult, ThreadId } from "@capycode/contracts";
+import { page } from "vitest/browser";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -30,6 +31,7 @@ const {
   refreshGitStatusSpy,
   runStackedActionMutateAsyncSpy,
   setDraftThreadContextSpy,
+  statusRef,
   setThreadBranchSpy,
   toastAddSpy,
   toastCloseSpy,
@@ -41,8 +43,24 @@ const {
   hasServerThreadRef: { current: true },
   invalidateGitQueriesSpy: vi.fn(() => Promise.resolve()),
   refreshGitStatusSpy: vi.fn(() => Promise.resolve(null)),
-  runStackedActionMutateAsyncSpy: vi.fn(() => activeRunStackedActionDeferredRef.current.promise),
+  runStackedActionMutateAsyncSpy: vi.fn(
+    () => activeRunStackedActionDeferredRef.current.promise as Promise<GitRunStackedActionResult>,
+  ),
   setDraftThreadContextSpy: vi.fn(),
+  statusRef: {
+    current: {
+      branch: "feature/toast-scope",
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      hasUpstream: true,
+      aheadCount: 1,
+      behindCount: 0,
+      pr: null,
+      hasOriginRemote: true,
+      isRepo: true,
+      isDefaultBranch: false,
+    } as GitStatusResult,
+  },
   setThreadBranchSpy: vi.fn(),
   toastAddSpy: vi.fn(() => "toast-1"),
   toastCloseSpy: vi.fn(),
@@ -111,15 +129,7 @@ vi.mock("~/lib/gitStatusState", () => ({
   refreshGitStatus: refreshGitStatusSpy,
   resetGitStatusStateForTests: () => undefined,
   useGitStatus: vi.fn(() => ({
-    data: {
-      branch: BRANCH_NAME,
-      hasWorkingTreeChanges: false,
-      workingTree: { files: [], insertions: 0, deletions: 0 },
-      hasUpstream: true,
-      aheadCount: 1,
-      behindCount: 0,
-      pr: null,
-    },
+    data: statusRef.current,
     error: null,
     isPending: false,
   })),
@@ -251,6 +261,13 @@ function findButtonByText(text: string): HTMLButtonElement | null {
   ) ?? null) as HTMLButtonElement | null;
 }
 
+function findLastButtonByText(text: string): HTMLButtonElement | null {
+  const matches = Array.from(document.querySelectorAll("button")).filter((button) =>
+    button.textContent?.includes(text),
+  );
+  return (matches.at(-1) ?? null) as HTMLButtonElement | null;
+}
+
 function Harness() {
   const [activeThreadRef, setActiveThreadRef] = useState(
     scopeThreadRef(ENVIRONMENT_A, SHARED_THREAD_ID),
@@ -276,6 +293,18 @@ describe("GitActionsControl thread-scoped progress toast", () => {
     activeRunStackedActionDeferredRef.current = createDeferredPromise<never>();
     activeDraftThreadRef.current = null;
     hasServerThreadRef.current = true;
+    statusRef.current = {
+      branch: "feature/toast-scope",
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      hasUpstream: true,
+      aheadCount: 1,
+      behindCount: 0,
+      pr: null,
+      hasOriginRemote: true,
+      isRepo: true,
+      isDefaultBranch: false,
+    } as GitStatusResult;
     document.body.innerHTML = "";
   });
 
@@ -454,6 +483,98 @@ describe("GitActionsControl thread-scoped progress toast", () => {
 
       expect(setDraftThreadContextSpy).not.toHaveBeenCalled();
       expect(setThreadBranchSpy).not.toHaveBeenCalled();
+    } finally {
+      await screen.unmount();
+      host.remove();
+    }
+  });
+
+  it("opens a commit dialog for commit-capable quick actions and submits the typed message", async () => {
+    statusRef.current = {
+      branch: BRANCH_NAME,
+      hasWorkingTreeChanges: true,
+      workingTree: {
+        files: [
+          { path: "src/selected.ts", insertions: 5, deletions: 1 },
+          { path: "src/other.ts", insertions: 2, deletions: 0 },
+        ],
+        insertions: 7,
+        deletions: 1,
+      },
+      hasUpstream: true,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+      hasOriginRemote: true,
+      isRepo: true,
+      isDefaultBranch: false,
+    };
+    runStackedActionMutateAsyncSpy.mockResolvedValueOnce({
+      action: "commit_push_pr",
+      branch: { status: "skipped_not_requested" },
+      commit: {
+        status: "created",
+        commitSha: "abc123",
+        subject: "feat: selected files",
+      },
+      push: {
+        status: "pushed",
+        branch: BRANCH_NAME,
+        upstreamBranch: `origin/${BRANCH_NAME}`,
+        setUpstream: false,
+      },
+      pr: {
+        status: "created",
+        url: "https://example.com/pr/1",
+        number: 1,
+        baseBranch: "main",
+        headBranch: BRANCH_NAME,
+        title: "feat: selected files",
+      },
+      toast: {
+        title: "Committed",
+        description: "Created commit.",
+        cta: { kind: "none" },
+      },
+    } satisfies GitRunStackedActionResult);
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    const screen = await render(
+      <GitActionsControl
+        variant="panel"
+        gitCwd={GIT_CWD}
+        activeThreadRef={scopeThreadRef(ENVIRONMENT_A, SHARED_THREAD_ID)}
+        selectedFilePaths={["src/selected.ts"]}
+        selectionSummary="Commit 1 selected file"
+        enableAmbientSync={false}
+      />,
+      { container: host },
+    );
+
+    try {
+      const quickActionButton = findButtonByText("Commit 1 selected file");
+      expect(quickActionButton).toBeTruthy();
+      if (!(quickActionButton instanceof HTMLButtonElement)) {
+        throw new Error('Unable to find button containing "Commit 1 selected file"');
+      }
+      quickActionButton.click();
+
+      await page.getByPlaceholder("Leave empty to auto-generate").fill("feat: selected files");
+      const submitButton = findLastButtonByText("Commit, push & PR");
+      expect(submitButton).toBeTruthy();
+      if (!(submitButton instanceof HTMLButtonElement)) {
+        throw new Error('Unable to find dialog button containing "Commit, push & PR"');
+      }
+      submitButton.click();
+
+      expect(runStackedActionMutateAsyncSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "commit_push_pr",
+          commitMessage: "feat: selected files",
+          filePaths: ["src/selected.ts"],
+        }),
+      );
     } finally {
       await screen.unmount();
       host.remove();

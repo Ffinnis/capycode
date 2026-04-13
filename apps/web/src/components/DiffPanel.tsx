@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   type RefObject,
+  type ReactNode,
   type WheelEvent as ReactWheelEvent,
   startTransition,
   useCallback,
@@ -25,6 +26,7 @@ import {
 } from "react";
 import { openInPreferredEditor } from "../editorPreferences";
 import { useGitStatus } from "~/lib/gitStatusState";
+import { resolveEffectiveGitContext } from "~/lib/gitContext";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import {
   gitCommitFilesQueryOptions,
@@ -40,11 +42,13 @@ import { useTheme } from "../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { buildPatchCacheKey, resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { selectProjectByRef, useStore } from "../store";
+import { selectEnvironmentState, selectProjectByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
+import GitActionsControl from "./GitActionsControl";
+import { Checkbox } from "./ui/checkbox";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 
@@ -259,20 +263,38 @@ function renderChangeCount(additions: number, deletions: number) {
   return `+${additions} / -${deletions}`;
 }
 
+function getFileStatusColor(status: GitChangedFile["status"]): string {
+  switch (status) {
+    case "added":
+    case "untracked":
+      return "bg-success";
+    case "deleted":
+      return "bg-destructive";
+    case "renamed":
+    case "copied":
+      return "bg-info";
+    default:
+      return "bg-warning";
+  }
+}
+
 function GitFileRow(props: {
   entry: GitFileListEntry;
   selected: boolean;
+  selectedForAction?: boolean;
+  selectable?: boolean;
   onSelect: (selection: GitPreviewSelection) => void;
+  onToggleSelectedForAction?: (path: string) => void;
 }) {
   const { entry, selected, onSelect } = props;
   return (
     <button
       type="button"
       className={cn(
-        "flex w-full items-start justify-between gap-3 rounded-md border px-2.5 py-2 text-left transition-colors",
+        "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
         selected
-          ? "border-border bg-accent text-accent-foreground"
-          : "border-border/60 bg-background/40 hover:border-border hover:bg-accent/40",
+          ? "bg-accent text-accent-foreground"
+          : "text-foreground/90 hover:bg-accent/50",
       )}
       onClick={() =>
         onSelect({
@@ -283,17 +305,42 @@ function GitFileRow(props: {
       }
       data-testid={`git-file-row-${entry.file.path}`}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-mono text-[11px]">{entry.file.path}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground/80">
-          <span>{formatGitFileStatus(entry.file.status)}</span>
-          {entry.file.oldPath ? <span>{entry.file.oldPath}</span> : null}
-          <span>{entry.label}</span>
-        </div>
-      </div>
-      <div className="shrink-0 text-[10px] text-muted-foreground/75">
-        {renderChangeCount(entry.file.additions, entry.file.deletions)}
-      </div>
+      {props.selectable ? (
+        <Checkbox
+          checked={props.selectedForAction ?? false}
+          aria-label={
+            props.selectedForAction
+              ? `Exclude ${entry.file.path} from commit selection`
+              : `Select ${entry.file.path} for commit`
+          }
+          className="shrink-0"
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onCheckedChange={() => {
+            props.onToggleSelectedForAction?.(entry.file.path);
+          }}
+          data-testid={`git-file-select-${entry.file.path}`}
+        />
+      ) : null}
+      <span
+        className={cn(
+          "mt-px size-1.5 shrink-0 rounded-full",
+          getFileStatusColor(entry.file.status),
+        )}
+      />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{entry.file.path}</span>
+      {entry.file.additions > 0 || entry.file.deletions > 0 ? (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground/65">
+          {entry.file.additions > 0 ? (
+            <span className="text-success/80">+{entry.file.additions}</span>
+          ) : null}
+          {entry.file.additions > 0 && entry.file.deletions > 0 ? " " : null}
+          {entry.file.deletions > 0 ? (
+            <span className="text-destructive/80">-{entry.file.deletions}</span>
+          ) : null}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -311,23 +358,21 @@ function CommitRow(props: {
     <button
       type="button"
       className={cn(
-        "flex w-full items-start gap-3 rounded-md border px-2.5 py-2 text-left transition-colors",
+        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
         props.selected
-          ? "border-border bg-accent text-accent-foreground"
-          : "border-border/60 bg-background/40 hover:border-border hover:bg-accent/40",
+          ? "bg-accent text-accent-foreground"
+          : "text-foreground/90 hover:bg-accent/50",
       )}
       onClick={props.onSelect}
       data-testid={`git-commit-row-${props.hash}`}
     >
-      <GitCommitHorizontalIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] font-medium">{props.message || props.shortHash}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground/75">
-          <span className="font-mono">{props.shortHash}</span>
-          <span>{props.author}</span>
-          <span>{formatShortTimestamp(props.date, "locale")}</span>
-        </div>
-      </div>
+      <GitCommitHorizontalIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+      <span className="min-w-0 flex-1 truncate text-[11px]">
+        {props.message || props.shortHash}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">
+        {props.shortHash}
+      </span>
     </button>
   );
 }
@@ -688,6 +733,7 @@ export function GitDiffView(props: {
   hasActiveThread: boolean;
   activeCwd: string | null;
   isGitRepo: boolean;
+  actionBar?: ReactNode;
   baseBranch: string | null;
   baseBranchOptions: ReadonlyArray<string>;
   filterMode: GitFilterMode;
@@ -708,6 +754,9 @@ export function GitDiffView(props: {
   commitFiles: ReadonlyArray<GitFileListEntry>;
   selectedPreview: GitPreviewSelection | null;
   onSelectFile: (selection: GitPreviewSelection) => void;
+  selectedFilePaths?: ReadonlySet<string>;
+  onToggleFileSelection?: (path: string) => void;
+  onBatchToggleFiles?: (paths: ReadonlyArray<string>, selected: boolean) => void;
   reviewStatusLoading: boolean;
   reviewStatusError: string | null;
   commitsLoading: boolean;
@@ -733,37 +782,65 @@ export function GitDiffView(props: {
     title: string,
     entries: ReadonlyArray<GitFileListEntry>,
     emptyLabel: string,
-  ) => (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
-          {title}
-        </h3>
-        <span className="text-[10px] text-muted-foreground/60">{entries.length}</span>
-      </div>
-      {entries.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-[11px] text-muted-foreground/70">
-          {emptyLabel}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {entries.map((entry) => (
-            <GitFileRow
-              key={entry.key}
-              entry={entry}
-              selected={
-                selectedPreviewKey ===
-                `${entry.category}:${
-                  props.selectedPreview?.commitHash ?? ""
-                }:${entry.file.oldPath ?? ""}:${entry.file.path}`
-              }
-              onSelect={props.onSelectFile}
+  ) => {
+    const isSelectable = props.filterMode !== "commit";
+    const selectablePaths = isSelectable
+      ? entries.filter((e) => e.category !== "committed").map((e) => e.file.path)
+      : [];
+    const selectedCount = selectablePaths.filter(
+      (p) => props.selectedFilePaths?.has(p),
+    ).length;
+    const allSectionSelected =
+      selectablePaths.length > 0 && selectedCount === selectablePaths.length;
+    const someSectionSelected = selectedCount > 0 && !allSectionSelected;
+
+    return (
+      <section>
+        <div className="flex items-center gap-2 px-2 py-1">
+          {selectablePaths.length > 0 && props.onBatchToggleFiles ? (
+            <Checkbox
+              checked={allSectionSelected}
+              indeterminate={someSectionSelected}
+              onCheckedChange={() => {
+                props.onBatchToggleFiles!(selectablePaths, !allSectionSelected);
+              }}
+              aria-label={`Select all ${title.toLowerCase()} files`}
             />
-          ))}
+          ) : null}
+          <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
+            {title}
+          </h3>
+          <span className="text-[10px] tabular-nums text-muted-foreground/50">
+            {entries.length}
+          </span>
         </div>
-      )}
-    </section>
-  );
+        {entries.length === 0 ? (
+          <div className="px-2 py-2 text-[11px] text-muted-foreground/50">{emptyLabel}</div>
+        ) : (
+          <div className="space-y-px">
+            {entries.map((entry) => (
+              <GitFileRow
+                key={entry.key}
+                entry={entry}
+                selected={
+                  selectedPreviewKey ===
+                  `${entry.category}:${
+                    props.selectedPreview?.commitHash ?? ""
+                  }:${entry.file.oldPath ?? ""}:${entry.file.path}`
+                }
+                selectable={entry.category !== "committed" && props.filterMode !== "commit"}
+                selectedForAction={props.selectedFilePaths?.has(entry.file.path) ?? false}
+                onSelect={props.onSelectFile}
+                {...(props.onToggleFileSelection
+                  ? { onToggleSelectedForAction: props.onToggleFileSelection }
+                  : {})}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  };
 
   if (!props.hasActiveThread) {
     return (
@@ -791,7 +868,7 @@ export function GitDiffView(props: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid shrink-0 gap-2 border-b border-border/70 px-3 py-2 sm:grid-cols-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <Select
           value={props.baseBranch ?? ""}
           onValueChange={(value) => {
@@ -847,6 +924,10 @@ export function GitDiffView(props: {
         </Select>
       </div>
 
+      {props.actionBar ? (
+        <div className="shrink-0 border-b border-border/70 px-3 py-2">{props.actionBar}</div>
+      ) : null}
+
       <div className="min-h-0 basis-[40%] shrink-0 overflow-hidden border-b border-border/70">
         <div className="h-full overflow-y-auto px-3 py-3">
           {reviewLoading ? (
@@ -858,25 +939,27 @@ export function GitDiffView(props: {
           ) : props.filterMode === "all-changes" ? (
             renderFileSection("All changes", props.allChanges, "No changes to review.")
           ) : props.filterMode === "uncommitted" ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {renderFileSection("Staged", props.staged, "No staged changes.")}
               {renderFileSection("Unstaged", props.unstaged, "No unstaged changes.")}
             </div>
           ) : (
-            <div className="space-y-4">
-              <section className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+            <div className="space-y-3">
+              <section>
+                <div className="flex items-center gap-2 px-2 py-1">
+                  <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
                     Ahead of {props.baseBranch ?? "base"}
                   </h3>
-                  <span className="text-[10px] text-muted-foreground/60">{props.commits.length}</span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground/50">
+                    {props.commits.length}
+                  </span>
                 </div>
                 {props.commits.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-[11px] text-muted-foreground/70">
+                  <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
                     No commits ahead of the selected base branch.
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="space-y-px">
                     {props.commits.map((commit) => (
                       <CommitRow
                         key={commit.hash}
@@ -894,27 +977,27 @@ export function GitDiffView(props: {
               </section>
 
               {props.selectedCommitHash ? (
-                <section className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+                <section>
+                  <div className="flex items-center gap-2 px-2 py-1">
+                    <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
                       Commit files
                     </h3>
-                    <span className="text-[10px] text-muted-foreground/60">
+                    <span className="text-[10px] tabular-nums text-muted-foreground/50">
                       {props.commitFiles.length}
                     </span>
                   </div>
                   {props.commitFilesLoading ? (
                     <DiffPanelLoadingState label="Loading commit files..." />
                   ) : props.commitFilesError ? (
-                    <div className="rounded-md border border-red-500/30 bg-red-500/6 px-3 py-2 text-[11px] text-red-500/85">
+                    <div className="px-2 py-2 text-[11px] text-destructive/85">
                       {props.commitFilesError}
                     </div>
                   ) : props.commitFiles.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-[11px] text-muted-foreground/70">
+                    <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
                       This commit does not change any files.
                     </div>
                   ) : (
-                    <div className="space-y-1.5">
+                    <div className="space-y-px">
                       {props.commitFiles.map((entry) => (
                         <GitFileRow
                           key={entry.key}
@@ -931,6 +1014,7 @@ export function GitDiffView(props: {
                               ...selection,
                             })
                           }
+                          selectable={false}
                         />
                       ))}
                     </div>
@@ -977,11 +1061,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const { updateSettings } = useUpdateSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
-  const [panelMode, setPanelMode] = useState<ClientDiffPanelMode>(settings.diffPanelMode);
+  const panelMode = settings.diffPanelMode;
   const [gitFilterMode, setGitFilterMode] = useState<GitFilterMode>("all-changes");
   const [selectedGitBaseBranch, setSelectedGitBaseBranch] = useState<string | null>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [selectedGitPreview, setSelectedGitPreview] = useState<GitPreviewSelection | null>(null);
+  const [selectedGitFilePaths, setSelectedGitFilePaths] = useState<ReadonlySet<string>>(new Set());
   const patchViewportRef = useRef<HTMLDivElement>(null);
   const previousDiffOpenRef = useRef(false);
   const routeThreadRef = useParams({
@@ -1003,7 +1088,47 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         })
       : undefined,
   );
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd ?? null;
+  const linkedWorkspace = useStore(
+    useMemo(
+      () => (store) =>
+        activeThread?.workspaceId
+          ? selectEnvironmentState(store, activeThread.environmentId).workspaceById[
+              activeThread.workspaceId
+            ]
+          : undefined,
+      [activeThread?.environmentId, activeThread?.workspaceId],
+    ),
+  );
+  const effectiveGitContext = useMemo(
+    () =>
+      resolveEffectiveGitContext({
+        project: activeProject ? { cwd: activeProject.cwd } : null,
+        thread: activeThread
+          ? {
+              workspaceId: activeThread.workspaceId ?? null,
+              branch: activeThread.branch,
+              worktreePath: activeThread.worktreePath,
+            }
+          : null,
+        linkedWorkspace: linkedWorkspace
+          ? {
+              id: linkedWorkspace.id,
+              branch: linkedWorkspace.branch,
+              worktreePath: linkedWorkspace.worktreePath,
+            }
+          : null,
+      }),
+    [
+      activeProject?.cwd,
+      activeThread?.branch,
+      activeThread?.workspaceId,
+      activeThread?.worktreePath,
+      linkedWorkspace?.branch,
+      linkedWorkspace?.id,
+      linkedWorkspace?.worktreePath,
+    ],
+  );
+  const activeCwd = effectiveGitContext.cwd;
   const gitStatusQuery = useGitStatus({
     environmentId: activeThread?.environmentId ?? null,
     cwd: activeCwd,
@@ -1099,10 +1224,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   useEffect(() => {
     if (diffOpen && !previousDiffOpenRef.current) {
       setDiffWordWrap(settings.diffWordWrap);
-      setPanelMode(settings.diffPanelMode);
     }
     previousDiffOpenRef.current = diffOpen;
-  }, [diffOpen, settings.diffPanelMode, settings.diffWordWrap]);
+  }, [diffOpen, settings.diffWordWrap]);
 
   const openDiffFileInEditor = useCallback(
     (filePath: string) => {
@@ -1261,9 +1385,21 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }
   }, [commitsQuery.data?.commits, gitFilterMode, selectedCommitHash]);
 
+  useEffect(() => {
+    setSelectedGitFilePaths((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+      const selectablePaths = new Set(
+        [...allChangeEntries, ...stagedEntries, ...unstagedEntries].map((entry) => entry.file.path),
+      );
+      const next = [...current].filter((path) => selectablePaths.has(path));
+      return next.length === current.size ? current : new Set(next);
+    });
+  }, [allChangeEntries, stagedEntries, unstagedEntries]);
+
   const selectPanelMode = useCallback(
     (nextMode: ClientDiffPanelMode) => {
-      setPanelMode(nextMode);
       updateSettings({ diffPanelMode: nextMode });
     },
     [updateSettings],
@@ -1274,6 +1410,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       setSelectedGitBaseBranch(branch);
       setSelectedCommitHash(null);
       setSelectedGitPreview(null);
+      setSelectedGitFilePaths(new Set());
     });
   }, []);
 
@@ -1282,6 +1419,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       setGitFilterMode(nextMode);
       setSelectedCommitHash(null);
       setSelectedGitPreview(null);
+      if (nextMode === "commit") {
+        setSelectedGitFilePaths(new Set());
+      }
     });
   }, []);
 
@@ -1289,6 +1429,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     startTransition(() => {
       setSelectedCommitHash(hash);
       setSelectedGitPreview(null);
+      setSelectedGitFilePaths(new Set());
     });
   }, []);
 
@@ -1298,13 +1439,56 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     });
   }, []);
 
+  const toggleSelectedGitFilePath = useCallback((path: string) => {
+    startTransition(() => {
+      setSelectedGitFilePaths((current) => {
+        const next = new Set(current);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return next;
+      });
+    });
+  }, []);
+
+  const batchToggleGitFiles = useCallback(
+    (paths: ReadonlyArray<string>, selected: boolean) => {
+      startTransition(() => {
+        setSelectedGitFilePaths((current) => {
+          const next = new Set(current);
+          for (const path of paths) {
+            if (selected) {
+              next.add(path);
+            } else {
+              next.delete(path);
+            }
+          }
+          return next;
+        });
+      });
+    },
+    [],
+  );
+
+  const selectedGitFilePathList = useMemo(() => [...selectedGitFilePaths], [selectedGitFilePaths]);
+  const selectedGitFilesCount = selectedGitFilePathList.length;
+  const gitActionSelectionSummary =
+    gitFilterMode === "commit"
+      ? null
+      : selectedGitFilesCount > 0
+        ? `Commit ${selectedGitFilesCount} selected ${selectedGitFilesCount === 1 ? "file" : "files"}`
+        : "Commit all changes";
+  const gitActionSelectedFileProps =
+    gitFilterMode === "commit" ? {} : { selectedFilePaths: selectedGitFilePathList };
+
   const showDiffRenderControls = panelMode === "iterations" || selectedGitPreview !== null;
   const modeToggleValue = [panelMode];
   const headerRow = (
     <>
       <ToggleGroup
-        className="shrink-0"
-        variant="outline"
+        className="shrink-0 rounded-lg bg-muted/50 p-0.5"
         size="xs"
         value={modeToggleValue}
         onValueChange={(value) => {
@@ -1314,10 +1498,18 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           }
         }}
       >
-        <Toggle aria-label="Iterations diff mode" value="iterations">
+        <Toggle
+          aria-label="Iterations diff mode"
+          value="iterations"
+          className="data-pressed:bg-background data-pressed:shadow-sm"
+        >
           Iterations
         </Toggle>
-        <Toggle aria-label="Git diff mode" value="git">
+        <Toggle
+          aria-label="Git diff mode"
+          value="git"
+          className="data-pressed:bg-background data-pressed:shadow-sm"
+        >
           Git
         </Toggle>
       </ToggleGroup>
@@ -1387,6 +1579,19 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           hasActiveThread={Boolean(activeThread)}
           activeCwd={activeCwd}
           isGitRepo={reviewStatusQuery.data?.isRepo ?? isGitRepo}
+          actionBar={
+            activeThread ? (
+              <GitActionsControl
+                variant="panel"
+                gitCwd={activeCwd}
+                activeThreadRef={scopeThreadRef(activeThread.environmentId, activeThread.id)}
+                effectiveBranch={effectiveGitContext.branch}
+                {...gitActionSelectedFileProps}
+                selectionSummary={gitActionSelectionSummary}
+                enableAmbientSync={false}
+              />
+            ) : null
+          }
           baseBranch={effectiveGitBaseBranch}
           baseBranchOptions={reviewStatusQuery.data?.baseBranchOptions ?? []}
           filterMode={gitFilterMode}
@@ -1401,6 +1606,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           commitFiles={commitFileEntries}
           selectedPreview={selectedGitPreview}
           onSelectFile={selectGitFile}
+          selectedFilePaths={selectedGitFilePaths}
+          onToggleFileSelection={toggleSelectedGitFilePath}
+          onBatchToggleFiles={batchToggleGitFiles}
           reviewStatusLoading={reviewStatusQuery.isLoading}
           reviewStatusError={reviewStatusError}
           commitsLoading={commitsQuery.isLoading}
