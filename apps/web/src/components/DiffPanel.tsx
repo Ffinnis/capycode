@@ -39,6 +39,7 @@ import { readLocalApi } from "../localApi";
 import { resolvePathLinkTarget } from "../terminal-links";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import { useTheme } from "../hooks/useTheme";
+import type { ColorScheme } from "../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { buildPatchCacheKey, resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
@@ -386,6 +387,7 @@ function PatchPreview(props: {
   diffRenderMode: DiffRenderMode;
   diffWordWrap: boolean;
   resolvedTheme: DiffThemeType;
+  colorScheme: ColorScheme;
   patchViewportRef?: RefObject<HTMLDivElement | null>;
   onOpenFileInEditor?: (filePath: string) => void;
 }) {
@@ -468,7 +470,7 @@ function PatchPreview(props: {
                   diffStyle: props.diffRenderMode === "split" ? "split" : "unified",
                   lineDiffType: "none",
                   overflow: props.diffWordWrap ? "wrap" : "scroll",
-                  theme: resolveDiffThemeName(props.resolvedTheme),
+                  theme: resolveDiffThemeName(props.resolvedTheme, props.colorScheme),
                   themeType: props.resolvedTheme,
                   unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
                 }}
@@ -505,6 +507,7 @@ export function IterationsDiffView(props: {
   diffRenderMode: DiffRenderMode;
   diffWordWrap: boolean;
   resolvedTheme: DiffThemeType;
+  colorScheme: ColorScheme;
   selectedFilePath: string | null;
   patchViewportRef: RefObject<HTMLDivElement | null>;
   onOpenFileInEditor: (filePath: string) => void;
@@ -721,6 +724,7 @@ export function IterationsDiffView(props: {
           diffRenderMode={props.diffRenderMode}
           diffWordWrap={props.diffWordWrap}
           resolvedTheme={props.resolvedTheme}
+          colorScheme={props.colorScheme}
           patchViewportRef={props.patchViewportRef}
           onOpenFileInEditor={props.onOpenFileInEditor}
         />
@@ -769,6 +773,7 @@ export function GitDiffView(props: {
   diffRenderMode: DiffRenderMode;
   diffWordWrap: boolean;
   resolvedTheme: DiffThemeType;
+  colorScheme: ColorScheme;
   patchViewportRef: RefObject<HTMLDivElement | null>;
   onOpenFileInEditor: (filePath: string) => void;
 }) {
@@ -1040,6 +1045,7 @@ export function GitDiffView(props: {
           diffRenderMode={props.diffRenderMode}
           diffWordWrap={props.diffWordWrap}
           resolvedTheme={props.resolvedTheme}
+          colorScheme={props.colorScheme}
           patchViewportRef={props.patchViewportRef}
           onOpenFileInEditor={props.onOpenFileInEditor}
         />
@@ -1056,7 +1062,7 @@ export { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 
 export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, colorScheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
@@ -1570,6 +1576,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           diffRenderMode={diffRenderMode}
           diffWordWrap={diffWordWrap}
           resolvedTheme={resolvedTheme as DiffThemeType}
+          colorScheme={colorScheme}
           selectedFilePath={selectedFilePath}
           patchViewportRef={patchViewportRef}
           onOpenFileInEditor={openDiffFileInEditor}
@@ -1621,6 +1628,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           diffRenderMode={diffRenderMode}
           diffWordWrap={diffWordWrap}
           resolvedTheme={resolvedTheme as DiffThemeType}
+          colorScheme={colorScheme}
           patchViewportRef={patchViewportRef}
           onOpenFileInEditor={openDiffFileInEditor}
         />
