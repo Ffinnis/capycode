@@ -13,6 +13,7 @@ import { startTransition, useMemo, useState } from "react";
 import { ensureLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { useUsageDashboard, usageDashboardQueryKey } from "../../hooks/useUsageDashboard";
+import { useUsageSnapshot } from "../../rpc/usageState";
 import { getProviderBrandIcon } from "../providerBrandIcon";
 import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
@@ -465,14 +466,17 @@ export function UsageSettingsPanel() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const usageQuery = useUsageDashboard(range, true);
+  const realtimeSnapshot = useUsageSnapshot();
 
-  const providers = useMemo(
-    () =>
-      (usageQuery.data?.providers ?? []).toSorted((left, right) =>
-        left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
-      ),
-    [usageQuery.data?.providers],
-  );
+  // Use real-time snapshot only if it matches the selected range, otherwise fall back to query data
+  const providers = useMemo(() => {
+    const realtimeMatchesRange =
+      realtimeSnapshot?.providers?.some((p) => p.range === range) ?? false;
+    const snapshot = realtimeMatchesRange ? realtimeSnapshot : usageQuery.data;
+    return (snapshot?.providers ?? []).toSorted((left, right) =>
+      left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
+    );
+  }, [realtimeSnapshot, usageQuery.data, range]);
 
   const refreshDashboard = () => {
     setIsRefreshing(true);

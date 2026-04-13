@@ -180,6 +180,7 @@ export interface SidebarThreadSummary {
   projectId: ProjectId;
   workspaceId?: WorkspaceId | null;
   title: string;
+  provider: ProviderKind;
   interactionMode: ProviderInteractionMode;
   session: ThreadSession | null;
   createdAt: string;

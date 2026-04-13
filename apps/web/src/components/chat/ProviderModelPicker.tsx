@@ -21,7 +21,7 @@ import {
 import { CursorIcon, Gemini, Icon, OpenCodeIcon } from "../Icons";
 import { cn } from "~/lib/utils";
 import { getProviderSnapshot } from "../../providerModels";
-import { getProviderBrandIcon } from "../providerBrandIcon";
+import { getProviderBrandIcon, getProviderBrandIconClassName } from "../providerBrandIcon";
 
 function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): option is {
   value: ProviderKind;
@@ -43,13 +43,6 @@ const COMING_SOON_PROVIDER_OPTIONS = [
   { id: "opencode", label: "OpenCode", icon: OpenCodeIcon },
   { id: "gemini", label: "Gemini", icon: Gemini },
 ] as const;
-
-function providerIconClassName(
-  provider: ProviderKind | ProviderPickerKind,
-  fallbackClassName: string,
-): string {
-  return provider === "claudeAgent" ? "text-[#d97757]" : fallbackClassName;
-}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   provider: ProviderKind;
@@ -119,7 +112,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             aria-hidden="true"
             className={cn(
               "size-4 shrink-0",
-              providerIconClassName(activeProvider, "text-muted-foreground/70"),
+              getProviderBrandIconClassName(activeProvider, "text-muted-foreground/70"),
               props.activeProviderIconClassName,
             )}
           />
@@ -164,7 +157,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                       aria-hidden="true"
                       className={cn(
                         "size-4 shrink-0 opacity-80",
-                        providerIconClassName(option.value, "text-muted-foreground/85"),
+                        getProviderBrandIconClassName(option.value, "text-muted-foreground/85"),
                       )}
                     />
                     <span>{option.label}</span>
@@ -181,7 +174,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                       aria-hidden="true"
                       className={cn(
                         "size-4 shrink-0",
-                        providerIconClassName(option.value, "text-muted-foreground/85"),
+                        getProviderBrandIconClassName(option.value, "text-muted-foreground/85"),
                       )}
                     />
                     {option.label}
