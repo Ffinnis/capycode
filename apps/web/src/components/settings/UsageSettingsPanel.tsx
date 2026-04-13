@@ -468,14 +468,12 @@ export function UsageSettingsPanel() {
   const usageQuery = useUsageDashboard(range, true);
   const realtimeSnapshot = useUsageSnapshot();
 
+  // Use real-time snapshot if available, fall back to query data
   const providers = useMemo(
-    () => {
-      // Use real-time snapshot if available, fall back to query data
-      const snapshot = realtimeSnapshot || usageQuery.data;
-      return (snapshot?.providers ?? []).toSorted((left, right) =>
+    () =>
+      ((realtimeSnapshot || usageQuery.data)?.providers ?? []).toSorted((left, right) =>
         left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
-      );
-    },
+      ),
     [realtimeSnapshot, usageQuery.data],
   );
 
