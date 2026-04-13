@@ -1,7 +1,7 @@
 import type { ProviderKind, ProviderRateWindow, ProviderUsageDashboard } from "@capycode/contracts";
 import { DEFAULT_USAGE_RANGE } from "@capycode/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangleIcon, BotIcon, FeatherIcon } from "lucide-react";
+import { AlertTriangleIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -10,12 +10,8 @@ import { cn } from "../../lib/utils";
 import { usageDashboardQueryKey } from "../../hooks/useUsageDashboard";
 import { useProviderLimits } from "../../hooks/useProviderLimits";
 import { useUsageSnapshot } from "../../rpc/usageState";
+import { getProviderBrandIcon } from "../providerBrandIcon";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-
-const providerIcon: Record<ProviderKind, typeof BotIcon> = {
-  codex: BotIcon,
-  claudeAgent: FeatherIcon,
-};
 
 function primaryWindow(provider: ProviderUsageDashboard | null) {
   if (!provider) return null;
@@ -79,7 +75,7 @@ export function ProviderLimitsButton(props: { provider: ProviderKind }) {
   });
   const provider = providerQuery.provider ?? providerFromSnapshot;
   const primaryLimitWindow = primaryWindow(provider);
-  const Icon = providerIcon[props.provider];
+  const ProviderIcon = getProviderBrandIcon(props.provider);
 
   useEffect(() => {
     if (!open || props.provider !== "codex") {
@@ -111,7 +107,7 @@ export function ProviderLimitsButton(props: { provider: ProviderKind }) {
             )}
             aria-label={`${props.provider} limits`}
           >
-            <Icon className="size-3.5" />
+            <ProviderIcon className="size-3.5" />
             {isFresh(provider) && primaryLimitWindow ? (
               <span>{Math.round(primaryLimitWindow.remainingPercent)}% left</span>
             ) : (

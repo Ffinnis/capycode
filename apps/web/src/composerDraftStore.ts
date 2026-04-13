@@ -2769,7 +2769,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             ...currentState.logicalProjectDraftThreadKeyByLogicalProjectKey,
           },
           stickyModelSelectionByProvider: {
-            ...(normalizedPersisted.stickyModelSelectionByProvider ?? {}),
+            ...normalizedPersisted.stickyModelSelectionByProvider,
             ...currentState.stickyModelSelectionByProvider,
           },
           stickyActiveProvider:
