@@ -71,11 +71,11 @@ vi.mock("@tanstack/react-router", () => ({
   useSearch: vi.fn(() => ({ diff: "1" })),
 }));
 
-vi.mock("~/hooks/useTheme", () => ({
+vi.mock("../hooks/useTheme", () => ({
   useTheme: vi.fn(() => ({ resolvedTheme: "light", colorScheme: "default" })),
 }));
 
-vi.mock("~/hooks/useSettings", () => ({
+vi.mock("../hooks/useSettings", () => ({
   useSettings: vi.fn(() => settingsRef.current),
   useUpdateSettings: vi.fn(() => ({
     updateSettings: (patch: Partial<typeof settingsRef.current>) => {
@@ -88,7 +88,7 @@ vi.mock("~/hooks/useSettings", () => ({
   })),
 }));
 
-vi.mock("~/store", () => ({
+vi.mock("../store", () => ({
   useStore: vi.fn((selector: (state: unknown) => unknown) =>
     selector({
       environmentStateById: {
@@ -111,7 +111,7 @@ vi.mock("~/store", () => ({
   })),
 }));
 
-vi.mock("~/storeSelectors", () => ({
+vi.mock("../storeSelectors", () => ({
   createThreadSelectorByRef: vi.fn(() => () => threadRef.current),
 }));
 
@@ -123,29 +123,30 @@ vi.mock("~/lib/gitStatusState", () => ({
   })),
 }));
 
-vi.mock("~/hooks/useTurnDiffSummaries", () => ({
+vi.mock("../hooks/useTurnDiffSummaries", () => ({
   useTurnDiffSummaries: vi.fn(() => ({
     turnDiffSummaries: [],
     inferredCheckpointTurnCountByTurnId: {},
   })),
 }));
 
-vi.mock("~/lib/providerReactQuery", () => ({
+vi.mock("../lib/providerReactQuery", () => ({
   checkpointDiffQueryOptions: vi.fn(() => ({ queryKey: ["checkpoint-diff"] })),
 }));
 
 vi.mock("~/lib/gitReactQuery", () => ({
+  gitListRepositoriesQueryOptions: vi.fn(() => ({ queryKey: ["git", "repositories"] })),
   gitReviewStatusQueryOptions: vi.fn(() => ({ queryKey: ["git", "review-status"] })),
   gitListCommitsQueryOptions: vi.fn(() => ({ queryKey: ["git", "commits"] })),
   gitCommitFilesQueryOptions: vi.fn(() => ({ queryKey: ["git", "commit-files"] })),
   gitFileDiffQueryOptions: vi.fn(() => ({ queryKey: ["git", "file-diff"] })),
 }));
 
-vi.mock("~/editorPreferences", () => ({
+vi.mock("../editorPreferences", () => ({
   openInPreferredEditor: vi.fn(),
 }));
 
-vi.mock("~/localApi", () => ({
+vi.mock("../localApi", () => ({
   readLocalApi: vi.fn(() => null),
 }));
 
@@ -198,7 +199,7 @@ describe("DiffPanel", () => {
     }
   });
 
-  it("resolves the git action cwd from a linked workspace when the thread worktree is unset", async () => {
+  it("falls back to the project cwd when the thread worktree is unset", async () => {
     threadRef.current = {
       ...threadRef.current,
       workspaceId: "workspace-1",
@@ -216,7 +217,7 @@ describe("DiffPanel", () => {
     try {
       await expect.element(page.getByTestId("mock-git-actions-control")).toBeInTheDocument();
       expect(gitActionControlPropsRef.current).toMatchObject({
-        gitCwd: "/repo/workspaces/feature-workspace",
+        gitCwd: "/repo/project",
         effectiveBranch: "feature/panel-actions",
         variant: "panel",
       });

@@ -103,6 +103,7 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import { PersistentThreadTerminalSurface } from "./PersistentThreadTerminalSurface";
+import { BranchToolbar } from "./BranchToolbar";
 import { ChevronDownIcon } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
 import { toastManager } from "./ui/toast";
@@ -169,6 +170,7 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -523,7 +525,7 @@ export default function ChatView(props: ChatViewProps) {
   const planSidebarOpenOnNextThreadRef = useRef(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
-  const [_pullRequestDialogState, setPullRequestDialogState] =
+  const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
   const [terminalLaunchContext, setTerminalLaunchContext] = useState<TerminalLaunchContext | null>(
     null,
@@ -1341,7 +1343,11 @@ export default function ChatView(props: ChatViewProps) {
   );
   const syncWorkspaceDockRouteState = useWorkspaceDockStore((state) => state.syncRouteState);
   const setWorkspaceDockFilesOpen = useWorkspaceDockStore((state) => state.setFilesOpen);
+  const setWorkspaceDockTerminalTabOpen = useWorkspaceDockStore(
+    (state) => state.setTerminalTabOpen,
+  );
   const selectWorkspaceDockChatTab = useWorkspaceDockStore((state) => state.selectChatTab);
+  const selectWorkspaceDockTerminalTab = useWorkspaceDockStore((state) => state.selectTerminalTab);
   const selectWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.selectFileTab);
   const closeWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.closeFileTab);
   const showWorkspaceDockDiffContext = useWorkspaceDockStore((state) => state.showDiffContext);
@@ -1350,7 +1356,10 @@ export default function ChatView(props: ChatViewProps) {
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
       : (storeServerTerminalLaunchContext ?? null);
-  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceOpen;
+  const terminalSurfaceVisible = terminalSurfaceOpen && workspaceDockState.terminalTabOpen;
+  const terminalSurfaceActive =
+    terminalSurfaceVisible && workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const terminalUiOpen = terminalState.terminalOpen || terminalSurfaceActive;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const terminalShortcutLabelOptions = useMemo(
@@ -1602,16 +1611,34 @@ export default function ChatView(props: ChatViewProps) {
   );
   const dockTerminalToDrawer = useCallback(() => {
     if (!activeThreadRef) return;
+    if (workspaceDockScopeKey) {
+      setWorkspaceDockTerminalTabOpen(workspaceDockScopeKey, false);
+    }
     setTerminalOpen(true);
     navigateWithinActiveThreadRoute({ terminal: undefined });
     setTerminalFocusRequestId((value) => value + 1);
-  }, [activeThreadRef, navigateWithinActiveThreadRoute, setTerminalOpen]);
+  }, [
+    activeThreadRef,
+    navigateWithinActiveThreadRoute,
+    setTerminalOpen,
+    setWorkspaceDockTerminalTabOpen,
+    workspaceDockScopeKey,
+  ]);
   const moveTerminalToSurface = useCallback(() => {
     if (!activeThreadRef) return;
+    if (workspaceDockScopeKey) {
+      selectWorkspaceDockTerminalTab(workspaceDockScopeKey);
+    }
     setTerminalOpen(false);
     navigateWithinActiveThreadRoute({ terminal: "1" });
     setTerminalFocusRequestId((value) => value + 1);
-  }, [activeThreadRef, navigateWithinActiveThreadRoute, setTerminalOpen]);
+  }, [
+    activeThreadRef,
+    navigateWithinActiveThreadRoute,
+    selectWorkspaceDockTerminalTab,
+    setTerminalOpen,
+    workspaceDockScopeKey,
+  ]);
   const toggleTerminalVisibility = useCallback(() => {
     if (!activeThreadRef) return;
     if (terminalSurfaceOpen) {
@@ -3343,21 +3370,22 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     selectWorkspaceDockChatTab(workspaceDockScopeKey);
-    navigateWithinActiveThreadRoute({ file: undefined, terminal: undefined });
+    navigateWithinActiveThreadRoute({ file: undefined });
   }, [navigateWithinActiveThreadRoute, selectWorkspaceDockChatTab, workspaceDockScopeKey]);
   const onSelectTerminalSurfaceTab = useCallback(() => {
     if (!workspaceDockScopeKey) {
       return;
     }
+    selectWorkspaceDockTerminalTab(workspaceDockScopeKey);
     navigateWithinActiveThreadRoute({ terminal: "1" });
-  }, [navigateWithinActiveThreadRoute, workspaceDockScopeKey]);
+  }, [navigateWithinActiveThreadRoute, selectWorkspaceDockTerminalTab, workspaceDockScopeKey]);
   const onSelectWorkspaceFileTab = useCallback(
     (relativePath: string) => {
       if (!workspaceDockScopeKey) {
         return;
       }
       selectWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
-      navigateWithinActiveThreadRoute({ files: "1", file: relativePath, terminal: undefined });
+      navigateWithinActiveThreadRoute({ files: "1", file: relativePath });
     },
     [navigateWithinActiveThreadRoute, selectWorkspaceDockFileTab, workspaceDockScopeKey],
   );
@@ -3377,7 +3405,7 @@ export default function ChatView(props: ChatViewProps) {
           ? (remainingTabs.at(-1) ?? "chat")
           : workspaceDockState.activeTab;
       navigateWithinActiveThreadRoute({
-        terminal: nextActiveTab === WORKSPACE_TERMINAL_TAB_ID ? "1" : undefined,
+        terminal: terminalSurfaceVisible ? "1" : undefined,
         file:
           nextActiveTab === WORKSPACE_TERMINAL_TAB_ID
             ? nextRestoredFilePath
@@ -3390,6 +3418,7 @@ export default function ChatView(props: ChatViewProps) {
       activeWorkspaceFilePath,
       closeWorkspaceDockFileTab,
       navigateWithinActiveThreadRoute,
+      terminalSurfaceVisible,
       workspaceDockScopeKey,
       workspaceDockState.activeTab,
       workspaceDockState.openFileTabs,
@@ -3412,11 +3441,11 @@ export default function ChatView(props: ChatViewProps) {
   }
 
   const detachedTerminalSurface =
-    terminalSurfaceOpen && activeThreadRef ? (
+    terminalSurfaceVisible && activeThreadRef ? (
       <PersistentThreadTerminalSurface
         threadRef={activeThreadRef}
         threadId={activeThread.id}
-        visible
+        visible={terminalSurfaceActive}
         mode="surface"
         launchContext={activeTerminalLaunchContext}
         focusRequestId={terminalFocusRequestId}
@@ -3427,7 +3456,40 @@ export default function ChatView(props: ChatViewProps) {
         onDockToDrawer={dockTerminalToDrawer}
       />
     ) : null;
-  const activeWorkspaceSurfaceContent = detachedTerminalSurface ?? props.workspaceSurfaceContent;
+  const workspaceContentActive =
+    Boolean(props.workspaceSurfaceContent) &&
+    workspaceDockState.activeTab !== "chat" &&
+    workspaceDockState.activeTab !== WORKSPACE_TERMINAL_TAB_ID;
+  const workspaceSurfaceActive = workspaceContentActive || terminalSurfaceActive;
+  const workspaceSurfaceOverlay = workspaceSurfaceActive ? (
+    <div
+      className={cn(
+        "absolute inset-0 z-10 flex min-h-0 flex-col bg-background",
+        !workspaceSurfaceActive && "pointer-events-none invisible",
+      )}
+    >
+      {props.workspaceSurfaceContent ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !workspaceContentActive && "pointer-events-none invisible",
+          )}
+        >
+          {props.workspaceSurfaceContent}
+        </div>
+      ) : null}
+      {detachedTerminalSurface ? (
+        <div
+          className={cn(
+            "absolute inset-0 flex min-h-0 flex-col",
+            !terminalSurfaceActive && "pointer-events-none invisible",
+          )}
+        >
+          {detachedTerminalSurface}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
@@ -3469,12 +3531,14 @@ export default function ChatView(props: ChatViewProps) {
           onToggleDiff={onToggleDiff}
         />
       </header>
-      {filesOpen || workspaceDockState.openFileTabs.length > 0 || terminalSurfaceOpen ? (
+      {filesOpen ||
+      workspaceDockState.openFileTabs.length > 0 ||
+      workspaceDockState.terminalTabOpen ? (
         <OpenSurfaceTabs
           openFileTabs={workspaceDockState.openFileTabs}
           activeTab={workspaceDockState.activeTab}
           resolvedTheme={resolvedTheme}
-          showTerminalTab={terminalSurfaceOpen}
+          showTerminalTab={workspaceDockState.terminalTabOpen}
           onSelectChat={onSelectChatSurfaceTab}
           onSelectTerminal={onSelectTerminalSurfaceTab}
           onSelectFile={onSelectWorkspaceFileTab}
@@ -3496,7 +3560,7 @@ export default function ChatView(props: ChatViewProps) {
             <div
               className={cn(
                 "flex h-full min-h-0 flex-col",
-                activeWorkspaceSurfaceContent && "pointer-events-none invisible",
+                workspaceSurfaceActive && "pointer-events-none invisible",
               )}
             >
               {/* Messages Wrapper */}
@@ -3566,6 +3630,17 @@ export default function ChatView(props: ChatViewProps) {
               <div
                 className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}
               >
+                <BranchToolbar
+                  environmentId={environmentId}
+                  threadId={threadId}
+                  {...(draftId ? { draftId } : {})}
+                  onEnvModeChange={_onEnvModeChange}
+                  envLocked={envLocked}
+                  onCheckoutPullRequestRequest={_openPullRequestDialog}
+                  onComposerFocusRequest={scheduleComposerFocus}
+                  availableEnvironments={logicalProjectEnvironments}
+                  onEnvironmentChange={_onEnvironmentChange}
+                />
                 <ChatComposer
                   ref={composerRef}
                   composerDraftTarget={composerDraftTarget}
@@ -3633,13 +3708,25 @@ export default function ChatView(props: ChatViewProps) {
                   setThreadError={setThreadError}
                   onExpandImage={onExpandTimelineImage}
                 />
+                {pullRequestDialogState ? (
+                  <PullRequestThreadDialog
+                    key={pullRequestDialogState.key}
+                    open
+                    environmentId={environmentId}
+                    threadId={activeThread.id}
+                    cwd={activeProject?.cwd ?? null}
+                    initialReference={pullRequestDialogState.initialReference}
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setPullRequestDialogState(null);
+                      }
+                    }}
+                    onPrepared={_handlePreparedPullRequestThread}
+                  />
+                ) : null}
               </div>
             </div>
-            {activeWorkspaceSurfaceContent ? (
-              <div className="absolute inset-0 z-10 flex min-h-0 flex-col bg-background">
-                {activeWorkspaceSurfaceContent}
-              </div>
-            ) : null}
+            {workspaceSurfaceOverlay}
           </div>
         </div>
         {/* end chat column */}

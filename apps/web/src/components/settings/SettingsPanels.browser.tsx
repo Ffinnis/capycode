@@ -12,6 +12,7 @@ import {
   type ServerConfig,
 } from "@capycode/contracts";
 import { DateTime } from "effect";
+import { useSyncExternalStore } from "react";
 import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -115,10 +116,23 @@ const authAccessHarness = vi.hoisted(() => {
 const savedEnvironmentHarness = vi.hoisted(() => {
   const recordsById: Record<string, any> = {};
   const runtimeById: Record<string, any> = {};
+  const listeners = new Set<() => void>();
+  let version = 0;
+  let cachedRegistrySnapshotVersion = -1;
+  let cachedRegistrySnapshot: { byId: Record<string, any> } = { byId: {} };
+  let cachedRuntimeSnapshotVersion = -1;
+  let cachedRuntimeSnapshot: { byId: Record<string, any> } = { byId: {} };
   const addSavedEnvironment = vi.fn();
   const disconnectSavedEnvironment = vi.fn();
   const reconnectSavedEnvironment = vi.fn();
   const removeSavedEnvironment = vi.fn();
+
+  const emitChange = () => {
+    version += 1;
+    for (const listener of listeners) {
+      listener();
+    }
+  };
 
   return {
     recordsById,
@@ -138,6 +152,27 @@ const savedEnvironmentHarness = vi.hoisted(() => {
       disconnectSavedEnvironment.mockReset();
       reconnectSavedEnvironment.mockReset();
       removeSavedEnvironment.mockReset();
+      emitChange();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getRegistrySnapshot() {
+      if (cachedRegistrySnapshotVersion !== version) {
+        cachedRegistrySnapshotVersion = version;
+        cachedRegistrySnapshot = { byId: { ...recordsById } };
+      }
+      return cachedRegistrySnapshot;
+    },
+    getRuntimeSnapshot() {
+      if (cachedRuntimeSnapshotVersion !== version) {
+        cachedRuntimeSnapshotVersion = version;
+        cachedRuntimeSnapshot = { byId: { ...runtimeById } };
+      }
+      return cachedRuntimeSnapshot;
     },
     upsertRecord(record: {
       environmentId: EnvironmentId;
@@ -148,6 +183,7 @@ const savedEnvironmentHarness = vi.hoisted(() => {
       lastConnectedAt: string | null;
     }) {
       recordsById[record.environmentId] = record;
+      emitChange();
     },
     setRuntime(
       environmentId: EnvironmentId,
@@ -173,6 +209,7 @@ const savedEnvironmentHarness = vi.hoisted(() => {
         disconnectedAt: null,
         ...runtime,
       };
+      emitChange();
     },
   };
 });
@@ -226,10 +263,20 @@ vi.mock("../../environments/runtime", () => {
     subscribeEnvironmentConnections: () => () => {},
     useSavedEnvironmentRegistryStore: (
       selector: (state: { byId: Record<string, any> }) => unknown,
-    ) => selector({ byId: savedEnvironmentHarness.recordsById }),
+    ) =>
+      useSyncExternalStore(
+        savedEnvironmentHarness.subscribe,
+        () => selector(savedEnvironmentHarness.getRegistrySnapshot()),
+        () => selector(savedEnvironmentHarness.getRegistrySnapshot()),
+      ),
     useSavedEnvironmentRuntimeStore: (
       selector: (state: { byId: Record<string, any> }) => unknown,
-    ) => selector({ byId: savedEnvironmentHarness.runtimeById }),
+    ) =>
+      useSyncExternalStore(
+        savedEnvironmentHarness.subscribe,
+        () => selector(savedEnvironmentHarness.getRuntimeSnapshot()),
+        () => selector(savedEnvironmentHarness.getRuntimeSnapshot()),
+      ),
   };
 });
 
@@ -801,7 +848,14 @@ describe("GeneralSettingsPanel observability", () => {
         pairingUrl: "https://remote.example.com/pair#token=pairing-code",
       });
     });
-    await expect.element(page.getByText("Staging backend")).toBeInTheDocument();
+    await mounted.rerender(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+    await expect
+      .element(page.getByRole("heading", { name: "Staging backend", exact: true }))
+      .toBeInTheDocument();
   });
 
   it("disables reconnect while a saved environment reconnect is in flight", async () => {
@@ -832,7 +886,9 @@ describe("GeneralSettingsPanel observability", () => {
       </AppAtomRegistryProvider>,
     );
 
-    await expect.element(page.getByText("Remote environment")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: "Remote environment", exact: true }))
+      .toBeInTheDocument();
     await page.getByRole("button", { name: "Reconnect" }).click();
     await expect.element(page.getByRole("button", { name: "Reconnecting…" })).toBeDisabled();
 

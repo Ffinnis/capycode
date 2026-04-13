@@ -90,6 +90,22 @@ describe("workspaceDockStore", () => {
 
     const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
     expect(scope.openFileTabs).toEqual(["src/app.ts"]);
+    expect(scope.terminalTabOpen).toBe(true);
     expect(scope.activeTab).toBe(WORKSPACE_TERMINAL_TAB_ID);
+  });
+
+  it("keeps the detached terminal tab available when switching back to chat", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.syncRouteState(SCOPE, {
+      filesOpen: false,
+      diffOpen: false,
+      terminalOpen: true,
+      filePath: null,
+    });
+    store.selectChatTab(SCOPE);
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.terminalTabOpen).toBe(true);
+    expect(scope.activeTab).toBe("chat");
   });
 });

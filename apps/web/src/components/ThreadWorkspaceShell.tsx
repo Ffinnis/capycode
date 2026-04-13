@@ -34,6 +34,7 @@ import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRou
 import {
   getWorkspaceDockScopeKey,
   getWorkspaceDockScopeState,
+  WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "~/workspaceDockStore";
 import { SidebarInset } from "~/components/ui/sidebar";
@@ -240,7 +241,11 @@ export function ThreadWorkspaceShell(props: {
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
   const previewFilePath = activeFilePath;
   const contextOpen = diffOpen;
-  const sheetOpen = diffOpen || filesOpen || terminalOpen || activeFilePath !== null;
+  const terminalSurfaceActive =
+    terminalOpen &&
+    workspaceDockState.terminalTabOpen &&
+    workspaceDockState.activeTab === WORKSPACE_TERMINAL_TAB_ID;
+  const sheetOpen = diffOpen || filesOpen || terminalSurfaceActive || activeFilePath !== null;
   const workspaceSurfaceContent =
     previewFilePath && props.activeWorkspaceRoot ? (
       <FilePreviewPanel
@@ -292,7 +297,7 @@ export function ThreadWorkspaceShell(props: {
     ) : null
   ) : null;
 
-  const sheetContent: ReactNode = terminalOpen ? (
+  const sheetContent: ReactNode = terminalSurfaceActive ? (
     <PersistentThreadTerminalSurface
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       threadId={props.threadId}

@@ -69,6 +69,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Format
+        run: bun run fmt:check
+
       - name: Lint
         run: bun run lint
 
@@ -297,7 +300,7 @@ jobs:
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
-          name: T3 Code v${{ needs.preflight.outputs.version }}
+          name: Capycode v${{ needs.preflight.outputs.version }}
           generate_release_notes: true
           prerelease: ${{ needs.preflight.outputs.is_prerelease }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}

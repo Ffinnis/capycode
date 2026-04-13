@@ -92,9 +92,6 @@ export class BrowserWsRpcHarness {
       await Effect.runPromise(Scope.close(this.scope, Exit.void)).catch(() => undefined);
       this.scope = null;
     }
-    for (const pubsub of this.streamPubSubs.values()) {
-      Effect.runSync(PubSub.shutdown(pubsub));
-    }
     this.streamPubSubs.clear();
     this.serverReady = null;
     this.client = null;

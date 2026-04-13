@@ -8,6 +8,7 @@ export type WorkspaceDockActiveTab = "chat" | typeof WORKSPACE_TERMINAL_TAB_ID |
 
 export interface WorkspaceDockScopeState {
   filesOpen: boolean;
+  terminalTabOpen: boolean;
   openFileTabs: string[];
   activeTab: WorkspaceDockActiveTab;
   activeContext: "diff" | "file";
@@ -35,8 +36,10 @@ interface WorkspaceDockState {
     },
   ) => void;
   setFilesOpen: (scopeKey: string, open: boolean) => void;
+  setTerminalTabOpen: (scopeKey: string, open: boolean) => void;
   openFile: (scopeKey: string, relativePath: string) => void;
   selectChatTab: (scopeKey: string) => void;
+  selectTerminalTab: (scopeKey: string) => void;
   selectFileTab: (scopeKey: string, relativePath: string) => void;
   closeFileTab: (scopeKey: string, relativePath: string) => void;
   showDiffContext: (scopeKey: string) => void;
@@ -51,6 +54,7 @@ const EMPTY_OPEN_FILE_TABS: string[] = [];
 const EMPTY_EXPANDED_DIRECTORIES: Record<string, boolean> = {};
 const DEFAULT_SCOPE_STATE: WorkspaceDockScopeState = {
   filesOpen: false,
+  terminalTabOpen: false,
   openFileTabs: EMPTY_OPEN_FILE_TABS,
   activeTab: "chat",
   activeContext: "file",
@@ -158,6 +162,7 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
         const nextScope: WorkspaceDockScopeState = {
           ...current,
           filesOpen: input.filesOpen,
+          terminalTabOpen: input.terminalOpen,
         };
         if (input.filePath) {
           nextScope.openFileTabs = nextUniqueTabs(current.openFileTabs, input.filePath);
@@ -169,11 +174,17 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
           nextScope.revealedFilePath = undefined;
         }
 
-        if (input.terminalOpen) {
+        if (!current.terminalTabOpen && input.terminalOpen) {
           nextScope.activeTab = WORKSPACE_TERMINAL_TAB_ID;
-        } else if (input.filePath) {
+        } else if (!input.terminalOpen && current.activeTab === WORKSPACE_TERMINAL_TAB_ID) {
+          nextScope.activeTab = input.filePath ?? "chat";
+        } else if (input.filePath && current.activeTab === "chat" && !input.terminalOpen) {
           nextScope.activeTab = input.filePath;
-        } else if (current.activeTab === WORKSPACE_TERMINAL_TAB_ID || !input.diffOpen) {
+        } else if (
+          current.activeTab !== "chat" &&
+          current.activeTab !== WORKSPACE_TERMINAL_TAB_ID &&
+          !nextScope.openFileTabs.includes(current.activeTab)
+        ) {
           nextScope.activeTab = "chat";
         }
 
@@ -197,6 +208,20 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
       const nextState = {
         ...state,
         ...withScope(state, scopeKey, (current) => ({ ...current, filesOpen: open })),
+      };
+      persistState(nextState);
+      return nextState;
+    }),
+  setTerminalTabOpen: (scopeKey, open) =>
+    set((state) => {
+      const nextState = {
+        ...state,
+        ...withScope(state, scopeKey, (current) => ({
+          ...current,
+          terminalTabOpen: open,
+          activeTab:
+            !open && current.activeTab === WORKSPACE_TERMINAL_TAB_ID ? "chat" : current.activeTab,
+        })),
       };
       persistState(nextState);
       return nextState;
@@ -225,6 +250,19 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
           ...current,
           activeTab: "chat",
           revealedFilePath: undefined,
+        })),
+      };
+      persistState(nextState);
+      return nextState;
+    }),
+  selectTerminalTab: (scopeKey) =>
+    set((state) => {
+      const nextState = {
+        ...state,
+        ...withScope(state, scopeKey, (current) => ({
+          ...current,
+          terminalTabOpen: true,
+          activeTab: WORKSPACE_TERMINAL_TAB_ID,
         })),
       };
       persistState(nextState);
