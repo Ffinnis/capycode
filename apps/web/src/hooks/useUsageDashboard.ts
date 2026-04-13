@@ -24,7 +24,7 @@ export function useUsageDashboard(range: UsageRange = DEFAULT_USAGE_RANGE, enabl
   return useQuery({
     queryKey: usageDashboardQueryKey(range),
     queryFn: () => ensureLocalApi().usage.getDashboard(range),
-    staleTime: 30_000,
+    staleTime: 5_000, // Reduced from 30s for faster real-time updates
     enabled,
   });
 }
