@@ -126,6 +126,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
+import { WorkspaceCreateDialog } from "./WorkspaceCreateDialog";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -149,6 +150,7 @@ import {
   getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
+  resolveActiveProjectThreadBranch,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
@@ -268,6 +270,10 @@ interface SidebarTextDialogRequest {
 
 interface SidebarTextDialogState extends SidebarTextDialogRequest {
   value: string;
+}
+
+interface SidebarWorkspaceCreateDialogState {
+  mode: "branch" | "worktree";
 }
 
 interface SidebarContextMenuState {
@@ -1739,6 +1745,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const confirmArchiveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const [sidebarTextDialogState, setSidebarTextDialogState] =
     useState<SidebarTextDialogState | null>(null);
+  const [workspaceCreateDialogState, setWorkspaceCreateDialogState] =
+    useState<SidebarWorkspaceCreateDialogState | null>(null);
   const sidebarTextDialogResolverRef = useRef<((value: string | null) => void) | null>(null);
   const sidebarTextInputRef = useRef<HTMLInputElement | null>(null);
   const sidebarTextDialogWasOpenRef = useRef(false);
@@ -1873,6 +1881,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  const activeProjectThreadBranch = useMemo(
+    () =>
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: activeRouteThreadKey,
+        projectThreads,
+      }),
+    [activeRouteThreadKey, projectThreads],
+  );
   const workspaceSnapshots = useMemo(
     () => buildSidebarWorkspaceSnapshots(project, projectWorkspaces),
     [project, projectWorkspaces],
@@ -2368,38 +2384,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     await refreshWorkspaceSnapshot(project.environmentId);
   }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
 
-  const createWorkspaceForProject = useCallback(
-    async (type: "branch" | "worktree") => {
-      const api = readEnvironmentApi(project.environmentId);
-      if (!api) {
-        throw new Error("Workspace API unavailable.");
-      }
-      const suffix = `${projectWorkspaces.length + 1}`;
-      const baseBranch =
-        activeProjectWorkspace?.branch ??
-        projectThreads.find((thread) => thread.branch !== null)?.branch ??
-        "main";
-      const workspaceName =
-        type === "worktree" ? `Workspace ${suffix}` : `${project.name} ${suffix}`;
-      await api.workspaces.create({
-        projectId: project.id,
-        name: workspaceName,
-        type,
-        baseBranch,
-        branch: type === "worktree" ? `workspace-${Date.now().toString(36)}` : baseBranch,
-      });
-      await refreshWorkspaceSnapshot(project.environmentId);
-    },
-    [
-      activeProjectWorkspace?.branch,
-      project.environmentId,
-      project.id,
-      project.name,
-      projectThreads,
-      projectWorkspaces.length,
-      refreshWorkspaceSnapshot,
-    ],
-  );
+  const openWorkspaceCreateDialog = useCallback((mode: "branch" | "worktree") => {
+    setWorkspaceCreateDialogState({ mode });
+  }, []);
 
   const setWorkspaceActive = useCallback(
     async (workspace: SidebarWorkspaceSnapshot) => {
@@ -2662,27 +2649,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           return;
         }
         if (clicked === "new-worktree-workspace") {
-          try {
-            await createWorkspaceForProject("worktree");
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to create workspace",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
+          openWorkspaceCreateDialog("worktree");
           return;
         }
         if (clicked === "new-branch-workspace") {
-          try {
-            await createWorkspaceForProject("branch");
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to create workspace",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
+          openWorkspaceCreateDialog("branch");
           return;
         }
         if (clicked !== "delete") return;
@@ -2737,9 +2708,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       clearProjectDraftThreadId,
       copyPathToClipboard,
       createSectionForProject,
-      createWorkspaceForProject,
       getDraftThreadByProjectRef,
       importAllWorkspaces,
+      openWorkspaceCreateDialog,
       openMainRepoWorkspace,
       project.cwd,
       project.environmentId,
@@ -3210,13 +3181,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void createWorkspaceForProject("worktree").catch((error) => {
-                      toastManager.add({
-                        type: "error",
-                        title: "Failed to create workspace",
-                        description: error instanceof Error ? error.message : "An error occurred.",
-                      });
-                    });
+                    openWorkspaceCreateDialog("worktree");
                   }}
                 >
                   <PlusIcon className="size-3.5" />
@@ -3426,6 +3391,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </SortableContext>
         </DndContext>
       ) : null}
+
+      <WorkspaceCreateDialog
+        open={workspaceCreateDialogState !== null}
+        mode={workspaceCreateDialogState?.mode ?? "worktree"}
+        activeWorkspaceBranch={activeProjectWorkspace?.branch ?? null}
+        threadBranch={activeProjectThreadBranch}
+        onCreated={() => refreshWorkspaceSnapshot(project.environmentId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkspaceCreateDialogState(null);
+          }
+        }}
+        project={{
+          id: project.id,
+          environmentId: project.environmentId,
+          name: project.name,
+          cwd: project.cwd,
+        }}
+        workspaceCount={projectWorkspaces.length}
+      />
 
       <Dialog
         open={sidebarTextDialogState !== null}
