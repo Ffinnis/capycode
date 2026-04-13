@@ -26,6 +26,8 @@ import {
   type GitCommitSummary,
   type GitGetFileDiffInput,
   type GitReviewStatusInput,
+  type GitSubmoduleStatus,
+  type GitWorkingTreeEntry,
 } from "@capycode/contracts";
 import { dedupeRemoteBranchesWithLocalMatches } from "@capycode/shared/git";
 import { compactTraceAttributes } from "../../observability/Attributes.ts";
@@ -136,6 +138,19 @@ function parseNumstatEntries(
   return entries;
 }
 
+function parsePorcelainSubmoduleStatus(rawSubmoduleToken: string): GitSubmoduleStatus | null {
+  if (!rawSubmoduleToken.startsWith("S") || rawSubmoduleToken.length < 4) {
+    return null;
+  }
+
+  return {
+    commitChanged: rawSubmoduleToken[1] !== ".",
+    trackedChanges: rawSubmoduleToken[2] !== ".",
+    untrackedChanges: rawSubmoduleToken[3] !== ".",
+    registered: true,
+  };
+}
+
 function parseChangedFileStatus(rawStatus: string): GitChangedFileStatus {
   switch (rawStatus[0]) {
     case "A":
@@ -188,6 +203,56 @@ function parseNameStatusEntries(stdout: string): Array<{
   return entries;
 }
 
+function parseRawDiffEntries(stdout: string): Array<{
+  path: string;
+  oldPath?: string;
+  kind: "submodule";
+  submodule: GitSubmoduleStatus;
+}> {
+  const entries: Array<{
+    path: string;
+    oldPath?: string;
+    kind: "submodule";
+    submodule: GitSubmoduleStatus;
+  }> = [];
+
+  for (const line of stdout.split(/\r?\n/g)) {
+    if (!line.startsWith(":")) {
+      continue;
+    }
+
+    const [metaPart = "", firstPath = "", secondPath = ""] = line.split("\t");
+    const [oldMode = "", newMode = "", oldObjectId = "", newObjectId = "", statusToken = ""] =
+      metaPart.split(/\s+/g);
+    const normalizedOldMode = oldMode.replace(/^:/, "");
+    const isSubmodule = normalizedOldMode === "160000" || newMode === "160000";
+    if (!isSubmodule) {
+      continue;
+    }
+
+    const statusCode = statusToken[0] ?? "";
+    const path = (statusCode === "R" || statusCode === "C" ? secondPath : firstPath).trim();
+    if (path.length === 0) {
+      continue;
+    }
+
+    const oldPath = (statusCode === "R" || statusCode === "C" ? firstPath.trim() : "").trim();
+    entries.push({
+      path,
+      ...(oldPath.length > 0 ? { oldPath } : {}),
+      kind: "submodule",
+      submodule: {
+        commitChanged: oldObjectId !== newObjectId,
+        trackedChanges: false,
+        untrackedChanges: false,
+        registered: true,
+      },
+    });
+  }
+
+  return entries;
+}
+
 function buildChangedFiles(input: {
   nameStatusEntries: ReadonlyArray<{
     path: string;
@@ -202,9 +267,23 @@ function buildChangedFiles(input: {
     additions?: number;
     deletions?: number;
   }>;
+  rawEntries?: ReadonlyArray<{
+    path: string;
+    oldPath?: string;
+    kind: "submodule";
+    submodule: GitSubmoduleStatus;
+  }>;
 }): ReadonlyArray<GitChangedFile> {
   const files = new Map<string, GitChangedFile>();
   const numstatByPath = new Map<string, { insertions: number; deletions: number }>();
+  const rawByPath = new Map<
+    string,
+    {
+      oldPath?: string;
+      kind: "submodule";
+      submodule: GitSubmoduleStatus;
+    }
+  >();
 
   for (const entry of input.numstatEntries ?? []) {
     numstatByPath.set(entry.path, {
@@ -213,24 +292,36 @@ function buildChangedFiles(input: {
     });
   }
 
+  for (const entry of input.rawEntries ?? []) {
+    rawByPath.set(entry.path, {
+      ...(entry.oldPath ? { oldPath: entry.oldPath } : {}),
+      kind: entry.kind,
+      submodule: entry.submodule,
+    });
+  }
+
   for (const entry of input.nameStatusEntries) {
     const stats = numstatByPath.get(entry.path) ?? { insertions: 0, deletions: 0 };
+    const rawEntry = rawByPath.get(entry.path);
     files.set(entry.path, {
       path: entry.path,
-      ...(entry.oldPath ? { oldPath: entry.oldPath } : {}),
+      ...(rawEntry?.oldPath ?? entry.oldPath ? { oldPath: rawEntry?.oldPath ?? entry.oldPath } : {}),
       status: entry.status,
       additions: stats.insertions,
       deletions: stats.deletions,
+      ...(rawEntry ? { kind: rawEntry.kind, submodule: rawEntry.submodule } : {}),
     });
   }
 
   for (const entry of input.extraFiles ?? []) {
+    const rawEntry = rawByPath.get(entry.path);
     files.set(entry.path, {
       path: entry.path,
-      ...(entry.oldPath ? { oldPath: entry.oldPath } : {}),
+      ...(rawEntry?.oldPath ?? entry.oldPath ? { oldPath: rawEntry?.oldPath ?? entry.oldPath } : {}),
       status: entry.status,
       additions: entry.additions ?? 0,
       deletions: entry.deletions ?? 0,
+      ...(rawEntry ? { kind: rawEntry.kind, submodule: rawEntry.submodule } : {}),
     });
   }
 
@@ -286,10 +377,17 @@ function chunkPathsForGitCheckIgnore(relativePaths: readonly string[]): string[]
   return chunks;
 }
 
-function parsePorcelainPath(line: string): string | null {
+function parsePorcelainEntry(
+  line: string,
+): Pick<GitWorkingTreeEntry, "path" | "kind" | "submodule"> | null {
   if (line.startsWith("? ") || line.startsWith("! ")) {
     const simple = line.slice(2).trim();
-    return simple.length > 0 ? simple : null;
+    return simple.length > 0
+      ? {
+          path: simple,
+          kind: "file",
+        }
+      : null;
   }
 
   if (!(line.startsWith("1 ") || line.startsWith("2 ") || line.startsWith("u "))) {
@@ -297,15 +395,34 @@ function parsePorcelainPath(line: string): string | null {
   }
 
   const tabIndex = line.indexOf("\t");
+  const metadataPart = (tabIndex >= 0 ? line.slice(0, tabIndex) : line).trim();
+  const metadataTokens = metadataPart.split(/\s+/g);
+  const submoduleStatus =
+    metadataTokens[2] && metadataTokens[2] !== "N..."
+      ? parsePorcelainSubmoduleStatus(metadataTokens[2])
+      : null;
+
   if (tabIndex >= 0) {
     const fromTab = line.slice(tabIndex + 1);
     const [filePath] = fromTab.split("\t");
-    return filePath?.trim().length ? filePath.trim() : null;
+    return filePath?.trim().length
+      ? {
+          path: filePath.trim(),
+          kind: submoduleStatus ? "submodule" : "file",
+          ...(submoduleStatus ? { submodule: submoduleStatus } : {}),
+        }
+      : null;
   }
 
   const parts = line.trim().split(/\s+/g);
   const filePath = parts.at(-1) ?? "";
-  return filePath.length > 0 ? filePath : null;
+  return filePath.length > 0
+    ? {
+        path: filePath,
+        kind: submoduleStatus ? "submodule" : "file",
+        ...(submoduleStatus ? { submodule: submoduleStatus } : {}),
+      }
+    : null;
 }
 
 function parseBranchLine(line: string): { name: string; current: boolean } | null {
@@ -1342,6 +1459,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     cwd: string,
     nameStatusArgs: ReadonlyArray<string>,
     numstatArgs: ReadonlyArray<string>,
+    rawArgs: ReadonlyArray<string>,
     extraFiles?: ReadonlyArray<{
       path: string;
       oldPath?: string;
@@ -1350,10 +1468,11 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       deletions?: number;
     }>,
   ) {
-    const [nameStatusStdout, numstatStdout] = yield* Effect.all(
+    const [nameStatusStdout, numstatStdout, rawStdout] = yield* Effect.all(
       [
         runGitStdout(`${operation}.nameStatus`, cwd, [...nameStatusArgs]),
         runGitStdout(`${operation}.numstat`, cwd, [...numstatArgs]),
+        runGitStdout(`${operation}.raw`, cwd, [...rawArgs]),
       ],
       { concurrency: "unbounded" },
     );
@@ -1361,6 +1480,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     return buildChangedFiles({
       nameStatusEntries: parseNameStatusEntries(nameStatusStdout),
       numstatEntries: parseNumstatEntries(numstatStdout),
+      rawEntries: parseRawDiffEntries(rawStdout),
       ...(extraFiles ? { extraFiles } : {}),
     });
   });
@@ -1449,6 +1569,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
                 `${baseBranch}...HEAD`,
               ],
               ["diff", "--numstat", `${baseBranch}...HEAD`],
+              ["diff", "--raw", "--find-renames", "--find-copies-harder", `${baseBranch}...HEAD`],
             )
           : Effect.succeed([] as ReadonlyArray<GitChangedFile>),
         readChangedFilesFromArgs(
@@ -1456,12 +1577,14 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           input.cwd,
           ["diff", "--cached", "--name-status", "--find-renames", "--find-copies-harder"],
           ["diff", "--cached", "--numstat"],
+          ["diff", "--cached", "--raw", "--find-renames", "--find-copies-harder"],
         ),
         readChangedFilesFromArgs(
           "GitCore.getReviewStatus.unstaged",
           input.cwd,
           ["diff", "--name-status", "--find-renames", "--find-copies-harder"],
           ["diff", "--numstat"],
+          ["diff", "--raw", "--find-renames", "--find-copies-harder"],
         ),
       ],
       { concurrency: "unbounded" },
@@ -1561,6 +1684,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           commitHash,
         ],
         ["show", "--format=", "--numstat", commitHash],
+        ["show", "--format=", "--raw", "--find-renames", "--find-copies-harder", commitHash],
       );
     },
   );
@@ -1587,6 +1711,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         }
         return yield* readPatchOutput("GitCore.getFileDiff.againstBase", input.cwd, [
           "diff",
+          "--submodule=short",
           "--patch",
           "--minimal",
           "--find-renames",
@@ -1599,6 +1724,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         return yield* readPatchOutput("GitCore.getFileDiff.staged", input.cwd, [
           "diff",
           "--cached",
+          "--submodule=short",
           "--patch",
           "--minimal",
           "--find-renames",
@@ -1608,6 +1734,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       case "unstaged": {
         const patch = yield* readPatchOutput("GitCore.getFileDiff.unstaged", input.cwd, [
           "diff",
+          "--submodule=short",
           "--patch",
           "--minimal",
           "--find-renames",
@@ -1637,6 +1764,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         return yield* readPatchOutput("GitCore.getFileDiff.committed", input.cwd, [
           "show",
           "--format=",
+          "--submodule=short",
           "--patch",
           "--minimal",
           "--find-renames",
@@ -1740,6 +1868,10 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     let behindCount = 0;
     let hasWorkingTreeChanges = false;
     const changedFilesWithoutNumstat = new Set<string>();
+    const workingTreeEntryMetadata = new Map<
+      string,
+      Pick<GitWorkingTreeEntry, "kind" | "submodule">
+    >();
 
     for (const line of statusStdout.split(/\r?\n/g)) {
       if (line.startsWith("# branch.head ")) {
@@ -1761,8 +1893,15 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       }
       if (line.trim().length > 0 && !line.startsWith("#")) {
         hasWorkingTreeChanges = true;
-        const pathValue = parsePorcelainPath(line);
-        if (pathValue) changedFilesWithoutNumstat.add(pathValue);
+        const entry = parsePorcelainEntry(line);
+        if (entry) {
+          changedFilesWithoutNumstat.add(entry.path);
+          const metadata: Pick<GitWorkingTreeEntry, "kind" | "submodule"> = {
+            ...(entry.kind ? { kind: entry.kind } : {}),
+            ...(entry.submodule ? { submodule: entry.submodule } : {}),
+          };
+          workingTreeEntryMetadata.set(entry.path, metadata);
+        }
       }
     }
 
@@ -1786,16 +1925,28 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     let insertions = 0;
     let deletions = 0;
     const files = Array.from(fileStatMap.entries())
-      .map(([filePath, stat]) => {
+      .map(([filePath, stat]): GitWorkingTreeEntry => {
+        const metadata = workingTreeEntryMetadata.get(filePath);
         insertions += stat.insertions;
         deletions += stat.deletions;
-        return { path: filePath, insertions: stat.insertions, deletions: stat.deletions };
+        return {
+          path: filePath,
+          insertions: stat.insertions,
+          deletions: stat.deletions,
+          ...(metadata ? metadata : { kind: "file" }),
+        };
       })
       .toSorted((a, b) => a.path.localeCompare(b.path));
 
     for (const filePath of changedFilesWithoutNumstat) {
       if (fileStatMap.has(filePath)) continue;
-      files.push({ path: filePath, insertions: 0, deletions: 0 });
+      const metadata = workingTreeEntryMetadata.get(filePath);
+      files.push({
+        path: filePath,
+        insertions: 0,
+        deletions: 0,
+        ...(metadata ? metadata : { kind: "file" }),
+      });
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
 

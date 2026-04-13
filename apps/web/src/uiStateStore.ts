@@ -29,6 +29,7 @@ export interface UiProjectState {
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  selectedGitRepositoryCwdByThreadId: Record<string, string>;
 }
 
 export interface UiState extends UiProjectState, UiThreadState {}
@@ -48,6 +49,7 @@ const initialState: UiState = {
   projectOrder: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
+  selectedGitRepositoryCwdByThreadId: {},
 };
 
 const persistedExpandedProjectCwds = new Set<string>();
@@ -328,11 +330,20 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
       retainedThreadIds.has(threadId),
     ),
   );
+  const nextSelectedGitRepositoryCwdByThreadId = Object.fromEntries(
+    Object.entries(state.selectedGitRepositoryCwdByThreadId).filter(([threadId]) =>
+      retainedThreadIds.has(threadId),
+    ),
+  );
   if (
     recordsEqual(state.threadLastVisitedAtById, nextThreadLastVisitedAtById) &&
     nestedBooleanRecordsEqual(
       state.threadChangedFilesExpandedById,
       nextThreadChangedFilesExpandedById,
+    ) &&
+    recordsEqual(
+      state.selectedGitRepositoryCwdByThreadId,
+      nextSelectedGitRepositoryCwdByThreadId,
     )
   ) {
     return state;
@@ -341,6 +352,7 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
     ...state,
     threadLastVisitedAtById: nextThreadLastVisitedAtById,
     threadChangedFilesExpandedById: nextThreadChangedFilesExpandedById,
+    selectedGitRepositoryCwdByThreadId: nextSelectedGitRepositoryCwdByThreadId,
   };
 }
 
@@ -393,17 +405,53 @@ export function markThreadUnread(
 export function clearThreadUi(state: UiState, threadId: string): UiState {
   const hasVisitedState = threadId in state.threadLastVisitedAtById;
   const hasChangedFilesState = threadId in state.threadChangedFilesExpandedById;
-  if (!hasVisitedState && !hasChangedFilesState) {
+  const hasSelectedGitRepositoryState = threadId in state.selectedGitRepositoryCwdByThreadId;
+  if (!hasVisitedState && !hasChangedFilesState && !hasSelectedGitRepositoryState) {
     return state;
   }
   const nextThreadLastVisitedAtById = { ...state.threadLastVisitedAtById };
   const nextThreadChangedFilesExpandedById = { ...state.threadChangedFilesExpandedById };
+  const nextSelectedGitRepositoryCwdByThreadId = { ...state.selectedGitRepositoryCwdByThreadId };
   delete nextThreadLastVisitedAtById[threadId];
   delete nextThreadChangedFilesExpandedById[threadId];
+  delete nextSelectedGitRepositoryCwdByThreadId[threadId];
   return {
     ...state,
     threadLastVisitedAtById: nextThreadLastVisitedAtById,
     threadChangedFilesExpandedById: nextThreadChangedFilesExpandedById,
+    selectedGitRepositoryCwdByThreadId: nextSelectedGitRepositoryCwdByThreadId,
+  };
+}
+
+export function setSelectedGitRepositoryCwd(
+  state: UiState,
+  threadId: string,
+  cwd: string | null,
+): UiState {
+  const currentCwd = state.selectedGitRepositoryCwdByThreadId[threadId] ?? null;
+  if (currentCwd === cwd) {
+    return state;
+  }
+
+  if (cwd === null) {
+    if (!(threadId in state.selectedGitRepositoryCwdByThreadId)) {
+      return state;
+    }
+
+    const nextState = { ...state.selectedGitRepositoryCwdByThreadId };
+    delete nextState[threadId];
+    return {
+      ...state,
+      selectedGitRepositoryCwdByThreadId: nextState,
+    };
+  }
+
+  return {
+    ...state,
+    selectedGitRepositoryCwdByThreadId: {
+      ...state.selectedGitRepositoryCwdByThreadId,
+      [threadId]: cwd,
+    },
   };
 }
 
@@ -530,6 +578,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   clearThreadUi: (threadId: string) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  setSelectedGitRepositoryCwd: (threadId: string, cwd: string | null) => void;
   toggleProject: (projectId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
   reorderProjects: (
@@ -549,6 +598,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   clearThreadUi: (threadId) => set((state) => clearThreadUi(state, threadId)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  setSelectedGitRepositoryCwd: (threadId, cwd) =>
+    set((state) => setSelectedGitRepositoryCwd(state, threadId, cwd)),
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
     set((state) => setProjectExpanded(state, projectId, expanded)),

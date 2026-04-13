@@ -27,6 +27,7 @@ import { CheckpointDiffQueryLive } from "./checkpointing/Layers/CheckpointDiffQu
 import { CheckpointStoreLive } from "./checkpointing/Layers/CheckpointStore";
 import { GitCoreLive } from "./git/Layers/GitCore";
 import { GitHubCliLive } from "./git/Layers/GitHubCli";
+import { GitRepositoryCatalogLive } from "./git/Layers/GitRepositoryCatalog";
 import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { TerminalManagerLive } from "./terminal/Layers/Manager";
@@ -176,6 +177,7 @@ const GitManagerLayerLive = GitManagerLive.pipe(
 const GitLayerLive = Layer.empty.pipe(
   Layer.provideMerge(GitManagerLayerLive),
   Layer.provideMerge(GitStatusBroadcasterLive.pipe(Layer.provide(GitManagerLayerLive))),
+  Layer.provideMerge(GitRepositoryCatalogLive.pipe(Layer.provideMerge(GitCoreLive))),
   Layer.provideMerge(GitCoreLive),
 );
 

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas";
+import { RepositoryIdentity } from "./environment";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
@@ -52,6 +53,15 @@ export const GitHostingProvider = Schema.Struct({
   baseUrl: Schema.String,
 });
 export type GitHostingProvider = typeof GitHostingProvider.Type;
+export const GitRepositoryEntryKind = Schema.Literals(["root", "submodule", "nested"]);
+export type GitRepositoryEntryKind = typeof GitRepositoryEntryKind.Type;
+export const GitSubmoduleStatus = Schema.Struct({
+  commitChanged: Schema.Boolean,
+  trackedChanges: Schema.Boolean,
+  untrackedChanges: Schema.Boolean,
+  registered: Schema.Boolean,
+});
+export type GitSubmoduleStatus = typeof GitSubmoduleStatus.Type;
 export const GitRunStackedActionToastRunAction = Schema.Struct({
   kind: GitStackedAction,
 });
@@ -109,6 +119,11 @@ export const GitStatusInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
 });
 export type GitStatusInput = typeof GitStatusInput.Type;
+
+export const GitListRepositoriesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type GitListRepositoriesInput = typeof GitListRepositoriesInput.Type;
 
 export const GitPullInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -231,6 +246,27 @@ const GitStatusPr = Schema.Struct({
   state: GitStatusPrState,
 });
 
+export const GitRepositoryEntry = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  rootCwd: TrimmedNonEmptyStringSchema,
+  parentCwd: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  relativePath: TrimmedNonEmptyStringSchema,
+  name: TrimmedNonEmptyStringSchema,
+  kind: GitRepositoryEntryKind,
+  depth: NonNegativeInt,
+  repositoryIdentity: Schema.NullOr(RepositoryIdentity),
+});
+export type GitRepositoryEntry = typeof GitRepositoryEntry.Type;
+
+export const GitWorkingTreeEntry = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  insertions: NonNegativeInt,
+  deletions: NonNegativeInt,
+  kind: Schema.optionalKey(Schema.Literals(["file", "submodule"])),
+  submodule: Schema.optional(GitSubmoduleStatus),
+});
+export type GitWorkingTreeEntry = typeof GitWorkingTreeEntry.Type;
+
 const GitStatusLocalShape = {
   isRepo: Schema.Boolean,
   hostingProvider: Schema.optional(GitHostingProvider),
@@ -239,13 +275,7 @@ const GitStatusLocalShape = {
   branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
   hasWorkingTreeChanges: Schema.Boolean,
   workingTree: Schema.Struct({
-    files: Schema.Array(
-      Schema.Struct({
-        path: TrimmedNonEmptyStringSchema,
-        insertions: NonNegativeInt,
-        deletions: NonNegativeInt,
-      }),
-    ),
+    files: Schema.Array(GitWorkingTreeEntry),
     insertions: NonNegativeInt,
     deletions: NonNegativeInt,
   }),
@@ -283,6 +313,12 @@ export const GitStatusStreamEvent = Schema.Union([
   }),
 ]);
 export type GitStatusStreamEvent = typeof GitStatusStreamEvent.Type;
+
+export const GitListRepositoriesResult = Schema.Struct({
+  rootCwd: TrimmedNonEmptyStringSchema,
+  repositories: Schema.Array(GitRepositoryEntry),
+});
+export type GitListRepositoriesResult = typeof GitListRepositoriesResult.Type;
 
 export const GitListBranchesResult = Schema.Struct({
   branches: Schema.Array(GitBranch),
@@ -367,6 +403,8 @@ export const GitChangedFile = Schema.Struct({
   status: GitChangedFileStatus,
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
+  kind: Schema.optionalKey(Schema.Literals(["file", "submodule"])),
+  submodule: Schema.optional(GitSubmoduleStatus),
 });
 export type GitChangedFile = typeof GitChangedFile.Type;
 

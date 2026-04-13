@@ -17,6 +17,8 @@ import type {
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
+  GitListRepositoriesInput,
+  GitListRepositoriesResult,
   GitPullInput,
   GitPullResult,
   GitRemoveWorktreeInput,
@@ -320,6 +322,7 @@ export interface EnvironmentApi {
     moveToSection: (input: WorkspaceMoveToSectionInput) => Promise<WorkspaceRecord>;
   };
   git: {
+    listRepositories: (input: GitListRepositoriesInput) => Promise<GitListRepositoriesResult>;
     listBranches: (input: GitListBranchesInput) => Promise<GitListBranchesResult>;
     getReviewStatus: (input: GitReviewStatusInput) => Promise<GitReviewStatusResult>;
     listCommits: (input: GitListCommitsInput) => Promise<GitListCommitsResult>;

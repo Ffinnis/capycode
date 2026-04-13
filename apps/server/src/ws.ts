@@ -54,6 +54,7 @@ import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuer
 import { ServerConfig } from "./config";
 import { GitCore, type GitCoreShape } from "./git/Services/GitCore";
 import { GitManager } from "./git/Services/GitManager";
+import { GitRepositoryCatalog } from "./git/Services/GitRepositoryCatalog";
 import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster";
 import { Keybindings } from "./keybindings";
 import { Open, resolveAvailableEditors } from "./open";
@@ -218,7 +219,7 @@ const loadProjectWorkspaceRoot = (
 
     const projectRoot = rows[0]?.workspaceRoot;
     if (!projectRoot) {
-      return yield* Effect.fail(makeWorkspaceError("Project not found for workspace operation"));
+      return yield* makeWorkspaceError("Project not found for workspace operation");
     }
 
     return projectRoot;
@@ -260,7 +261,7 @@ const loadWorkspaceRecord = (
 
     const workspace = rows[0];
     if (!workspace) {
-      return yield* Effect.fail(makeWorkspaceError("Workspace not found"));
+      return yield* makeWorkspaceError("Workspace not found");
     }
 
     return mapWorkspaceRow(workspace);
@@ -289,7 +290,7 @@ const loadWorkspaceSectionRecord = (
 
     const section = rows[0];
     if (!section) {
-      return yield* Effect.fail(makeWorkspaceError("Workspace section not found"));
+      return yield* makeWorkspaceError("Workspace section not found");
     }
 
     return mapWorkspaceSectionRow(section);
@@ -327,9 +328,7 @@ const resolveCurrentBranchAtPath = (
 ): Effect.Effect<string, WorkspaceError> =>
   git.listBranches({ cwd }).pipe(
     Effect.map((result) => result.branches.find((branch) => branch.current)?.name ?? "main"),
-    Effect.catch((cause) =>
-      Effect.fail(makeWorkspaceError("Failed to resolve current branch", cause)),
-    ),
+    Effect.mapError((cause) => makeWorkspaceError("Failed to resolve current branch", cause)),
   );
 
 function parseGitWorktreeListPorcelain(output: string): ReadonlyArray<ListedGitWorktree> {
@@ -431,6 +430,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const open = yield* Open;
       const gitManager = yield* GitManager;
       const git = yield* GitCore;
+      const gitRepositoryCatalog = yield* GitRepositoryCatalog;
       const gitStatusBroadcaster = yield* GitStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
@@ -783,9 +783,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       });
 
       const refreshGitStatus = (cwd: string) =>
-        gitStatusBroadcaster
-          .refreshStatus(cwd)
-          .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+        gitRepositoryCatalog.invalidateAll().pipe(
+          Effect.andThen(gitStatusBroadcaster.refreshStatus(cwd)),
+          Effect.ignoreCause({ log: true }),
+          Effect.forkDetach,
+          Effect.asVoid,
+        );
 
       const setActiveWorkspace = (workspaceId: string) =>
         Effect.gen(function* () {
@@ -839,7 +842,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           `.pipe(Effect.mapError((cause) => makeWorkspaceError("Failed to load worktree", cause)));
           const worktree = rows[0];
           if (!worktree) {
-            return yield* Effect.fail(makeWorkspaceError("Worktree not found"));
+            return yield* makeWorkspaceError("Worktree not found");
           }
           return worktree;
         });
@@ -994,9 +997,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
           if (requestedType === "worktree") {
             const resolvedBaseBranch = yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
-              Effect.catch((cause) =>
-                Effect.fail(makeWorkspaceError("Failed to resolve base branch", cause)),
-              ),
+              Effect.mapError((cause) => makeWorkspaceError("Failed to resolve base branch", cause)),
             );
             const baseBranch = input.baseBranch ?? resolvedBaseBranch;
             const targetBranch = input.branch ?? slugifyWorkspaceName(input.name);
@@ -1131,8 +1132,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           }
 
           const resolvedBranch = yield* resolveProjectDefaultBranch(git, projectRoot).pipe(
-            Effect.catch((cause) =>
-              Effect.fail(makeWorkspaceError("Failed to resolve workspace branch", cause)),
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to resolve workspace branch", cause),
             ),
           );
           const branch = input.branch ?? input.baseBranch ?? resolvedBranch;
@@ -1316,7 +1317,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             return yield* setActiveWorkspace(existingWorkspaceRows[0].id);
           }
           if (!existsSync(worktree.path)) {
-            return yield* Effect.fail(makeWorkspaceError("Worktree no longer exists on disk"));
+            return yield* makeWorkspaceError("Worktree no longer exists on disk");
           }
           return yield* insertWorkspaceRecord({
             projectId: worktree.projectId,
@@ -1338,7 +1339,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           const listed = yield* loadGitListedWorktrees(projectRoot);
           const matched = listed.find((worktree) => worktree.path === input.worktreePath);
           if (!matched || matched.isBare || matched.isDetached || matched.path === projectRoot) {
-            return yield* Effect.fail(makeWorkspaceError("External worktree not found"));
+            return yield* makeWorkspaceError("External worktree not found");
           }
 
           const existingWorktree = yield* findWorktreeRecordByPath(
@@ -1554,7 +1555,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             currentKeys.size !== requestedKeys.size ||
             [...currentKeys].some((key) => !requestedKeys.has(key))
           ) {
-            return yield* Effect.fail(makeWorkspaceError("Project child order payload is invalid"));
+            return yield* makeWorkspaceError("Project child order payload is invalid");
           }
 
           for (const [index, item] of input.orderedItems.entries()) {
@@ -1604,9 +1605,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             currentIdSet.size !== requestedIdSet.size ||
             [...currentIdSet].some((id) => !requestedIdSet.has(id))
           ) {
-            return yield* Effect.fail(
-              makeWorkspaceError("Section workspace order payload is invalid"),
-            );
+            return yield* makeWorkspaceError("Section workspace order payload is invalid");
           }
 
           for (const [index, workspaceId] of input.orderedWorkspaceIds.entries()) {
@@ -1629,15 +1628,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         Effect.gen(function* () {
           const workspace = yield* loadWorkspaceRecord(sql, input.workspaceId);
           if (workspace.isDefault && input.sectionId !== null) {
-            return yield* Effect.fail(
-              makeWorkspaceError("The default project workspace cannot be moved into a section"),
+            return yield* makeWorkspaceError(
+              "The default project workspace cannot be moved into a section",
             );
           }
           if (input.sectionId !== null) {
             const section = yield* loadWorkspaceSectionRecord(sql, input.sectionId);
             if (section.projectId !== workspace.projectId) {
-              return yield* Effect.fail(
-                makeWorkspaceError("Section does not belong to the workspace project"),
+              return yield* makeWorkspaceError(
+                "Section does not belong to the workspace project",
               );
             }
           }
@@ -1661,15 +1660,13 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         Effect.gen(function* () {
           const workspace = yield* loadWorkspaceRecord(sql, workspaceId);
           if (workspace.isDefault) {
-            return yield* Effect.fail(
-              makeWorkspaceError("The default project workspace cannot be deleted"),
-            );
+            return yield* makeWorkspaceError("The default project workspace cannot be deleted");
           }
 
           const preview = yield* getWorkspaceDeletePreview(workspaceId);
           if (preview.totalThreadCount > 0) {
-            return yield* Effect.fail(
-              makeWorkspaceError("Delete or move workspace threads before deleting this workspace"),
+            return yield* makeWorkspaceError(
+              "Delete or move workspace threads before deleting this workspace",
             );
           }
 
@@ -2209,6 +2206,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               .preparePullRequestThread(input)
               .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "git" },
+          ),
+        [WS_METHODS.gitListRepositories]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.gitListRepositories,
+            gitRepositoryCatalog.listRepositories(input),
+            {
+              "rpc.aggregate": "git",
+            },
           ),
         [WS_METHODS.gitListBranches]: (input) =>
           observeRpcEffect(WS_METHODS.gitListBranches, git.listBranches(input), {

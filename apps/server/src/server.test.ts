@@ -55,6 +55,10 @@ import {
   type CheckpointDiffQueryShape,
 } from "./checkpointing/Services/CheckpointDiffQuery.ts";
 import { GitCore, type GitCoreShape } from "./git/Services/GitCore.ts";
+import {
+  GitRepositoryCatalog,
+  type GitRepositoryCatalogShape,
+} from "./git/Services/GitRepositoryCatalog.ts";
 import { GitManager, type GitManagerShape } from "./git/Services/GitManager.ts";
 import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster.ts";
 import { Keybindings, type KeybindingsShape } from "./keybindings.ts";
@@ -296,6 +300,7 @@ const buildAppUnderTest = (options?: {
     serverSettings?: Partial<ServerSettingsShape>;
     open?: Partial<OpenShape>;
     gitCore?: Partial<GitCoreShape>;
+    gitRepositoryCatalog?: Partial<GitRepositoryCatalogShape>;
     gitManager?: Partial<GitManagerShape>;
     projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
@@ -388,6 +393,17 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(GitCore)({
           ...options?.layers?.gitCore,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(GitRepositoryCatalog)({
+          listRepositories: ({ cwd }) =>
+            Effect.succeed({
+              rootCwd: cwd,
+              repositories: [],
+            }),
+          invalidateAll: () => Effect.void,
+          ...options?.layers?.gitRepositoryCatalog,
         }),
       ),
       Layer.provide(gitManagerLayer),

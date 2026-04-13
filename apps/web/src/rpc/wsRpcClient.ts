@@ -108,6 +108,7 @@ export interface WsRpcClient {
       input: GitRunStackedActionInput,
       options?: GitRunStackedActionOptions,
     ) => Promise<GitRunStackedActionResult>;
+    readonly listRepositories: RpcUnaryMethod<typeof WS_METHODS.gitListRepositories>;
     readonly listBranches: RpcUnaryMethod<typeof WS_METHODS.gitListBranches>;
     readonly getReviewStatus: RpcUnaryMethod<typeof WS_METHODS.gitGetReviewStatus>;
     readonly listCommits: RpcUnaryMethod<typeof WS_METHODS.gitListCommits>;
@@ -258,6 +259,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
 
         throw new Error("Git action stream completed without a final result.");
       },
+      listRepositories: (input) =>
+        transport.request((client) => client[WS_METHODS.gitListRepositories](input)),
       listBranches: (input) =>
         transport.request((client) => client[WS_METHODS.gitListBranches](input)),
       getReviewStatus: (input) =>

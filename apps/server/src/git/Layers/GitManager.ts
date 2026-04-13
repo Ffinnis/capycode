@@ -55,6 +55,7 @@ const MAX_PROGRESS_TEXT_LENGTH = 500;
 const SHORT_SHA_LENGTH = 7;
 const TOAST_DESCRIPTION_MAX = 72;
 const STATUS_RESULT_CACHE_TTL = Duration.seconds(1);
+const REMOTE_STATUS_DETAILS_TIMEOUT = Duration.seconds(1);
 const STATUS_RESULT_CACHE_CAPACITY = 2_048;
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
@@ -676,7 +677,21 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (cwd: string) {
     const details = yield* gitCore
       .statusDetails(cwd)
-      .pipe(Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)));
+      .pipe(
+        Effect.timeoutOrElse({
+          duration: REMOTE_STATUS_DETAILS_TIMEOUT,
+          orElse: () => gitCore.statusDetailsLocal(cwd),
+        }),
+        Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)),
+        Effect.catchIf(
+          (error): error is GitCommandError => error._tag === "GitCommandError",
+          (error) =>
+            Effect.logDebug("git remote status skipped", {
+              cwd,
+              detail: error.message,
+            }).pipe(Effect.as(null)),
+        ),
+      );
     if (details === null || !details.isRepo) {
       return null;
     }

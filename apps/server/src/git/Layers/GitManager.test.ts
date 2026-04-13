@@ -22,7 +22,7 @@ import {
 } from "../Services/GitHubCli.ts";
 import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";
 import { GitCoreLive } from "./GitCore.ts";
-import { GitCore } from "../Services/GitCore.ts";
+import { GitCore, type GitCoreShape } from "../Services/GitCore.ts";
 import { makeGitManager } from "./GitManager.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -628,6 +628,7 @@ function preparePullRequestThread(
 
 function makeManager(input?: {
   ghScenario?: FakeGhScenario;
+  gitCoreLayer?: Layer.Layer<GitCore, never, never>;
   textGeneration?: Partial<FakeGitTextGeneration>;
   setupScriptRunner?: ProjectSetupScriptRunnerShape;
 }) {
@@ -639,10 +640,12 @@ function makeManager(input?: {
 
   const serverSettingsLayer = ServerSettingsService.layerTest();
 
-  const gitCoreLayer = GitCoreLive.pipe(
-    Layer.provideMerge(NodeServices.layer),
-    Layer.provideMerge(ServerConfigLayer),
-  );
+  const gitCoreLayer =
+    input?.gitCoreLayer ??
+    GitCoreLive.pipe(
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(ServerConfigLayer),
+    );
 
   const managerLayer = Layer.mergeAll(
     Layer.succeed(GitHubCli, gitHubCli),
@@ -671,6 +674,28 @@ const GitManagerTestLayer = GitCoreLive.pipe(
 );
 
 it.layer(GitManagerTestLayer)("GitManager", (it) => {
+  it.effect("remoteStatus falls back to null when git status refresh fails", () =>
+    Effect.gen(function* () {
+      const realGitCore = yield* GitCore;
+      const gitCoreLayer = Layer.succeed(GitCore, {
+        ...realGitCore,
+        statusDetails: () =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitCore.fetchUpstreamRefForStatus",
+              command: "git fetch",
+              cwd: "/repo",
+              detail: "git fetch timed out",
+            }),
+          ),
+      } satisfies GitCoreShape);
+
+      const { manager } = yield* makeManager({ gitCoreLayer });
+      const remote = yield* manager.remoteStatus({ cwd: "/repo" });
+      expect(remote).toBeNull();
+    }),
+  );
+
   it.effect("status includes PR metadata when branch already has an open PR", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

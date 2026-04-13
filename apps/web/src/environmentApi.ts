@@ -53,6 +53,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       pull: rpcClient.git.pull,
       refreshStatus: rpcClient.git.refreshStatus,
       onStatus: (input, callback, options) => rpcClient.git.onStatus(input, callback, options),
+      listRepositories: rpcClient.git.listRepositories,
       listBranches: rpcClient.git.listBranches,
       getReviewStatus: rpcClient.git.getReviewStatus,
       listCommits: rpcClient.git.listCommits,

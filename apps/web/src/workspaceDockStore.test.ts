@@ -66,4 +66,16 @@ describe("workspaceDockStore", () => {
       getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), otherScope).openFileTabs,
     ).toEqual(["main.go"]);
   });
+
+  it("returns a stable default snapshot for missing scopes", () => {
+    const state = useWorkspaceDockStore.getState();
+
+    const first = getWorkspaceDockScopeState(state, "missing-scope");
+    const second = getWorkspaceDockScopeState(state, "missing-scope");
+    const empty = getWorkspaceDockScopeState(state, null);
+
+    expect(first).toBe(second);
+    expect(second).toBe(empty);
+    expect(first.activeTab).toBe("chat");
+  });
 });

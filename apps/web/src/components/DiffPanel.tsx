@@ -3,13 +3,20 @@ import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/reac
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { scopeThreadRef } from "@capycode/client-runtime";
-import type { GitChangedFile, GitDiffCategory, TurnId } from "@capycode/contracts";
+import type {
+  EnvironmentId,
+  GitChangedFile,
+  GitDiffCategory,
+  GitRepositoryEntry,
+  TurnId,
+} from "@capycode/contracts";
 import type { DiffPanelMode as ClientDiffPanelMode } from "@capycode/contracts/settings";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns2Icon,
   GitCommitHorizontalIcon,
+  GitBranchIcon,
   Rows3Icon,
   TextWrapIcon,
 } from "lucide-react";
@@ -31,9 +38,11 @@ import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import {
   gitCommitFilesQueryOptions,
   gitFileDiffQueryOptions,
+  gitListRepositoriesQueryOptions,
   gitListCommitsQueryOptions,
   gitReviewStatusQueryOptions,
 } from "~/lib/gitReactQuery";
+import { useUiStateStore } from "~/uiStateStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
 import { resolvePathLinkTarget } from "../terminal-links";
@@ -279,6 +288,84 @@ function getFileStatusColor(status: GitChangedFile["status"]): string {
   }
 }
 
+function formatSubmoduleSummary(file: Pick<GitChangedFile, "submodule">): string | null {
+  if (!file.submodule) {
+    return null;
+  }
+
+  const parts = [
+    file.submodule.commitChanged ? "commit" : null,
+    file.submodule.trackedChanges ? "tracked" : null,
+    file.submodule.untrackedChanges ? "untracked" : null,
+  ].filter((value): value is string => value !== null);
+
+  return parts.length > 0 ? parts.join(" + ") : "repository";
+}
+
+function formatRepositoryKind(kind: GitRepositoryEntry["kind"]): string {
+  switch (kind) {
+    case "root":
+      return "Root";
+    case "submodule":
+      return "Submodule";
+    default:
+      return "Nested";
+  }
+}
+
+function GitRepositoryRow(props: {
+  repository: GitRepositoryEntry;
+  environmentId: EnvironmentId | null;
+  selected: boolean;
+  onSelect: (cwd: string) => void;
+}) {
+  const status = useGitStatus({
+    environmentId: props.environmentId,
+    cwd: props.repository.cwd,
+  });
+  const dirty = status.data?.hasWorkingTreeChanges ?? false;
+  const branch = status.data?.branch ?? "(detached HEAD)";
+  const prOpen = status.data?.pr?.state === "open";
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+        props.selected
+          ? "bg-accent text-accent-foreground"
+          : "text-foreground/90 hover:bg-accent/50",
+      )}
+      style={{ paddingLeft: `${8 + props.repository.depth * 14}px` }}
+      onClick={() => props.onSelect(props.repository.cwd)}
+      data-testid={`git-repository-row-${props.repository.cwd}`}
+    >
+      <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[11px] font-medium">{props.repository.name}</span>
+          <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground/70">
+            {formatRepositoryKind(props.repository.kind)}
+          </span>
+          {dirty ? (
+            <span className="shrink-0 text-[10px] text-warning">dirty</span>
+          ) : null}
+          {prOpen ? <span className="shrink-0 text-[10px] text-primary">PR open</span> : null}
+        </div>
+        <div className="flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground/65">
+          <span className="truncate font-mono">{props.repository.relativePath}</span>
+          <span className="shrink-0 font-mono">{branch}</span>
+          {status.data ? (
+            <span className="shrink-0 font-mono">
+              ↑{status.data.aheadCount} ↓{status.data.behindCount}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function GitFileRow(props: {
   entry: GitFileListEntry;
   selected: boolean;
@@ -288,6 +375,7 @@ function GitFileRow(props: {
   onToggleSelectedForAction?: (path: string) => void;
 }) {
   const { entry, selected, onSelect } = props;
+  const submoduleSummary = entry.file.kind === "submodule" ? formatSubmoduleSummary(entry.file) : null;
   return (
     <button
       type="button"
@@ -328,7 +416,19 @@ function GitFileRow(props: {
           getFileStatusColor(entry.file.status),
         )}
       />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{entry.file.path}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-mono text-[11px]">{entry.file.path}</span>
+          {entry.file.kind === "submodule" ? (
+            <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground/70">
+              Repo
+            </span>
+          ) : null}
+        </div>
+        {submoduleSummary ? (
+          <div className="truncate text-[10px] text-muted-foreground/60">{submoduleSummary}</div>
+        ) : null}
+      </div>
       {entry.file.additions > 0 || entry.file.deletions > 0 ? (
         <span className="shrink-0 font-mono text-[10px] text-muted-foreground/65">
           {entry.file.additions > 0 ? (
@@ -736,7 +836,13 @@ export function IterationsDiffView(props: {
 export function GitDiffView(props: {
   hasActiveThread: boolean;
   activeCwd: string | null;
+  environmentId: EnvironmentId | null;
   isGitRepo: boolean;
+  repositories: ReadonlyArray<GitRepositoryEntry>;
+  repositoriesLoading: boolean;
+  repositoriesError: string | null;
+  selectedRepositoryCwd: string | null;
+  onSelectRepository: (cwd: string) => void;
   actionBar?: ReactNode;
   baseBranch: string | null;
   baseBranchOptions: ReadonlyArray<string>;
@@ -927,6 +1033,40 @@ export function GitDiffView(props: {
         </Select>
       </div>
 
+      {props.repositories.length > 1 || props.repositoriesLoading || props.repositoriesError ? (
+        <div className="shrink-0 border-b border-border/70 px-3 py-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
+              Repositories
+            </h3>
+            {props.repositories.length > 0 ? (
+              <span className="text-[10px] tabular-nums text-muted-foreground/50">
+                {props.repositories.length}
+              </span>
+            ) : null}
+          </div>
+          {props.repositoriesLoading ? (
+            <DiffPanelLoadingState label="Loading repositories..." />
+          ) : props.repositoriesError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/6 px-3 py-2 text-[11px] text-destructive/85">
+              {props.repositoriesError}
+            </div>
+          ) : (
+            <div className="space-y-px">
+              {props.repositories.map((repository) => (
+                <GitRepositoryRow
+                  key={repository.cwd}
+                  repository={repository}
+                  environmentId={props.environmentId}
+                  selected={props.selectedRepositoryCwd === repository.cwd}
+                  onSelect={props.onSelectRepository}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {props.actionBar ? (
         <div className="shrink-0 border-b border-border/70 px-3 py-2">{props.actionBar}</div>
       ) : null}
@@ -1080,6 +1220,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const diffSearch = useSearch({ strict: false, select: (search) => parseDiffRouteSearch(search) });
   const diffOpen = diffSearch.diff === "1";
   const activeThreadId = routeThreadRef?.threadId ?? null;
+  const routeThreadKey =
+    routeThreadRef !== null ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}` : null;
   const activeThread = useStore(
     useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
   );
@@ -1132,7 +1274,35 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       linkedWorkspace?.worktreePath,
     ],
   );
-  const activeCwd = effectiveGitContext.cwd;
+  const selectedRepositoryCwd = useUiStateStore((state) =>
+    routeThreadKey ? (state.selectedGitRepositoryCwdByThreadId[routeThreadKey] ?? null) : null,
+  );
+  const setSelectedGitRepositoryCwd = useUiStateStore((state) => state.setSelectedGitRepositoryCwd);
+  const catalogCwd = effectiveGitContext.cwd;
+  const repositoriesQuery = useQuery(
+    gitListRepositoriesQueryOptions({
+      environmentId: activeThread?.environmentId ?? null,
+      cwd: catalogCwd,
+      enabled: panelMode === "git",
+    }),
+  );
+  const rootRepositoryCwd = repositoriesQuery.data?.rootCwd ?? catalogCwd ?? null;
+  const effectiveSelectedRepositoryCwd = useMemo(() => {
+    if (!rootRepositoryCwd) {
+      return null;
+    }
+    const availableRepositoryCwds = new Set(
+      (repositoriesQuery.data?.repositories ?? []).map((repository) => repository.cwd),
+    );
+    if (
+      selectedRepositoryCwd &&
+      (availableRepositoryCwds.size === 0 || availableRepositoryCwds.has(selectedRepositoryCwd))
+    ) {
+      return selectedRepositoryCwd;
+    }
+    return rootRepositoryCwd;
+  }, [repositoriesQuery.data?.repositories, rootRepositoryCwd, selectedRepositoryCwd]);
+  const activeCwd = panelMode === "git" ? effectiveSelectedRepositoryCwd ?? catalogCwd : catalogCwd;
   const gitStatusQuery = useGitStatus({
     environmentId: activeThread?.environmentId ?? null,
     cwd: activeCwd,
@@ -1228,11 +1398,38 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         : null;
 
   useEffect(() => {
+    if (!routeThreadKey) {
+      return;
+    }
+    if (!effectiveSelectedRepositoryCwd) {
+      setSelectedGitRepositoryCwd(routeThreadKey, null);
+      return;
+    }
+    if (selectedRepositoryCwd !== effectiveSelectedRepositoryCwd) {
+      setSelectedGitRepositoryCwd(routeThreadKey, effectiveSelectedRepositoryCwd);
+    }
+  }, [
+    effectiveSelectedRepositoryCwd,
+    routeThreadKey,
+    selectedRepositoryCwd,
+    setSelectedGitRepositoryCwd,
+  ]);
+
+  useEffect(() => {
     if (diffOpen && !previousDiffOpenRef.current) {
       setDiffWordWrap(settings.diffWordWrap);
     }
     previousDiffOpenRef.current = diffOpen;
   }, [diffOpen, settings.diffWordWrap]);
+
+  useEffect(() => {
+    startTransition(() => {
+      setSelectedGitBaseBranch(null);
+      setSelectedCommitHash(null);
+      setSelectedGitPreview(null);
+      setSelectedGitFilePaths(new Set());
+    });
+  }, [activeCwd]);
 
   const openDiffFileInEditor = useCallback(
     (filePath: string) => {
@@ -1315,6 +1512,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }),
   );
 
+  const repositoriesError =
+    repositoriesQuery.error instanceof Error
+      ? repositoriesQuery.error.message
+      : repositoriesQuery.error
+        ? "Failed to load repositories."
+        : null;
   const reviewStatusError =
     reviewStatusQuery.error instanceof Error
       ? reviewStatusQuery.error.message
@@ -1437,6 +1640,18 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }
     });
   }, []);
+
+  const selectRepository = useCallback(
+    (cwd: string) => {
+      if (!routeThreadKey) {
+        return;
+      }
+      startTransition(() => {
+        setSelectedGitRepositoryCwd(routeThreadKey, cwd);
+      });
+    },
+    [routeThreadKey, setSelectedGitRepositoryCwd],
+  );
 
   const selectCommit = useCallback((hash: string) => {
     startTransition(() => {
@@ -1589,7 +1804,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         <GitDiffView
           hasActiveThread={Boolean(activeThread)}
           activeCwd={activeCwd}
+          environmentId={activeThread?.environmentId ?? null}
           isGitRepo={reviewStatusQuery.data?.isRepo ?? isGitRepo}
+          repositories={repositoriesQuery.data?.repositories ?? []}
+          repositoriesLoading={repositoriesQuery.isLoading}
+          repositoriesError={repositoriesError}
+          selectedRepositoryCwd={effectiveSelectedRepositoryCwd}
+          onSelectRepository={selectRepository}
           actionBar={
             activeThread ? (
               <GitActionsControl

@@ -20,6 +20,8 @@ import {
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
+  GitListRepositoriesInput,
+  GitListRepositoriesResult,
   GitListCommitsInput,
   GitListCommitsResult,
   GitReviewStatusInput,
@@ -154,6 +156,7 @@ export const WS_METHODS = {
   gitPull: "git.pull",
   gitRefreshStatus: "git.refreshStatus",
   gitRunStackedAction: "git.runStackedAction",
+  gitListRepositories: "git.listRepositories",
   gitListBranches: "git.listBranches",
   gitGetReviewStatus: "git.getReviewStatus",
   gitListCommits: "git.listCommits",
@@ -425,6 +428,12 @@ export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePu
   error: GitManagerServiceError,
 });
 
+export const WsGitListRepositoriesRpc = Rpc.make(WS_METHODS.gitListRepositories, {
+  payload: GitListRepositoriesInput,
+  success: GitListRepositoriesResult,
+  error: GitCommandError,
+});
+
 export const WsGitListBranchesRpc = Rpc.make(WS_METHODS.gitListBranches, {
   payload: GitListBranchesInput,
   success: GitListBranchesResult,
@@ -628,6 +637,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
+  WsGitListRepositoriesRpc,
   WsGitListBranchesRpc,
   WsGitGetReviewStatusRpc,
   WsGitListCommitsRpc,

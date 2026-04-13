@@ -21,6 +21,8 @@ export const gitQueryKeys = {
   all: ["git"] as const,
   scope: (environmentId: EnvironmentId | null, cwd: string | null) =>
     ["git", environmentId ?? null, cwd] as const,
+  repositories: (environmentId: EnvironmentId | null, cwd: string | null) =>
+    [...gitQueryKeys.scope(environmentId, cwd), "repositories"] as const,
   branches: (environmentId: EnvironmentId | null, cwd: string | null) =>
     [...gitQueryKeys.scope(environmentId, cwd), "branches"] as const,
   branchSearch: (environmentId: EnvironmentId | null, cwd: string | null, query: string) =>
@@ -113,6 +115,27 @@ export function gitBranchSearchInfiniteQueryOptions(input: {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: GIT_BRANCHES_REFETCH_INTERVAL_MS,
+  });
+}
+
+export function gitListRepositoriesQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  enabled?: boolean;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.repositories(input.environmentId, input.cwd),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId) {
+        throw new Error("Git repositories are unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.git.listRepositories({ cwd: input.cwd });
+    },
+    enabled: input.environmentId !== null && input.cwd !== null && (input.enabled ?? true),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

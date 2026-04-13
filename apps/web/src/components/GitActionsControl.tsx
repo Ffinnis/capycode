@@ -269,6 +269,26 @@ function formatGitActionError(error: unknown): string {
   return message;
 }
 
+function formatSubmoduleSelectionSummary(file: {
+  submodule?: {
+    commitChanged: boolean;
+    trackedChanges: boolean;
+    untrackedChanges: boolean;
+  };
+}): string | null {
+  if (!file.submodule) {
+    return null;
+  }
+
+  const parts = [
+    file.submodule.commitChanged ? "commit" : null,
+    file.submodule.trackedChanges ? "tracked" : null,
+    file.submodule.untrackedChanges ? "untracked" : null,
+  ].filter((value): value is string => value !== null);
+
+  return parts.length > 0 ? parts.join(" + ") : "repository";
+}
+
 function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
   if (icon === "commit") return <GitCommitIcon />;
   if (icon === "push") return <CloudUploadIcon />;
@@ -1270,6 +1290,8 @@ export default function GitActionsControl({
                     <div className="space-y-px">
                       {dialogFiles.map((file) => {
                         const isExcluded = excludedFiles.has(file.path);
+                        const submoduleSummary =
+                          file.kind === "submodule" ? formatSubmoduleSelectionSummary(file) : null;
                         return (
                           <div
                             key={file.path}
@@ -1300,9 +1322,21 @@ export default function GitActionsControl({
                               className="flex min-w-0 flex-1 items-center gap-2 text-left"
                               onClick={() => openChangedFileInEditor(file.path)}
                             >
-                              <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
-                                {file.path}
-                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="truncate font-mono text-[11px]">{file.path}</span>
+                                  {file.kind === "submodule" ? (
+                                    <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground/70">
+                                      Repo
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {submoduleSummary ? (
+                                  <div className="truncate text-[10px] text-muted-foreground/60">
+                                    {submoduleSummary}
+                                  </div>
+                                ) : null}
+                              </div>
                               {!isExcluded && (file.insertions > 0 || file.deletions > 0) ? (
                                 <span className="shrink-0 font-mono text-[10px]">
                                   {file.insertions > 0 ? (

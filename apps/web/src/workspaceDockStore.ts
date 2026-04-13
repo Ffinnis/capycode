@@ -44,13 +44,21 @@ interface WorkspaceDockState {
   clearScope: (scopeKey: string) => void;
 }
 
+const EMPTY_OPEN_FILE_TABS: string[] = [];
+const EMPTY_EXPANDED_DIRECTORIES: Record<string, boolean> = {};
+const DEFAULT_SCOPE_STATE: WorkspaceDockScopeState = {
+  filesOpen: false,
+  openFileTabs: EMPTY_OPEN_FILE_TABS,
+  activeTab: "chat",
+  activeContext: "file",
+  revealedFilePath: undefined,
+  expandedDirectories: EMPTY_EXPANDED_DIRECTORIES,
+};
+
 function createDefaultScopeState(): WorkspaceDockScopeState {
   return {
-    filesOpen: false,
+    ...DEFAULT_SCOPE_STATE,
     openFileTabs: [],
-    activeTab: "chat",
-    activeContext: "file",
-    revealedFilePath: undefined,
     expandedDirectories: {},
   };
 }
@@ -319,9 +327,9 @@ export function getWorkspaceDockScopeState(
   scopeKey: string | null | undefined,
 ): WorkspaceDockScopeState {
   if (!scopeKey) {
-    return createDefaultScopeState();
+    return DEFAULT_SCOPE_STATE;
   }
-  return ensureScope(state.scopes, scopeKey);
+  return state.scopes[scopeKey] ?? DEFAULT_SCOPE_STATE;
 }
 
 export function __resetWorkspaceDockStoreForTests() {
