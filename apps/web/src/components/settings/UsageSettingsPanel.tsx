@@ -468,14 +468,15 @@ export function UsageSettingsPanel() {
   const usageQuery = useUsageDashboard(range, true);
   const realtimeSnapshot = useUsageSnapshot();
 
-  // Use real-time snapshot if available, fall back to query data
-  const providers = useMemo(
-    () =>
-      ((realtimeSnapshot || usageQuery.data)?.providers ?? []).toSorted((left, right) =>
-        left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
-      ),
-    [realtimeSnapshot, usageQuery.data],
-  );
+  // Use real-time snapshot only if it matches the selected range, otherwise fall back to query data
+  const providers = useMemo(() => {
+    const realtimeMatchesRange =
+      realtimeSnapshot?.providers?.some((p) => p.range === range) ?? false;
+    const snapshot = realtimeMatchesRange ? realtimeSnapshot : usageQuery.data;
+    return (snapshot?.providers ?? []).toSorted((left, right) =>
+      left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
+    );
+  }, [realtimeSnapshot, usageQuery.data, range]);
 
   const refreshDashboard = () => {
     setIsRefreshing(true);
