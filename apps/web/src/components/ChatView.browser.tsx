@@ -848,7 +848,16 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
         `Fixture received unknown workspace id for ${WS_METHODS.workspacesSetActive}: ${String(workspaceId)}`,
       );
     }
-    return workspace;
+    fixture.snapshot = {
+      ...fixture.snapshot,
+      workspaces: fixture.snapshot.workspaces.map((candidate) => ({
+        ...candidate,
+        isActive: candidate.id === workspace.id,
+      })),
+    };
+    return (
+      fixture.snapshot.workspaces.find((candidate) => candidate.id === workspace.id) ?? workspace
+    );
   }
   if (tag === WS_METHODS.terminalOpen) {
     return {
