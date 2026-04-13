@@ -8,6 +8,7 @@ import {
   ProjectId,
   ThreadId,
   TurnId,
+  WorkspaceId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
 } from "@capycode/contracts";
@@ -16,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyOrchestrationEvent,
   applyOrchestrationEvents,
+  removeWorkspaceOptimistically,
   selectEnvironmentState,
   selectProjectsAcrossEnvironments,
   selectThreadByRef,
@@ -647,6 +649,87 @@ describe("store read model sync", () => {
     const next = syncServerReadModel(initialState, readModel, localEnvironmentId);
 
     expect(projectsOf(next).map((project) => project.id)).toEqual([project1, project2, project3]);
+  });
+
+  it("optimistically removes a workspace and reassigns the active workspace", () => {
+    const projectId = ProjectId.make("project-1");
+    const defaultWorkspaceId = WorkspaceId.make("workspace-default");
+    const featureWorkspaceId = WorkspaceId.make("workspace-feature");
+    const state = makeEmptyState({
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+      workspaceIds: [defaultWorkspaceId, featureWorkspaceId],
+      workspaceById: {
+        [defaultWorkspaceId]: {
+          id: defaultWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: null,
+          type: "branch",
+          name: "main",
+          branch: "main",
+          worktreePath: null,
+          sectionId: null,
+          tabOrder: 0,
+          isDefault: true,
+          isActive: false,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+        [featureWorkspaceId]: {
+          id: featureWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: "worktree-1",
+          type: "worktree",
+          name: "feature/delete-me",
+          branch: "feature/delete-me",
+          worktreePath: "/tmp/project-feature",
+          sectionId: null,
+          tabOrder: 1,
+          isDefault: false,
+          isActive: true,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [defaultWorkspaceId, featureWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: featureWorkspaceId,
+      },
+    });
+
+    const next = removeWorkspaceOptimistically(state, {
+      environmentId: localEnvironmentId,
+      workspaceId: featureWorkspaceId,
+    });
+
+    const nextEnvironmentState = localEnvironmentStateOf(next);
+    expect(nextEnvironmentState.workspaceIds).toEqual([defaultWorkspaceId]);
+    expect(nextEnvironmentState.workspaceIdsByProjectId[projectId]).toEqual([defaultWorkspaceId]);
+    expect(nextEnvironmentState.activeWorkspaceIdByProjectId[projectId]).toBe(defaultWorkspaceId);
+    expect(nextEnvironmentState.workspaceById[featureWorkspaceId]).toBeUndefined();
+    expect(nextEnvironmentState.workspaceById[defaultWorkspaceId]?.isActive).toBe(true);
   });
 });
 
