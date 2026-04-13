@@ -153,7 +153,7 @@ export function normalizeCodexRateWindows(
     );
   }
 
-  return Array.from(windowsByKind.values()).sort(
+  return Array.from(windowsByKind.values()).toSorted(
     (left, right) => left.windowMinutes - right.windowMinutes,
   );
 }
@@ -289,7 +289,7 @@ export function normalizeClaudeRateWindows(
     }
   }
 
-  return Array.from(windowsByKind.values()).sort(
+  return Array.from(windowsByKind.values()).toSorted(
     (left, right) => left.windowMinutes - right.windowMinutes,
   );
 }

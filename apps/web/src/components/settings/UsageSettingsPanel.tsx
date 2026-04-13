@@ -467,7 +467,7 @@ export function UsageSettingsPanel() {
 
   const providers = useMemo(
     () =>
-      [...(usageQuery.data?.providers ?? [])].sort((left, right) =>
+      (usageQuery.data?.providers ?? []).toSorted((left, right) =>
         left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
       ),
     [usageQuery.data?.providers],

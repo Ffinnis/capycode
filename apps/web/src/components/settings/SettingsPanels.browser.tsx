@@ -112,6 +112,71 @@ const authAccessHarness = vi.hoisted(() => {
   };
 });
 
+const savedEnvironmentHarness = vi.hoisted(() => {
+  const recordsById: Record<string, any> = {};
+  const runtimeById: Record<string, any> = {};
+  const addSavedEnvironment = vi.fn();
+  const disconnectSavedEnvironment = vi.fn();
+  const reconnectSavedEnvironment = vi.fn();
+  const removeSavedEnvironment = vi.fn();
+
+  return {
+    recordsById,
+    runtimeById,
+    addSavedEnvironment,
+    disconnectSavedEnvironment,
+    reconnectSavedEnvironment,
+    removeSavedEnvironment,
+    reset() {
+      for (const key of Object.keys(recordsById)) {
+        delete recordsById[key];
+      }
+      for (const key of Object.keys(runtimeById)) {
+        delete runtimeById[key];
+      }
+      addSavedEnvironment.mockReset();
+      disconnectSavedEnvironment.mockReset();
+      reconnectSavedEnvironment.mockReset();
+      removeSavedEnvironment.mockReset();
+    },
+    upsertRecord(record: {
+      environmentId: EnvironmentId;
+      label: string;
+      httpBaseUrl: string;
+      wsBaseUrl: string;
+      createdAt: string;
+      lastConnectedAt: string | null;
+    }) {
+      recordsById[record.environmentId] = record;
+    },
+    setRuntime(
+      environmentId: EnvironmentId,
+      runtime: {
+        connectionState: "connecting" | "connected" | "disconnected" | "error";
+        authState?: "authenticated" | "requires-auth" | "unknown";
+        lastError?: string | null;
+        lastErrorAt?: string | null;
+        role?: "owner" | "client" | null;
+        descriptor?: { label: string } | null;
+        connectedAt?: string | null;
+        disconnectedAt?: string | null;
+      },
+    ) {
+      runtimeById[environmentId] = {
+        authState: "authenticated",
+        lastError: null,
+        lastErrorAt: null,
+        role: null,
+        descriptor: null,
+        serverConfig: null,
+        connectedAt: null,
+        disconnectedAt: null,
+        ...runtime,
+      };
+    },
+  };
+});
+
 vi.mock("../../environments/runtime", () => {
   const primaryConnection = {
     kind: "primary" as const,
@@ -142,29 +207,29 @@ vi.mock("../../environments/runtime", () => {
     getSavedEnvironmentRecord: () => null,
     getSavedEnvironmentRuntimeState: () => null,
     hasSavedEnvironmentRegistryHydrated: () => true,
-    listSavedEnvironmentRecords: () => [],
+    listSavedEnvironmentRecords: () => Object.values(savedEnvironmentHarness.recordsById),
     resetSavedEnvironmentRegistryStoreForTests: () => undefined,
     resetSavedEnvironmentRuntimeStoreForTests: () => undefined,
     resolveEnvironmentHttpUrl: (_environmentId: unknown, path: string) =>
       new URL(path, "http://localhost:3000").toString(),
     waitForSavedEnvironmentRegistryHydration: async () => undefined,
-    addSavedEnvironment: vi.fn(),
-    disconnectSavedEnvironment: vi.fn(),
+    addSavedEnvironment: savedEnvironmentHarness.addSavedEnvironment,
+    disconnectSavedEnvironment: savedEnvironmentHarness.disconnectSavedEnvironment,
     ensureEnvironmentConnectionBootstrapped: async () => undefined,
     getPrimaryEnvironmentConnection: () => primaryConnection,
     readEnvironmentConnection: () => primaryConnection,
-    reconnectSavedEnvironment: vi.fn(),
-    removeSavedEnvironment: vi.fn(),
+    reconnectSavedEnvironment: savedEnvironmentHarness.reconnectSavedEnvironment,
+    removeSavedEnvironment: savedEnvironmentHarness.removeSavedEnvironment,
     requireEnvironmentConnection: () => primaryConnection,
     resetEnvironmentServiceForTests: () => undefined,
     startEnvironmentConnectionService: () => undefined,
     subscribeEnvironmentConnections: () => () => {},
     useSavedEnvironmentRegistryStore: (
-      selector: (state: { byId: Record<string, never> }) => unknown,
-    ) => selector({ byId: {} }),
+      selector: (state: { byId: Record<string, any> }) => unknown,
+    ) => selector({ byId: savedEnvironmentHarness.recordsById }),
     useSavedEnvironmentRuntimeStore: (
-      selector: (state: { byId: Record<string, never> }) => unknown,
-    ) => selector({ byId: {} }),
+      selector: (state: { byId: Record<string, any> }) => unknown,
+    ) => selector({ byId: savedEnvironmentHarness.runtimeById }),
   };
 });
 
@@ -339,6 +404,7 @@ describe("GeneralSettingsPanel observability", () => {
     await __resetLocalApiForTests();
     localStorage.clear();
     authAccessHarness.reset();
+    savedEnvironmentHarness.reset();
   });
 
   afterEach(async () => {
@@ -354,6 +420,7 @@ describe("GeneralSettingsPanel observability", () => {
     resetServerStateForTests();
     await __resetLocalApiForTests();
     authAccessHarness.reset();
+    savedEnvironmentHarness.reset();
   });
 
   it("hides owner pairing tools in browser-served loopback builds without remote exposure", async () => {
@@ -695,5 +762,83 @@ describe("GeneralSettingsPanel observability", () => {
     await openLogsButton.click();
 
     expect(openInEditor).toHaveBeenCalledWith("/repo/project/.t3/logs", "cursor");
+  });
+
+  it("adds a saved remote environment from a pairing url", async () => {
+    savedEnvironmentHarness.addSavedEnvironment.mockImplementation(async (input) => {
+      const record = {
+        environmentId: EnvironmentId.make("environment-remote"),
+        label: input.label || "Remote environment",
+        httpBaseUrl: "https://remote.example.com/",
+        wsBaseUrl: "wss://remote.example.com/",
+        createdAt: "2036-04-07T00:00:00.000Z",
+        lastConnectedAt: "2036-04-07T00:01:00.000Z",
+      };
+      savedEnvironmentHarness.upsertRecord(record);
+      savedEnvironmentHarness.setRuntime(record.environmentId, {
+        connectionState: "connected",
+        role: "client",
+      });
+      return record;
+    });
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByRole("button", { name: "Add environment" }).click();
+    await page.getByLabelText("Label").fill("Staging backend");
+    await page
+      .getByLabelText("Pairing URL")
+      .fill("https://remote.example.com/pair#token=pairing-code");
+    await page.getByRole("button", { name: "Add Backend" }).click();
+
+    await vi.waitFor(() => {
+      expect(savedEnvironmentHarness.addSavedEnvironment).toHaveBeenCalledWith({
+        label: "Staging backend",
+        pairingUrl: "https://remote.example.com/pair#token=pairing-code",
+      });
+    });
+    await expect.element(page.getByText("Staging backend")).toBeInTheDocument();
+  });
+
+  it("disables reconnect while a saved environment reconnect is in flight", async () => {
+    const environmentId = EnvironmentId.make("environment-remote");
+    savedEnvironmentHarness.upsertRecord({
+      environmentId,
+      label: "Remote environment",
+      httpBaseUrl: "https://remote.example.com/",
+      wsBaseUrl: "wss://remote.example.com/",
+      createdAt: "2036-04-07T00:00:00.000Z",
+      lastConnectedAt: "2036-04-07T00:01:00.000Z",
+    });
+    savedEnvironmentHarness.setRuntime(environmentId, {
+      connectionState: "disconnected",
+      role: "client",
+    });
+    let resolveReconnect!: () => void;
+    savedEnvironmentHarness.reconnectSavedEnvironment.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReconnect = resolve;
+        }),
+    );
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect.element(page.getByText("Remote environment")).toBeInTheDocument();
+    await page.getByRole("button", { name: "Reconnect" }).click();
+    await expect.element(page.getByRole("button", { name: "Reconnecting…" })).toBeDisabled();
+
+    resolveReconnect();
+    await vi.waitFor(() => {
+      expect(savedEnvironmentHarness.reconnectSavedEnvironment).toHaveBeenCalledWith(environmentId);
+    });
   });
 });

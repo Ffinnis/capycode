@@ -214,7 +214,7 @@ function buildTopModels(
       lastSeenAt: value.lastSeenAt,
       fallbackPricing: null,
     }))
-    .sort((left, right) => right.totals.totalTokens - left.totals.totalTokens);
+    .toSorted((left, right) => right.totals.totalTokens - left.totals.totalTokens);
 }
 
 function staleWindows(

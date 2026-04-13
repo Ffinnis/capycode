@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDiffRouteSearch } from "./diffRouteSearch";
+import { parseDiffRouteSearch, stripDiffSearchParams } from "./diffRouteSearch";
 
 describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
@@ -43,6 +43,7 @@ describe("parseDiffRouteSearch", () => {
     const parsed = parseDiffRouteSearch({
       diff: "0",
       files: "1",
+      terminal: "1",
       diffTurnId: "turn-1",
       diffFilePath: "src/app.ts",
       file: "src/file.ts",
@@ -50,6 +51,7 @@ describe("parseDiffRouteSearch", () => {
 
     expect(parsed).toEqual({
       files: "1",
+      terminal: "1",
       file: "src/file.ts",
     });
   });
@@ -69,6 +71,7 @@ describe("parseDiffRouteSearch", () => {
     const parsed = parseDiffRouteSearch({
       diff: "1",
       files: "1",
+      terminal: "1",
       diffTurnId: "  ",
       diffFilePath: "  ",
       file: "  ",
@@ -77,6 +80,37 @@ describe("parseDiffRouteSearch", () => {
     expect(parsed).toEqual({
       diff: "1",
       files: "1",
+      terminal: "1",
+    });
+  });
+
+  it("parses terminal surface search values", () => {
+    const parsed = parseDiffRouteSearch({
+      terminal: true,
+      file: "src/file.ts",
+    });
+
+    expect(parsed).toEqual({
+      terminal: "1",
+      file: "src/file.ts",
+    });
+  });
+});
+
+describe("stripDiffSearchParams", () => {
+  it("removes terminal and workspace surface params", () => {
+    expect(
+      stripDiffSearchParams({
+        q: "keep",
+        diff: "1",
+        files: "1",
+        terminal: "1",
+        diffTurnId: "turn-1",
+        diffFilePath: "src/app.ts",
+        file: "src/file.ts",
+      }),
+    ).toEqual({
+      q: "keep",
     });
   });
 });

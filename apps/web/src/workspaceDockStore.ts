@@ -3,11 +3,13 @@ import { create } from "zustand";
 const PERSISTED_STATE_KEY = "capycode:workspace-dock:v1";
 const DEFAULT_FILES_PANEL_WIDTH = 280;
 const DEFAULT_CONTEXT_PANEL_WIDTH = 640;
+export const WORKSPACE_TERMINAL_TAB_ID = "__workspace_terminal__" as const;
+export type WorkspaceDockActiveTab = "chat" | typeof WORKSPACE_TERMINAL_TAB_ID | string;
 
 export interface WorkspaceDockScopeState {
   filesOpen: boolean;
   openFileTabs: string[];
-  activeTab: "chat" | string;
+  activeTab: WorkspaceDockActiveTab;
   activeContext: "diff" | "file";
   revealedFilePath: string | undefined;
   expandedDirectories: Record<string, boolean>;
@@ -28,6 +30,7 @@ interface WorkspaceDockState {
     input: {
       filesOpen: boolean;
       diffOpen: boolean;
+      terminalOpen: boolean;
       filePath: string | null | undefined;
     },
   ) => void;
@@ -158,12 +161,22 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
         };
         if (input.filePath) {
           nextScope.openFileTabs = nextUniqueTabs(current.openFileTabs, input.filePath);
-          nextScope.activeTab = input.filePath;
           nextScope.revealedFilePath = input.filePath;
-        } else if (current.activeTab !== "chat" && !input.diffOpen) {
-          nextScope.activeTab = "chat";
+        } else if (
+          !input.terminalOpen &&
+          (current.activeTab === WORKSPACE_TERMINAL_TAB_ID || !input.diffOpen)
+        ) {
           nextScope.revealedFilePath = undefined;
         }
+
+        if (input.terminalOpen) {
+          nextScope.activeTab = WORKSPACE_TERMINAL_TAB_ID;
+        } else if (input.filePath) {
+          nextScope.activeTab = input.filePath;
+        } else if (current.activeTab === WORKSPACE_TERMINAL_TAB_ID || !input.diffOpen) {
+          nextScope.activeTab = "chat";
+        }
+
         nextScope.activeContext = input.diffOpen
           ? current.activeContext === "file" && input.filePath
             ? "file"

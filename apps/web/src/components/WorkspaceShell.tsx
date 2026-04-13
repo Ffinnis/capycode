@@ -1,5 +1,5 @@
 import { Sheet, SheetPopup } from "./ui/sheet";
-import { type PointerEvent as ReactPointerEvent, type ReactNode, useMemo, useRef } from "react";
+import { type PointerEvent as ReactPointerEvent, type ReactNode, useRef } from "react";
 
 import { useWorkspaceDockStore } from "~/workspaceDockStore";
 import { cn } from "~/lib/utils";
@@ -30,10 +30,8 @@ export function WorkspaceShell(props: {
   const setFilesPanelWidth = useWorkspaceDockStore((state) => state.setFilesPanelWidth);
   const setContextPanelWidth = useWorkspaceDockStore((state) => state.setContextPanelWidth);
 
-  const maxContextWidth = useMemo(() => {
-    const wrapperWidth = wrapperRef.current?.clientWidth ?? 0;
-    return wrapperWidth > 0 ? wrapperWidth * 0.55 : Number.POSITIVE_INFINITY;
-  }, [props.contextOpen, props.filesOpen]);
+  const wrapperWidth = wrapperRef.current?.clientWidth ?? 0;
+  const maxContextWidth = wrapperWidth > 0 ? wrapperWidth * 0.55 : Number.POSITIVE_INFINITY;
 
   const beginResize = (
     target: "files" | "context",

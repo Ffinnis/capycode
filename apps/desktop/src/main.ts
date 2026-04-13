@@ -11,7 +11,6 @@ import {
   dialog,
   ipcMain,
   Menu,
-  Notification,
   nativeImage,
   nativeTheme,
   protocol,
@@ -21,7 +20,6 @@ import {
 import type { MenuItemConstructorOptions } from "electron";
 import type {
   ClientSettings,
-  DesktopNotificationAction,
   DesktopNotificationRequest,
   DesktopTheme,
   DesktopServerExposureMode,

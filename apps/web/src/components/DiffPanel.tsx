@@ -249,7 +249,7 @@ function buildAllChangesEntries(input: {
   );
 }
 
-function formatGitFileStatus(status: GitChangedFile["status"]): string {
+function _formatGitFileStatus(status: GitChangedFile["status"]): string {
   switch (status) {
     case "added":
       return "Added";
@@ -266,7 +266,7 @@ function formatGitFileStatus(status: GitChangedFile["status"]): string {
   }
 }
 
-function renderChangeCount(additions: number, deletions: number) {
+function _renderChangeCount(additions: number, deletions: number) {
   if (additions === 0 && deletions === 0) {
     return "0";
   }
@@ -1263,15 +1263,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             }
           : null,
       }),
-    [
-      activeProject?.cwd,
-      activeThread?.branch,
-      activeThread?.workspaceId,
-      activeThread?.worktreePath,
-      linkedWorkspace?.branch,
-      linkedWorkspace?.id,
-      linkedWorkspace?.worktreePath,
-    ],
+    [activeProject, activeThread, linkedWorkspace],
   );
   const selectedRepositoryCwd = useUiStateStore((state) =>
     routeThreadKey ? (state.selectedGitRepositoryCwdByThreadId[routeThreadKey] ?? null) : null,

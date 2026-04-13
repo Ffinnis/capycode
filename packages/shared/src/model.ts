@@ -1,5 +1,6 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  MODEL_API_IDS_BY_PROVIDER,
   MODEL_SLUG_ALIASES_BY_PROVIDER,
   type ClaudeCodeEffort,
   type ClaudeModelOptions,
@@ -210,11 +211,13 @@ export function trimOrNull<T extends string>(value: T | null | undefined): T | n
 export function resolveApiModelId(modelSelection: ModelSelection): string {
   switch (modelSelection.provider) {
     case "claudeAgent": {
+      const resolvedModel =
+        MODEL_API_IDS_BY_PROVIDER.claudeAgent[modelSelection.model] ?? modelSelection.model;
       switch (modelSelection.options?.contextWindow) {
         case "1m":
-          return `${modelSelection.model}[1m]`;
+          return `${resolvedModel}[1m]`;
         default:
-          return modelSelection.model;
+          return resolvedModel;
       }
     }
     default: {

@@ -3,6 +3,7 @@ import { TurnId } from "@capycode/contracts";
 export interface DiffRouteSearch {
   diff?: "1" | undefined;
   files?: "1" | undefined;
+  terminal?: "1" | undefined;
   diffTurnId?: TurnId | undefined;
   diffFilePath?: string | undefined;
   file?: string | undefined;
@@ -22,21 +23,23 @@ function normalizeSearchString(value: unknown): string | undefined {
 
 export function stripDiffSearchParams<T extends Record<string, unknown>>(
   params: T,
-): Omit<T, "diff" | "files" | "diffTurnId" | "diffFilePath" | "file"> {
+): Omit<T, "diff" | "files" | "terminal" | "diffTurnId" | "diffFilePath" | "file"> {
   const {
     diff: _diff,
     files: _files,
+    terminal: _terminal,
     diffTurnId: _diffTurnId,
     diffFilePath: _diffFilePath,
     file: _file,
     ...rest
   } = params;
-  return rest as Omit<T, "diff" | "files" | "diffTurnId" | "diffFilePath" | "file">;
+  return rest as Omit<T, "diff" | "files" | "terminal" | "diffTurnId" | "diffFilePath" | "file">;
 }
 
 export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRouteSearch {
   const diff = isDiffOpenValue(search.diff) ? "1" : undefined;
   const files = isDiffOpenValue(search.files) ? "1" : undefined;
+  const terminal = isDiffOpenValue(search.terminal) ? "1" : undefined;
   const diffTurnIdRaw = diff ? normalizeSearchString(search.diffTurnId) : undefined;
   const diffTurnId = diffTurnIdRaw ? TurnId.make(diffTurnIdRaw) : undefined;
   const diffFilePath = diff && diffTurnId ? normalizeSearchString(search.diffFilePath) : undefined;
@@ -45,6 +48,7 @@ export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRoute
   return {
     ...(diff ? { diff } : {}),
     ...(files ? { files } : {}),
+    ...(terminal ? { terminal } : {}),
     ...(diffTurnId ? { diffTurnId } : {}),
     ...(diffFilePath ? { diffFilePath } : {}),
     ...(file ? { file } : {}),

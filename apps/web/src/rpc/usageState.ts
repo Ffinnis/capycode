@@ -47,14 +47,13 @@ export function applyUsageEvent(event: UsageStreamEvent): void {
       ...currentSnapshot,
       providers: currentSnapshot.providers.map((provider) =>
         provider.provider === event.provider
-          ? {
-              ...provider,
+          ? Object.assign({}, provider, {
               limits:
                 event.limits.length > 0 || provider.limits.length === 0
                   ? event.limits
                   : provider.limits,
               lastLimitsRefreshAt: new Date().toISOString(),
-            }
+            })
           : provider,
       ),
     });

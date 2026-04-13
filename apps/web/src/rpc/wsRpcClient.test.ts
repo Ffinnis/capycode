@@ -4,7 +4,6 @@ import type {
   GitStatusStreamEvent,
   UsageDashboardSnapshot,
   UsageStreamEvent,
-  UsageRange,
 } from "@capycode/contracts";
 import { WS_METHODS } from "@capycode/contracts";
 import { describe, expect, it, vi } from "vitest";

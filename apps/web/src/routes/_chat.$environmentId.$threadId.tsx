@@ -1,36 +1,13 @@
 import { scopeProjectRef } from "@capycode/client-runtime";
-import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import {
-  Suspense,
-  lazy,
-  startTransition,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo } from "react";
 
-import ChatView from "../components/ChatView";
+import {
+  ThreadWorkspaceShell,
+  threadWorkspaceSearchConfig,
+} from "../components/ThreadWorkspaceShell";
 import { threadHasStarted } from "../components/ChatView.logic";
-import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
-import {
-  DiffPanelHeaderSkeleton,
-  DiffPanelLoadingState,
-  DiffPanelShell,
-  type DiffPanelMode,
-} from "../components/DiffPanelShell";
-import { FilePreviewPanel } from "../components/files/FilePreviewPanel";
-import { FileTreePanel } from "../components/files/FileTreePanel";
-import { WorkspaceShell } from "../components/WorkspaceShell";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
-import {
-  type DiffRouteSearch,
-  parseDiffRouteSearch,
-  stripDiffSearchParams,
-} from "../diffRouteSearch";
-import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useTheme } from "../hooks/useTheme";
 import { resolveEffectiveGitContext } from "../lib/gitContext";
 import {
   selectActiveWorkspaceForProjectRef,
@@ -39,34 +16,7 @@ import {
   useStore,
 } from "../store";
 import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
-import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
-import { SidebarInset } from "~/components/ui/sidebar";
-import {
-  getWorkspaceDockScopeKey,
-  getWorkspaceDockScopeState,
-  useWorkspaceDockStore,
-} from "~/workspaceDockStore";
-
-const DiffPanel = lazy(() => import("../components/DiffPanel"));
-const WORKSPACE_SHEET_MEDIA_QUERY = "(max-width: 1180px)";
-
-const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
-  return (
-    <DiffPanelShell mode={props.mode} header={<DiffPanelHeaderSkeleton />}>
-      <DiffPanelLoadingState label="Loading diff viewer..." />
-    </DiffPanelShell>
-  );
-};
-
-const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
-  return (
-    <DiffWorkerPoolProvider>
-      <Suspense fallback={<DiffLoadingFallback mode={props.mode} />}>
-        <DiffPanel mode={props.mode} />
-      </Suspense>
-    </DiffWorkerPoolProvider>
-  );
-};
+import { resolveThreadRouteRef } from "../threadRoutes";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -97,16 +47,6 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
-  const diffOpen = search.diff === "1";
-  const filesOpen = search.files === "1";
-  const activeFilePath = search.file ?? null;
-  const shouldUseSheet = useMediaQuery(WORKSPACE_SHEET_MEDIA_QUERY);
-  const { resolvedTheme } = useTheme();
-  const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
-  const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
-    threadKey: currentThreadKey,
-    hasOpenedDiff: diffOpen,
-  }));
   const activeProjectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : null;
@@ -138,154 +78,9 @@ function ChatThreadRouteView() {
             }
           : null,
       }),
-    [
-      activeProject?.cwd,
-      linkedWorkspace?.branch,
-      linkedWorkspace?.id,
-      linkedWorkspace?.worktreePath,
-      serverThread?.branch,
-      serverThread?.workspaceId,
-      serverThread?.worktreePath,
-    ],
+    [activeProject, linkedWorkspace, serverThread],
   );
   const activeWorkspaceRoot = effectiveGitContext.worktreePath ?? activeProject?.cwd ?? null;
-  const workspaceDockScopeKey = useMemo(
-    () =>
-      threadRef && activeWorkspaceRoot
-        ? getWorkspaceDockScopeKey({
-            environmentId: threadRef.environmentId,
-            threadId: threadRef.threadId,
-            cwd: activeWorkspaceRoot,
-          })
-        : null,
-    [activeWorkspaceRoot, threadRef],
-  );
-  const workspaceDockState = useWorkspaceDockStore(
-    useMemo(
-      () => (state) => getWorkspaceDockScopeState(state, workspaceDockScopeKey),
-      [workspaceDockScopeKey],
-    ),
-  );
-  const openWorkspaceDockFile = useWorkspaceDockStore((state) => state.openFile);
-  const hasOpenedDiff =
-    diffPanelMountState.threadKey === currentThreadKey
-      ? diffPanelMountState.hasOpenedDiff
-      : diffOpen;
-
-  const markDiffOpened = useCallback(() => {
-    setDiffPanelMountState((previous) => {
-      if (previous.threadKey === currentThreadKey && previous.hasOpenedDiff) {
-        return previous;
-      }
-      return {
-        threadKey: currentThreadKey,
-        hasOpenedDiff: true,
-      };
-    });
-  }, [currentThreadKey]);
-
-  const updateWorkspaceSearch = useCallback(
-    (
-      previous: Record<string, unknown>,
-      overrides: Partial<{
-        diff: "1" | undefined;
-        diffTurnId: DiffRouteSearch["diffTurnId"];
-        diffFilePath: string | undefined;
-        files: "1" | undefined;
-        file: string | undefined;
-      }>,
-    ) => {
-      const current = parseDiffRouteSearch(previous);
-      const nextDiff = Object.prototype.hasOwnProperty.call(overrides, "diff")
-        ? overrides.diff
-        : current.diff;
-      const nextFiles = Object.prototype.hasOwnProperty.call(overrides, "files")
-        ? overrides.files
-        : current.files;
-      const nextFile = Object.prototype.hasOwnProperty.call(overrides, "file")
-        ? overrides.file
-        : current.file;
-      const nextDiffTurnId = nextDiff
-        ? Object.prototype.hasOwnProperty.call(overrides, "diffTurnId")
-          ? overrides.diffTurnId
-          : current.diffTurnId
-        : undefined;
-      const nextDiffFilePath = nextDiff
-        ? Object.prototype.hasOwnProperty.call(overrides, "diffFilePath")
-          ? overrides.diffFilePath
-          : current.diffFilePath
-        : undefined;
-      const rest = stripDiffSearchParams(previous);
-      return {
-        ...rest,
-        diff: nextDiff,
-        files: nextFiles,
-        diffTurnId: nextDiffTurnId,
-        diffFilePath: nextDiffFilePath,
-        file: nextFile,
-      };
-    },
-    [],
-  );
-
-  const closeSheet = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
-    startTransition(() => {
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
-        replace: true,
-        search: (previous) =>
-          updateWorkspaceSearch(previous, {
-            diff: undefined,
-            files: undefined,
-            file: undefined,
-          }),
-      });
-    });
-  }, [navigate, threadRef, updateWorkspaceSearch]);
-
-  const openWorkspaceFile = useCallback(
-    (relativePath: string) => {
-      if (!threadRef || !workspaceDockScopeKey) {
-        return;
-      }
-      openWorkspaceDockFile(workspaceDockScopeKey, relativePath);
-      startTransition(() => {
-        void navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(threadRef),
-          replace: true,
-          search: (previous) =>
-            updateWorkspaceSearch(previous, {
-              files: "1",
-              file: relativePath,
-            }),
-        });
-      });
-    },
-    [navigate, openWorkspaceDockFile, threadRef, updateWorkspaceSearch, workspaceDockScopeKey],
-  );
-
-  const closeFilePreview = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
-    startTransition(() => {
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
-        replace: true,
-        search: (previous) =>
-          updateWorkspaceSearch(previous, {
-            files: filesOpen ? "1" : undefined,
-            file: undefined,
-          }),
-      });
-    });
-  }, [filesOpen, navigate, threadRef, updateWorkspaceSearch]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -308,95 +103,18 @@ function ChatThreadRouteView() {
     return null;
   }
 
-  const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
-  const previewFilePath = activeFilePath;
-  const contextOpen = diffOpen;
-  const sheetOpen = diffOpen || filesOpen || activeFilePath !== null;
-
-  const main = (
-    <SidebarInset className="h-full min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <ChatView
-        environmentId={threadRef.environmentId}
-        threadId={threadRef.threadId}
-        onDiffPanelOpen={markDiffOpened}
-        routeKind="server"
-        workspaceSurfaceContent={
-          previewFilePath && activeWorkspaceRoot ? (
-            <FilePreviewPanel
-              environmentId={threadRef.environmentId}
-              cwd={activeWorkspaceRoot}
-              relativePath={previewFilePath}
-              variant="main"
-            />
-          ) : undefined
-        }
-      />
-    </SidebarInset>
-  );
-
-  const filesPanel =
-    filesOpen && activeWorkspaceRoot ? (
-      <FileTreePanel
-        environmentId={threadRef.environmentId}
-        cwd={activeWorkspaceRoot}
-        scopeKey={workspaceDockScopeKey}
-        selectedFilePath={activeFilePath}
-        resolvedTheme={resolvedTheme}
-        onOpenFile={openWorkspaceFile}
-      />
-    ) : undefined;
-
-  const contextPanel = diffOpen ? (
-    shouldRenderDiffContent ? (
-      <LazyDiffPanel mode="sidebar" />
-    ) : null
-  ) : null;
-
-  const sheetContent: ReactNode =
-    previewFilePath && activeWorkspaceRoot && workspaceDockState.activeContext !== "diff" ? (
-      <FilePreviewPanel
-        environmentId={threadRef.environmentId}
-        cwd={activeWorkspaceRoot}
-        relativePath={previewFilePath}
-        onBack={closeFilePreview}
-        variant="main"
-      />
-    ) : diffOpen && workspaceDockState.activeContext === "diff" ? (
-      shouldRenderDiffContent ? (
-        <LazyDiffPanel mode="sheet" />
-      ) : null
-    ) : filesOpen && activeWorkspaceRoot ? (
-      <FileTreePanel
-        environmentId={threadRef.environmentId}
-        cwd={activeWorkspaceRoot}
-        scopeKey={workspaceDockScopeKey}
-        selectedFilePath={activeFilePath}
-        resolvedTheme={resolvedTheme}
-        onOpenFile={openWorkspaceFile}
-      />
-    ) : null;
-
   return (
-    <WorkspaceShell
-      main={main}
-      filesOpen={filesOpen}
-      contextOpen={contextOpen}
-      filesPanel={filesPanel}
-      contextPanel={contextPanel}
-      useSheet={shouldUseSheet}
-      sheetOpen={sheetOpen}
-      sheetContent={sheetContent}
-      onCloseSheet={closeSheet}
+    <ThreadWorkspaceShell
+      routeKind="server"
+      environmentId={threadRef.environmentId}
+      threadId={threadRef.threadId}
+      activeWorkspaceRoot={activeWorkspaceRoot}
+      search={search}
     />
   );
 }
 
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
-  validateSearch: (search) => parseDiffRouteSearch(search),
-  search: {
-    middlewares: [
-      retainSearchParams<DiffRouteSearch>(["diff", "diffTurnId", "diffFilePath", "files", "file"]),
-    ],
-  },
+  ...threadWorkspaceSearchConfig,
   component: ChatThreadRouteView,
 });

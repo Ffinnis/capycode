@@ -1,13 +1,16 @@
-import { MessageSquareTextIcon, XIcon } from "lucide-react";
+import { MessageSquareTextIcon, TerminalSquareIcon, XIcon } from "lucide-react";
 
 import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { cn } from "~/lib/utils";
+import { WORKSPACE_TERMINAL_TAB_ID } from "~/workspaceDockStore";
 
 export function OpenSurfaceTabs(props: {
   openFileTabs: readonly string[];
   activeTab: "chat" | string;
   resolvedTheme: "light" | "dark";
+  showTerminalTab: boolean;
   onSelectChat: () => void;
+  onSelectTerminal: () => void;
   onSelectFile: (relativePath: string) => void;
   onCloseFile: (relativePath: string) => void;
 }) {
@@ -32,6 +35,18 @@ export function OpenSurfaceTabs(props: {
             <span className="truncate">Chat</span>
           </button>
         </div>
+        {props.showTerminalTab ? (
+          <div className={tabClassName(props.activeTab === WORKSPACE_TERMINAL_TAB_ID)}>
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-1.5 px-2.5 py-1 text-left text-xs font-medium"
+              onClick={props.onSelectTerminal}
+            >
+              <TerminalSquareIcon className="size-3 shrink-0" />
+              <span className="truncate">Terminal</span>
+            </button>
+          </div>
+        ) : null}
         {props.openFileTabs.map((relativePath) => {
           const isActive = props.activeTab === relativePath;
           return (

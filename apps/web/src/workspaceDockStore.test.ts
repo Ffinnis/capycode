@@ -4,6 +4,7 @@ import {
   __resetWorkspaceDockStoreForTests,
   getWorkspaceDockScopeKey,
   getWorkspaceDockScopeState,
+  WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "./workspaceDockStore";
 
@@ -77,5 +78,18 @@ describe("workspaceDockStore", () => {
     expect(first).toBe(second);
     expect(second).toBe(empty);
     expect(first.activeTab).toBe("chat");
+  });
+
+  it("prioritizes the terminal workspace tab over an active file path", () => {
+    useWorkspaceDockStore.getState().syncRouteState(SCOPE, {
+      filesOpen: false,
+      diffOpen: false,
+      terminalOpen: true,
+      filePath: "src/app.ts",
+    });
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.openFileTabs).toEqual(["src/app.ts"]);
+    expect(scope.activeTab).toBe(WORKSPACE_TERMINAL_TAB_ID);
   });
 });

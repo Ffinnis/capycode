@@ -1,6 +1,6 @@
 import { type EnvironmentId } from "@capycode/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FilePreviewToolbar } from "./FilePreviewToolbar";
 import { FilePreviewUnsupported } from "./FilePreviewUnsupported";
@@ -40,6 +40,22 @@ export function FilePreviewPanel(props: {
   const result = previewQuery.data;
   const unsupportedKind = result && result.kind !== "text" ? result.kind : null;
   const variant = props.variant ?? "sidebar";
+  const previewLines = useMemo(() => {
+    if (!result?.contents) {
+      return [];
+    }
+
+    let offset = 0;
+    return result.contents.split("\n").map((line, index) => {
+      const lineOffset = offset;
+      offset += line.length + 1;
+      return {
+        key: String(lineOffset),
+        line,
+        lineNumber: index + 1,
+      };
+    });
+  }, [result?.contents]);
 
   return (
     <div
@@ -67,10 +83,10 @@ export function FilePreviewPanel(props: {
       ) : (
         <div className="h-0 min-h-0 flex-1 overflow-auto overscroll-contain">
           <div className="min-w-max font-mono text-[12px] leading-5">
-            {result.contents.split("\n").map((line, index) => (
-              <div key={index} className="grid grid-cols-[auto_1fr] gap-4 px-4 py-0.5">
+            {previewLines.map(({ key, line, lineNumber }) => (
+              <div key={key} className="grid grid-cols-[auto_1fr] gap-4 px-4 py-0.5">
                 <span className="select-none text-right text-muted-foreground/60 tabular-nums">
-                  {index + 1}
+                  {lineNumber}
                 </span>
                 <pre className={wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"}>
                   {line.length > 0 ? line : " "}

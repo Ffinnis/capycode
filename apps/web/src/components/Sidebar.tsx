@@ -2274,11 +2274,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           }
 
           await moveWorkspaceToSection(activeWorkspace, overData.section.id);
-          const nextTargetWorkspaces = [
-            ...(workspacesBySectionId.get(overData.section.id) ?? []).filter(
-              (workspace) => workspace.id !== activeWorkspace.id,
-            ),
-          ];
+          const nextTargetWorkspaces = (
+            workspacesBySectionId.get(overData.section.id) ?? []
+          ).filter((workspace) => workspace.id !== activeWorkspace.id);
           nextTargetWorkspaces.splice(overIndex, 0, activeWorkspace);
           await reorderSectionWorkspaceChildren(overData.section, nextTargetWorkspaces);
           return;
@@ -2852,7 +2850,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [archiveThread],
   );
-  const attemptDeleteThread = useCallback(
+  const _attemptDeleteThread = useCallback(
     async (threadRef: ScopedThreadRef) => {
       const thread =
         projectThreads.find(
@@ -3524,7 +3522,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
 });
 
-const SidebarProjectListRow = memo(function SidebarProjectListRow(props: SidebarProjectItemProps) {
+const _SidebarProjectListRow = memo(function SidebarProjectListRow(props: SidebarProjectItemProps) {
   return (
     <SidebarMenuItem className="rounded-md">
       <SidebarProjectItem {...props} />

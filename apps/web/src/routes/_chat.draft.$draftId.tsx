@@ -1,16 +1,25 @@
+import { scopeProjectRef } from "@capycode/client-runtime";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import ChatView from "../components/ChatView";
+
+import {
+  ThreadWorkspaceShell,
+  threadWorkspaceSearchConfig,
+} from "../components/ThreadWorkspaceShell";
 import { threadHasStarted } from "../components/ChatView.logic";
-import { useComposerDraftStore, DraftId } from "../composerDraftStore";
-import { SidebarInset } from "../components/ui/sidebar";
-import { createThreadSelectorAcrossEnvironments } from "../storeSelectors";
-import { useStore } from "../store";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { resolveEffectiveGitContext } from "../lib/gitContext";
+import { selectActiveWorkspaceForProjectRef, useStore } from "../store";
+import {
+  createProjectSelectorByRef,
+  createThreadSelectorAcrossEnvironments,
+} from "../storeSelectors";
 import { buildThreadRouteParams } from "../threadRoutes";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
   const { draftId: rawDraftId } = Route.useParams();
+  const search = Route.useSearch();
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
   const serverThread = useStore(
@@ -34,6 +43,41 @@ function DraftChatThreadRouteView() {
           : null,
     [draftSession?.promotedTo, serverThread, serverThreadStarted],
   );
+  const activeProjectRef = draftSession
+    ? scopeProjectRef(draftSession.environmentId, draftSession.projectId)
+    : null;
+  const activeProject = useStore(
+    useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
+  );
+  const linkedWorkspace = useStore(
+    useMemo(
+      () => (store) => selectActiveWorkspaceForProjectRef(store, activeProjectRef),
+      [activeProjectRef],
+    ),
+  );
+  const effectiveGitContext = useMemo(
+    () =>
+      resolveEffectiveGitContext({
+        project: activeProject ? { cwd: activeProject.cwd } : null,
+        thread: null,
+        draftThread: draftSession
+          ? {
+              workspaceId: null,
+              branch: draftSession.branch,
+              worktreePath: draftSession.worktreePath,
+            }
+          : null,
+        linkedWorkspace: linkedWorkspace
+          ? {
+              id: linkedWorkspace.id,
+              branch: linkedWorkspace.branch,
+              worktreePath: linkedWorkspace.worktreePath,
+            }
+          : null,
+      }),
+    [activeProject, draftSession, linkedWorkspace],
+  );
+  const activeWorkspaceRoot = effectiveGitContext.worktreePath ?? activeProject?.cwd ?? null;
 
   useEffect(() => {
     if (!canonicalThreadRef) {
@@ -43,8 +87,9 @@ function DraftChatThreadRouteView() {
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(canonicalThreadRef),
       replace: true,
+      search,
     });
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, navigate, search]);
 
   useEffect(() => {
     if (draftSession || canonicalThreadRef) {
@@ -54,15 +99,7 @@ function DraftChatThreadRouteView() {
   }, [canonicalThreadRef, draftSession, navigate]);
 
   if (canonicalThreadRef) {
-    return (
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView
-          environmentId={canonicalThreadRef.environmentId}
-          threadId={canonicalThreadRef.threadId}
-          routeKind="server"
-        />
-      </SidebarInset>
-    );
+    return null;
   }
 
   if (!draftSession) {
@@ -70,17 +107,18 @@ function DraftChatThreadRouteView() {
   }
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <ChatView
-        draftId={draftId}
-        environmentId={draftSession.environmentId}
-        threadId={draftSession.threadId}
-        routeKind="draft"
-      />
-    </SidebarInset>
+    <ThreadWorkspaceShell
+      routeKind="draft"
+      environmentId={draftSession.environmentId}
+      threadId={draftSession.threadId}
+      draftId={draftId}
+      activeWorkspaceRoot={activeWorkspaceRoot}
+      search={search}
+    />
   );
 }
 
 export const Route = createFileRoute("/_chat/draft/$draftId")({
+  ...threadWorkspaceSearchConfig,
   component: DraftChatThreadRouteView,
 });

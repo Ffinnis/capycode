@@ -1,5 +1,13 @@
 import { FitAddon } from "@xterm/addon-fit";
-import { Plus, SquareSplitHorizontal, TerminalSquare, Trash2, XIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  Plus,
+  SquareSplitHorizontal,
+  TerminalSquare,
+  Trash2,
+  XIcon,
+} from "lucide-react";
 import {
   type ScopedThreadRef,
   type TerminalEvent,
@@ -302,6 +310,7 @@ interface TerminalViewportProps {
   runtimeEnv?: Record<string, string>;
   onSessionExited: () => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  enableSelectionActions: boolean;
   focusRequestId: number;
   autoFocus: boolean;
   resizeEpoch: number;
@@ -318,6 +327,7 @@ export function TerminalViewport({
   runtimeEnv,
   onSessionExited,
   onAddTerminalContext,
+  enableSelectionActions,
   focusRequestId,
   autoFocus,
   resizeEpoch,
@@ -417,6 +427,10 @@ export function TerminalViewport({
     };
 
     const showSelectionAction = async () => {
+      if (!enableSelectionActions) {
+        clearSelectionAction();
+        return;
+      }
       if (selectionActionOpenRef.current) {
         return;
       }
@@ -543,6 +557,10 @@ export function TerminalViewport({
     });
 
     const selectionDisposable = terminal.onSelectionChange(() => {
+      if (!enableSelectionActions) {
+        clearSelectionAction();
+        return;
+      }
       if (terminalRef.current?.hasSelection()) {
         return;
       }
@@ -555,7 +573,7 @@ export function TerminalViewport({
         event.button,
       );
       selectionGestureActiveRef.current = false;
-      if (!shouldHandle) {
+      if (!shouldHandle || !enableSelectionActions) {
         return;
       }
       selectionPointerRef.current = { x: event.clientX, y: event.clientY };
@@ -823,6 +841,7 @@ interface ThreadTerminalDrawerProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   visible?: boolean;
+  mode?: "drawer" | "surface";
   height: number;
   terminalIds: string[];
   activeTerminalId: string;
@@ -838,6 +857,9 @@ interface ThreadTerminalDrawerProps {
   onCloseTerminal: (terminalId: string) => void;
   onHeightChange: (height: number) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  enableSelectionActions?: boolean;
+  onMoveToSurface?: (() => void) | undefined;
+  onDockToDrawer?: (() => void) | undefined;
 }
 
 interface TerminalActionButtonProps {
@@ -876,6 +898,7 @@ export default function ThreadTerminalDrawer({
   worktreePath,
   runtimeEnv,
   visible = true,
+  mode = "drawer",
   height,
   terminalIds,
   activeTerminalId,
@@ -891,6 +914,9 @@ export default function ThreadTerminalDrawer({
   onCloseTerminal,
   onHeightChange,
   onAddTerminalContext,
+  enableSelectionActions = true,
+  onMoveToSurface,
+  onDockToDrawer,
 }: ThreadTerminalDrawerProps) {
   const [drawerHeight, setDrawerHeight] = useState(() => clampDrawerHeight(height));
   const [resizeEpoch, setResizeEpoch] = useState(0);
@@ -1009,6 +1035,8 @@ export default function ThreadTerminalDrawer({
     : splitShortcutLabel
       ? `Split Terminal (${splitShortcutLabel})`
       : "Split Terminal";
+  const surfaceToggleActionLabel =
+    mode === "surface" ? "Dock to terminal drawer" : "Open in workspace view";
   const newTerminalActionLabel = newShortcutLabel
     ? `New Terminal (${newShortcutLabel})`
     : "New Terminal";
@@ -1090,7 +1118,7 @@ export default function ThreadTerminalDrawer({
   );
 
   useEffect(() => {
-    if (!visible) {
+    if (!visible || mode !== "drawer") {
       return;
     }
 
@@ -1110,7 +1138,7 @@ export default function ThreadTerminalDrawer({
     return () => {
       window.removeEventListener("resize", onWindowResize);
     };
-  }, [syncHeight, visible]);
+  }, [mode, syncHeight, visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -1127,20 +1155,36 @@ export default function ThreadTerminalDrawer({
 
   return (
     <aside
-      className="thread-terminal-drawer relative flex min-w-0 shrink-0 flex-col overflow-hidden border-t border-border/80 bg-background"
-      style={{ height: `${drawerHeight}px` }}
+      className={`thread-terminal-drawer relative flex min-w-0 flex-col overflow-hidden bg-background ${
+        mode === "drawer" ? "shrink-0 border-t border-border/80" : "h-full flex-1 border-0"
+      }`}
+      style={mode === "drawer" ? { height: `${drawerHeight}px` } : undefined}
     >
-      <div
-        className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
-        onPointerDown={handleResizePointerDown}
-        onPointerMove={handleResizePointerMove}
-        onPointerUp={handleResizePointerEnd}
-        onPointerCancel={handleResizePointerEnd}
-      />
+      {mode === "drawer" ? (
+        <div
+          className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerEnd}
+          onPointerCancel={handleResizePointerEnd}
+        />
+      ) : null}
 
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background/70">
+            <TerminalActionButton
+              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+              onClick={mode === "surface" ? () => onDockToDrawer?.() : () => onMoveToSurface?.()}
+              label={surfaceToggleActionLabel}
+            >
+              {mode === "surface" ? (
+                <ArrowDownIcon className="size-3.25" />
+              ) : (
+                <ArrowUpIcon className="size-3.25" />
+              )}
+            </TerminalActionButton>
+            <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               className={`p-1 text-foreground/90 transition-colors ${
                 hasReachedSplitLimit
@@ -1205,6 +1249,7 @@ export default function ThreadTerminalDrawer({
                         {...(runtimeEnv ? { runtimeEnv } : {})}
                         onSessionExited={() => onCloseTerminal(terminalId)}
                         onAddTerminalContext={onAddTerminalContext}
+                        enableSelectionActions={enableSelectionActions}
                         focusRequestId={focusRequestId}
                         autoFocus={terminalId === resolvedActiveTerminalId}
                         resizeEpoch={resizeEpoch}
@@ -1227,6 +1272,7 @@ export default function ThreadTerminalDrawer({
                   {...(runtimeEnv ? { runtimeEnv } : {})}
                   onSessionExited={() => onCloseTerminal(resolvedActiveTerminalId)}
                   onAddTerminalContext={onAddTerminalContext}
+                  enableSelectionActions={enableSelectionActions}
                   focusRequestId={focusRequestId}
                   autoFocus
                   resizeEpoch={resizeEpoch}
@@ -1241,7 +1287,20 @@ export default function ThreadTerminalDrawer({
               <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
                 <div className="inline-flex h-full items-stretch">
                   <TerminalActionButton
-                    className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
+                    className="inline-flex h-full items-center px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                    onClick={
+                      mode === "surface" ? () => onDockToDrawer?.() : () => onMoveToSurface?.()
+                    }
+                    label={surfaceToggleActionLabel}
+                  >
+                    {mode === "surface" ? (
+                      <ArrowDownIcon className="size-3.25" />
+                    ) : (
+                      <ArrowUpIcon className="size-3.25" />
+                    )}
+                  </TerminalActionButton>
+                  <TerminalActionButton
+                    className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
                       hasReachedSplitLimit
                         ? "cursor-not-allowed opacity-45 hover:bg-transparent"
                         : "hover:bg-accent/70"

@@ -25,6 +25,7 @@ import {
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import {
+  Context,
   Deferred,
   Duration,
   Effect,
@@ -43,8 +44,9 @@ import {
 } from "effect/unstable/http";
 import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Socket from "effect/unstable/socket/Socket";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { ServerConfigShape } from "./config.ts";
 import { deriveServerPaths, ServerConfig } from "./config.ts";
@@ -292,7 +294,7 @@ const makeBrowserOtlpPayload = (spanName: string) =>
     return JSON.parse(request.body) as OtlpTracer.TraceData;
   });
 
-const buildAppUnderTest = (options?: {
+const buildAppUnderTestInternal = (options?: {
   config?: Partial<ServerConfigShape>;
   layers?: {
     keybindings?: Partial<KeybindingsShape>;
@@ -514,8 +516,103 @@ const buildAppUnderTest = (options?: {
       Layer.provide(layerConfig),
     );
 
-    yield* Layer.build(appLayer);
-    return config;
+    const services = yield* Layer.build(appLayer);
+    return {
+      config,
+      services,
+    };
+  });
+
+const buildAppUnderTest = (options?: Parameters<typeof buildAppUnderTestInternal>[0]) =>
+  buildAppUnderTestInternal(options).pipe(Effect.map(({ config }) => config));
+
+const buildAppUnderTestWithServices = buildAppUnderTestInternal;
+
+const seedWorkspaceProject = (input: {
+  readonly sql: SqlClient.SqlClient;
+  readonly projectId: ProjectId;
+  readonly workspaceRoot: string;
+  readonly defaultWorkspaceId?: string;
+  readonly defaultBranch?: string;
+}) =>
+  Effect.gen(function* () {
+    const now = new Date().toISOString();
+    const defaultWorkspaceId = input.defaultWorkspaceId ?? crypto.randomUUID();
+    const defaultBranch = input.defaultBranch ?? "main";
+
+    yield* input.sql`
+      INSERT INTO projection_projects (
+        project_id,
+        title,
+        workspace_root,
+        default_model_selection_json,
+        scripts_json,
+        created_at,
+        updated_at,
+        deleted_at
+      )
+      VALUES (
+        ${input.projectId},
+        ${"Workspace Project"},
+        ${input.workspaceRoot},
+        ${JSON.stringify(defaultModelSelection)},
+        ${"[]"},
+        ${now},
+        ${now},
+        NULL
+      )
+    `;
+
+    yield* input.sql`
+      INSERT INTO workspaces (
+        id,
+        project_id,
+        worktree_id,
+        type,
+        branch,
+        name,
+        tab_order,
+        is_default,
+        created_at,
+        updated_at,
+        last_opened_at,
+        deleting_at,
+        section_id
+      )
+      VALUES (
+        ${defaultWorkspaceId},
+        ${input.projectId},
+        NULL,
+        ${"branch"},
+        ${defaultBranch},
+        ${defaultBranch},
+        0,
+        1,
+        ${now},
+        ${now},
+        ${now},
+        NULL,
+        NULL
+      )
+    `;
+
+    yield* input.sql`
+      INSERT INTO workspace_project_state (
+        project_id,
+        active_workspace_id,
+        updated_at
+      )
+      VALUES (
+        ${input.projectId},
+        ${defaultWorkspaceId},
+        ${now}
+      )
+    `;
+
+    return {
+      defaultBranch,
+      defaultWorkspaceId,
+    };
   });
 
 const parseSessionCookieFromWsUrl = (
@@ -1305,6 +1402,120 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
         assert.equal(response.status, 401);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves orchestration snapshots over http for owner sessions", () =>
+    Effect.gen(function* () {
+      const snapshot = {
+        ...makeDefaultOrchestrationReadModel(),
+        snapshotSequence: 7,
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getSnapshot: () => Effect.succeed(snapshot),
+          },
+        },
+      });
+
+      const url = yield* getHttpServerUrl("/api/orchestration/snapshot");
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          headers: {
+            cookie,
+          },
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as typeof snapshot;
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, snapshot);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects invalid orchestration dispatch payloads over http", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const url = yield* getHttpServerUrl("/api/orchestration/dispatch");
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          method: "POST",
+          headers: {
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "project.create",
+          }),
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly error: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.error, "Invalid orchestration command payload.");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("normalizes orchestration dispatch payloads received over http", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-orchestration-dispatch-http-",
+      });
+      const dispatchedCommands: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return {
+                  sequence: 42,
+                };
+              }),
+          },
+        },
+      });
+
+      const url = yield* getHttpServerUrl("/api/orchestration/dispatch");
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          method: "POST",
+          headers: {
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "project.create",
+            commandId: CommandId.make("cmd-project-create-http"),
+            projectId: ProjectId.make("project-http"),
+            title: "  Launch Project  ",
+            workspaceRoot: `  ${workspaceRoot}  `,
+            createdAt: "2026-04-13T00:00:00.000Z",
+          } satisfies OrchestrationCommand),
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly sequence: number;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.sequence, 42);
+      assert.deepEqual(dispatchedCommands[0], {
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-create-http"),
+        projectId: ProjectId.make("project-http"),
+        title: "Launch Project",
+        workspaceRoot,
+        createdAt: "2026-04-13T00:00:00.000Z",
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("accepts websocket rpc handshake with a bootstrapped browser session cookie", () =>
@@ -2156,6 +2367,325 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         result.failure.message,
         "Workspace file path must stay within the project root.",
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc workspace create, move, and reorder methods", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-workspace-create-" });
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            listBranches: () =>
+              Effect.succeed({
+                branches: [
+                  {
+                    name: "main",
+                    current: true,
+                    isDefault: true,
+                    worktreePath: null,
+                  },
+                ],
+                isRepo: true,
+                hasOriginRemote: true,
+                nextCursor: null,
+                totalCount: 1,
+              }),
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-create");
+      const { defaultWorkspaceId } = yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const section = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesCreateSection]({
+            projectId,
+            name: "Frontend",
+          }),
+        ),
+      );
+      const createdWorkspace = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesCreate]({
+            projectId,
+            name: "Feature A",
+            type: "branch",
+            branch: "feature/a",
+            sectionId: section.id,
+          }),
+        ),
+      );
+
+      assert.equal(createdWorkspace.branch, "feature/a");
+      assert.equal(createdWorkspace.sectionId, section.id);
+      assert.equal(createdWorkspace.isActive, true);
+
+      const movedWorkspace = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesMoveToSection]({
+            workspaceId: createdWorkspace.id,
+            sectionId: null,
+          }),
+        ),
+      );
+      assert.equal(movedWorkspace.sectionId, null);
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesReorderProjectChildren]({
+            projectId,
+            orderedItems: [
+              { kind: "workspace", id: createdWorkspace.id },
+              { kind: "section", id: section.id },
+              { kind: "workspace", id: defaultWorkspaceId as never },
+            ],
+          }),
+        ),
+      );
+
+      const workspaceRows = yield* sql<{ readonly id: string; readonly tabOrder: number }>`
+        SELECT id, tab_order AS "tabOrder"
+        FROM workspaces
+        WHERE project_id = ${projectId}
+        ORDER BY tab_order ASC, id ASC
+      `;
+      const sectionRows = yield* sql<{ readonly id: string; readonly tabOrder: number }>`
+        SELECT id, tab_order AS "tabOrder"
+        FROM workspace_sections
+        WHERE project_id = ${projectId}
+      `;
+
+      assert.deepEqual(
+        workspaceRows.map((row) => [row.id, row.tabOrder]),
+        [
+          [createdWorkspace.id, 0],
+          [defaultWorkspaceId, 2],
+        ],
+      );
+      assert.deepEqual(
+        sectionRows.map((row) => [row.id, row.tabOrder]),
+        [[section.id, 1]],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc workspace open-candidate and external worktree methods", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-workspace-open-" });
+      const externalWorktreePath = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-open-external-",
+      });
+      const execute = vi.fn(() =>
+        Effect.succeed({
+          code: 0,
+          stdout: [
+            `worktree ${projectRoot}`,
+            "branch refs/heads/main",
+            "",
+            `worktree ${externalWorktreePath}`,
+            "branch refs/heads/feature/external",
+            "",
+          ].join("\n"),
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            execute,
+            listBranches: ({ cwd }) =>
+              Effect.succeed({
+                branches: [
+                  {
+                    name: cwd === projectRoot ? "main" : "feature/external",
+                    current: true,
+                    isDefault: true,
+                    worktreePath: null,
+                  },
+                ],
+                isRepo: true,
+                hasOriginRemote: true,
+                nextCursor: null,
+                totalCount: 1,
+              }),
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-open");
+      yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const candidates = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesListOpenCandidates]({
+            projectId,
+          }),
+        ),
+      );
+
+      assert.equal(candidates.externalWorktrees.length, 1);
+      assert.deepEqual(candidates.externalWorktrees[0], {
+        projectId,
+        path: externalWorktreePath,
+        branch: "feature/external",
+      });
+
+      const openedWorkspace = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesOpenExternalWorktree]({
+            projectId,
+            worktreePath: externalWorktreePath,
+            branch: "feature/external",
+          }),
+        ),
+      );
+
+      assert.equal(openedWorkspace.type, "worktree");
+      assert.equal(openedWorkspace.worktreePath, externalWorktreePath);
+      assert.equal(openedWorkspace.branch, "feature/external");
+      expect(execute).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc workspace delete preview and delete methods", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-workspace-delete-" });
+      const removableWorktreePath = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-delete-worktree-",
+      });
+      const removeWorktree = vi.fn(() => Effect.void);
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            removeWorktree,
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-delete");
+      const { defaultWorkspaceId } = yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+      const workspaceId = crypto.randomUUID();
+      const worktreeId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      yield* sql`
+        INSERT INTO worktrees (
+          id,
+          project_id,
+          path,
+          branch,
+          base_branch,
+          created_at,
+          created_by_capycode
+        )
+        VALUES (
+          ${worktreeId},
+          ${projectId},
+          ${removableWorktreePath},
+          ${"feature/delete-me"},
+          ${"main"},
+          ${now},
+          1
+        )
+      `;
+      yield* sql`
+        INSERT INTO workspaces (
+          id,
+          project_id,
+          worktree_id,
+          type,
+          branch,
+          name,
+          tab_order,
+          is_default,
+          created_at,
+          updated_at,
+          last_opened_at,
+          deleting_at,
+          section_id
+        )
+        VALUES (
+          ${workspaceId},
+          ${projectId},
+          ${worktreeId},
+          ${"worktree"},
+          ${"feature/delete-me"},
+          ${"feature/delete-me"},
+          1,
+          0,
+          ${now},
+          ${now},
+          ${now},
+          NULL,
+          NULL
+        )
+      `;
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const preview = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesGetDeletePreview]({
+            workspaceId: workspaceId as never,
+          }),
+        ),
+      );
+
+      assert.equal(preview.totalThreadCount, 0);
+      assert.equal(preview.deletesWorktreePath, true);
+      assert.equal(preview.worktreePath, removableWorktreePath);
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesDelete]({
+            workspaceId: workspaceId as never,
+          }),
+        ),
+      );
+
+      expect(removeWorktree).toHaveBeenCalledWith({
+        cwd: projectRoot,
+        path: removableWorktreePath,
+        force: true,
+      });
+
+      const remainingWorkspaceRows = yield* sql<{ readonly id: string }>`
+        SELECT id
+        FROM workspaces
+        WHERE project_id = ${projectId}
+        ORDER BY id ASC
+      `;
+      const activeWorkspaceRows = yield* sql<{ readonly activeWorkspaceId: string | null }>`
+        SELECT active_workspace_id AS "activeWorkspaceId"
+        FROM workspace_project_state
+        WHERE project_id = ${projectId}
+      `;
+
+      assert.deepEqual(
+        remainingWorkspaceRows.map((row) => row.id),
+        [defaultWorkspaceId],
+      );
+      assert.equal(activeWorkspaceRows[0]?.activeWorkspaceId, defaultWorkspaceId);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

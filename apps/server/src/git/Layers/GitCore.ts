@@ -1928,31 +1928,36 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
 
     let insertions = 0;
     let deletions = 0;
-    const files = Array.from(fileStatMap.entries())
-      .map(([filePath, stat]): GitWorkingTreeEntry => {
-        const metadata = workingTreeEntryMetadata.get(filePath);
-        insertions += stat.insertions;
-        deletions += stat.deletions;
-        return {
+    const defaultWorkingTreeMetadata: Pick<GitWorkingTreeEntry, "kind"> = { kind: "file" };
+    const files = Array.from(fileStatMap.entries()).map(([filePath, stat]): GitWorkingTreeEntry => {
+      const metadata = workingTreeEntryMetadata.get(filePath);
+      insertions += stat.insertions;
+      deletions += stat.deletions;
+      return Object.assign(
+        {
           path: filePath,
           insertions: stat.insertions,
           deletions: stat.deletions,
-          ...(metadata ? metadata : { kind: "file" }),
-        };
-      })
-      .toSorted((a, b) => a.path.localeCompare(b.path));
+        },
+        metadata ?? defaultWorkingTreeMetadata,
+      );
+    });
 
     for (const filePath of changedFilesWithoutNumstat) {
       if (fileStatMap.has(filePath)) continue;
       const metadata = workingTreeEntryMetadata.get(filePath);
-      files.push({
-        path: filePath,
-        insertions: 0,
-        deletions: 0,
-        ...(metadata ? metadata : { kind: "file" }),
-      });
+      files.push(
+        Object.assign(
+          {
+            path: filePath,
+            insertions: 0,
+            deletions: 0,
+          },
+          metadata ?? defaultWorkingTreeMetadata,
+        ),
+      );
     }
-    files.sort((a, b) => a.path.localeCompare(b.path));
+    const sortedFiles = files.toSorted((a, b) => a.path.localeCompare(b.path));
 
     return {
       isRepo: true,
@@ -1965,7 +1970,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       upstreamRef,
       hasWorkingTreeChanges,
       workingTree: {
-        files,
+        files: sortedFiles,
         insertions,
         deletions,
       },

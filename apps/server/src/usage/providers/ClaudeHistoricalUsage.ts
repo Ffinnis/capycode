@@ -196,7 +196,7 @@ export async function readClaudeHistoricalUsage(
     rootPath,
     sessions: sessions
       .filter((session) => session.totals.totalTokens > 0 || session.totals.inputTokens > 0)
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
+      .toSorted((left, right) => right.startedAt.localeCompare(left.startedAt)),
     warnings,
   };
 }

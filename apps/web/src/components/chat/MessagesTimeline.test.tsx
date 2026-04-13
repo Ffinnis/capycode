@@ -34,6 +34,9 @@ beforeAll(() => {
     documentElement: {
       classList,
       offsetHeight: 0,
+      removeAttribute: () => {},
+      setAttribute: () => {},
+      style: {},
     },
   });
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

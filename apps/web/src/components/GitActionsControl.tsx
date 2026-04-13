@@ -104,6 +104,7 @@ interface RunGitActionWithToastInput {
 }
 
 const GIT_STATUS_WINDOW_REFRESH_DEBOUNCE_MS = 250;
+const EMPTY_WORKING_TREE_FILES: ReadonlyArray<GitStatusResult["workingTree"]["files"][number]> = [];
 
 function formatElapsedDescription(startedAtMs: number | null): string | undefined {
   if (startedAtMs === null) {
@@ -346,7 +347,7 @@ export default function GitActionsControl({
   const [commitDialogAction, setCommitDialogAction] = useState<CommitDialogAction>("commit");
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
   const [excludedFiles, setExcludedFiles] = useState<ReadonlySet<string>>(new Set());
-  const [isEditingFiles, setIsEditingFiles] = useState(false);
+  const [_isEditingFiles, setIsEditingFiles] = useState(false);
   const [progressSnapshot, setProgressSnapshot] = useState<ActiveGitActionProgress | null>(null);
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
@@ -441,7 +442,7 @@ export default function GitActionsControl({
   const gitStatusForActions = gitStatus;
   const selectedFilePathSet = useMemo(() => new Set(selectedFilePaths ?? []), [selectedFilePaths]);
 
-  const allFiles = gitStatusForActions?.workingTree.files ?? [];
+  const allFiles = gitStatusForActions?.workingTree.files ?? EMPTY_WORKING_TREE_FILES;
   const scopedSelectedPaths = useMemo(
     () =>
       [...selectedFilePathSet].toSorted((left, right) =>
@@ -619,7 +620,7 @@ export default function GitActionsControl({
       window.removeEventListener("focus", scheduleRefreshCurrentGitStatus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [activeEnvironmentId, enableAmbientSync, gitCwd]);
+  }, [activeEnvironmentId, enableAmbientSync, gitCwd, queryClient]);
 
   const openExistingPr = useCallback(async () => {
     const api = readLocalApi();

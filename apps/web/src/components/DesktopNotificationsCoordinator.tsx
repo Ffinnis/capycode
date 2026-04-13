@@ -104,7 +104,7 @@ export function DesktopNotificationsCoordinator() {
     }
 
     return bridge.onDesktopNotificationAction(handleNotificationAction);
-  }, [handleNotificationAction]);
+  }, []);
 
   useEffect(() => {
     const bridge = window.desktopBridge;

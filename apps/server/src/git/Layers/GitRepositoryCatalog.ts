@@ -88,7 +88,7 @@ async function readDirectoryNames(absoluteDir: string): Promise<readonly string[
   return dirents
     .filter((dirent) => dirent.isDirectory())
     .map((dirent) => dirent.name)
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
 }
 
 async function hasGitMarker(absoluteDir: string): Promise<boolean> {

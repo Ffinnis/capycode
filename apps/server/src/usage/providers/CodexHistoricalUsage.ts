@@ -3,7 +3,6 @@ import * as OS from "node:os";
 import * as path from "node:path";
 
 import type { UsageSessionSummary, UsageTotals } from "@capycode/contracts";
-import { EMPTY_USAGE_TOTALS } from "@capycode/contracts";
 
 export interface CodexHistoricalUsageResult {
   readonly rootPath: string;
@@ -114,8 +113,7 @@ async function collectSessionFiles(rootPath: string): Promise<Array<string>> {
   }
 
   await visit(rootPath);
-  results.sort();
-  return results;
+  return results.toSorted();
 }
 
 export async function readCodexHistoricalUsage(
@@ -261,7 +259,7 @@ export async function readCodexHistoricalUsage(
     rootPath,
     sessions: sessions
       .filter((session) => session.totals.totalTokens > 0 || session.totals.inputTokens > 0)
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
+      .toSorted((left, right) => right.startedAt.localeCompare(left.startedAt)),
     warnings,
   };
 }

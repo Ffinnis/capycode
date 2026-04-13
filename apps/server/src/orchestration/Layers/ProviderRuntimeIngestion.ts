@@ -632,11 +632,12 @@ function mergeReasoningActivityDelta(
   return {
     ...nextActivity,
     createdAt: existingActivity.createdAt,
-    payload: {
-      ...(existingPayload ?? {}),
-      ...(nextPayload ?? {}),
-      ...(nextDetail !== undefined ? { detail: `${existingDetail}${nextDetail}` } : {}),
-    },
+    payload: Object.assign(
+      {},
+      existingPayload,
+      nextPayload,
+      nextDetail !== undefined ? { detail: `${existingDetail}${nextDetail}` } : undefined,
+    ),
     ...(existingActivity.sequence !== undefined ? { sequence: existingActivity.sequence } : {}),
   };
 }
