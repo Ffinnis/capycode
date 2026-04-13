@@ -29,7 +29,7 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
         render={
           <button
             type="button"
-            className="group inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-85"
+            className="group inline-flex size-8 items-center justify-center rounded-full transition-opacity hover:opacity-85 sm:size-7"
             aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`

@@ -302,6 +302,34 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   );
 });
 
+function findClippingAncestors(element: HTMLElement | null): HTMLElement[] {
+  const clippingAncestors: HTMLElement[] = [];
+  let current = element?.parentElement ?? null;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    const overflowX = style.overflowX;
+    const overflowY = style.overflowY;
+    if (overflowX !== "visible" || overflowY !== "visible" || style.overflow !== "visible") {
+      clippingAncestors.push(current);
+    }
+    current = current.parentElement;
+  }
+  return clippingAncestors;
+}
+
+function findSmallestAncestorWidth(element: HTMLElement | null): number | null {
+  let current = element?.parentElement ?? null;
+  let smallestWidth: number | null = null;
+  while (current) {
+    const width = current.getBoundingClientRect().width;
+    if (width > 0) {
+      smallestWidth = smallestWidth === null ? width : Math.min(smallestWidth, width);
+    }
+    current = current.parentElement;
+  }
+  return smallestWidth;
+}
+
 // --------------------------------------------------------------------------
 // Handle exposed to ChatView
 // --------------------------------------------------------------------------
@@ -658,6 +686,7 @@ export const ChatComposer = memo(
     const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
     const composerFormRef = useRef<HTMLFormElement>(null);
     const composerFormHeightRef = useRef(0);
+    const composerFooterRef = useRef<HTMLDivElement>(null);
     const composerSelectLockRef = useRef(false);
     const composerMenuOpenRef = useRef(false);
     const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
@@ -1088,29 +1117,48 @@ export const ChatComposer = memo(
       const measureComposerFormWidth = () => composerForm.clientWidth;
       const measureFooterCompactness = () => {
         const composerFormWidth = measureComposerFormWidth();
-        const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
-          hasWideActions: composerFooterHasWideActions,
-        });
+        const compactnessWidth =
+          typeof window === "undefined"
+            ? composerFormWidth
+            : Math.min(composerFormWidth, window.innerWidth);
+        const footerRect = composerFooterRef.current?.getBoundingClientRect() ?? null;
+        const footerWouldOverflowClippingAncestor = Boolean(
+          footerRect &&
+          findClippingAncestors(composerForm).some((ancestor) => {
+            const ancestorRect = ancestor.getBoundingClientRect();
+            return (
+              footerRect.left < ancestorRect.left - 0.5 ||
+              footerRect.right > ancestorRect.right + 0.5
+            );
+          }),
+        );
+        const smallestAncestorWidth = findSmallestAncestorWidth(composerForm);
+        const footerWiderThanAncestor = Boolean(
+          footerRect &&
+          smallestAncestorWidth !== null &&
+          footerRect.width > smallestAncestorWidth + 0.5,
+        );
+        const footerCompact =
+          shouldUseCompactComposerFooter(compactnessWidth, {
+            hasWideActions: composerFooterHasWideActions,
+          }) ||
+          footerWouldOverflowClippingAncestor ||
+          footerWiderThanAncestor;
         const primaryActionsCompact =
           footerCompact &&
-          shouldUseCompactComposerPrimaryActions(composerFormWidth, {
+          shouldUseCompactComposerPrimaryActions(compactnessWidth, {
             hasWideActions: composerFooterHasWideActions,
           });
         return {
-          primaryActionsCompact,
+          primaryActionsCompact:
+            (footerWouldOverflowClippingAncestor || footerWiderThanAncestor) &&
+            composerFooterHasWideActions
+              ? true
+              : primaryActionsCompact,
           footerCompact,
         };
       };
-
-      composerFormHeightRef.current = composerForm.getBoundingClientRect().height;
-      const initialCompactness = measureFooterCompactness();
-      setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
-      setIsComposerFooterCompact(initialCompactness.footerCompact);
-      if (typeof ResizeObserver === "undefined") return;
-
-      const observer = new ResizeObserver((entries) => {
-        const [entry] = entries;
-        if (!entry) return;
+      const applyFooterCompactness = () => {
         const nextCompactness = measureFooterCompactness();
         setIsComposerPrimaryActionsCompact((previous) =>
           previous === nextCompactness.primaryActionsCompact
@@ -1120,16 +1168,40 @@ export const ChatComposer = memo(
         setIsComposerFooterCompact((previous) =>
           previous === nextCompactness.footerCompact ? previous : nextCompactness.footerCompact,
         );
-        const nextHeight = entry.contentRect.height;
+      };
+      const handleHeightChange = (nextHeight: number) => {
         const previousHeight = composerFormHeightRef.current;
         composerFormHeightRef.current = nextHeight;
         if (previousHeight > 0 && Math.abs(nextHeight - previousHeight) < 0.5) return;
         if (!shouldAutoScrollRef.current) return;
         scheduleStickToBottom();
+      };
+
+      composerFormHeightRef.current = composerForm.getBoundingClientRect().height;
+      const initialCompactness = measureFooterCompactness();
+      setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
+      setIsComposerFooterCompact(initialCompactness.footerCompact);
+      const handleWindowResize = () => {
+        applyFooterCompactness();
+        handleHeightChange(composerForm.getBoundingClientRect().height);
+      };
+      window.addEventListener("resize", handleWindowResize);
+      if (typeof ResizeObserver === "undefined") {
+        return () => {
+          window.removeEventListener("resize", handleWindowResize);
+        };
+      }
+
+      const observer = new ResizeObserver((entries) => {
+        const [entry] = entries;
+        if (!entry) return;
+        applyFooterCompactness();
+        handleHeightChange(entry.contentRect.height);
       });
 
       observer.observe(composerForm);
       return () => {
+        window.removeEventListener("resize", handleWindowResize);
         observer.disconnect();
       };
     }, [
@@ -1898,6 +1970,7 @@ export const ChatComposer = memo(
               </div>
             ) : (
               <div
+                ref={composerFooterRef}
                 data-chat-composer-footer="true"
                 data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
                 className={cn(
