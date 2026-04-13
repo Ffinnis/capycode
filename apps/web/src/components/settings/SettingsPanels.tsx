@@ -92,6 +92,17 @@ const THEME_OPTIONS = [
   },
 ] as const;
 
+const COLOR_SCHEME_OPTIONS = [
+  {
+    value: "default",
+    label: "Default",
+  },
+  {
+    value: "capybara",
+    label: "Capybara",
+  },
+] as const;
+
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
   "12-hour": "12-hour",
@@ -448,7 +459,7 @@ export function useSettingsRestore(onRestored?: () => void) {
 }
 
 export function GeneralSettingsPanel() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, colorScheme, setColorScheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const [openingPathByTarget, setOpeningPathByTarget] = useState({
@@ -736,6 +747,39 @@ export function GeneralSettingsPanel() {
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {THEME_OPTIONS.map((option) => (
+                  <SelectItem hideIndicator key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Color scheme"
+          description="Choose a color palette for the app."
+          resetAction={
+            colorScheme !== "default" ? (
+              <SettingResetButton label="color scheme" onClick={() => setColorScheme("default")} />
+            ) : null
+          }
+          control={
+            <Select
+              value={colorScheme}
+              onValueChange={(value) => {
+                if (value === "default" || value === "capybara") {
+                  setColorScheme(value);
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Color scheme">
+                <SelectValue>
+                  {COLOR_SCHEME_OPTIONS.find((option) => option.value === colorScheme)?.label ?? "Default"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {COLOR_SCHEME_OPTIONS.map((option) => (
                   <SelectItem hideIndicator key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
