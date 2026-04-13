@@ -48,7 +48,10 @@ export function applyUsageEvent(event: UsageStreamEvent): void {
       providers: currentSnapshot.providers.map((provider) =>
         provider.provider === event.provider
           ? Object.assign({}, provider, {
-              limits: event.limits, // Always accept the event's limits for real-time updates
+              limits:
+                event.limits.length > 0 || provider.limits.length === 0
+                  ? event.limits
+                  : provider.limits,
               lastLimitsRefreshAt: new Date().toISOString(),
             })
           : provider,

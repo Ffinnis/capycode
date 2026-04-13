@@ -451,12 +451,6 @@ const makeUsageService = Effect.gen(function* () {
       );
       const current = (yield* Ref.get(stateRef)).limits.codex;
       if (!force && current && isFresh(current.fetchedAt, CODEX_LIMITS_TTL_MS)) {
-        // Still publish event on cache hit so clients stay in sync
-        yield* publish({
-          type: "limitsUpdated",
-          provider: "codex",
-          limits: current.limits,
-        });
         return current;
       }
 
@@ -520,17 +514,10 @@ const makeUsageService = Effect.gen(function* () {
     Effect.gen(function* () {
       const current = (yield* Ref.get(stateRef)).limits.claudeAgent;
       if (!force && current && isFresh(current.fetchedAt, CLAUDE_LIMITS_TTL_MS)) {
-        const cachedEntry = {
+        return {
           ...current,
           limits: staleWindows(current.limits, false),
         } satisfies LimitsCacheEntry;
-        // Still publish event on cache hit so clients stay in sync
-        yield* publish({
-          type: "limitsUpdated",
-          provider: "claudeAgent",
-          limits: cachedEntry.limits,
-        });
-        return cachedEntry;
       }
 
       const next = yield* Effect.tryPromise({
