@@ -45,6 +45,7 @@ import { sanitizeThreadErrorMessage } from "./rpc/transportError";
 import { getThreadFromEnvironmentState } from "./threadDerivation";
 
 export interface EnvironmentState {
+  orchestrationRevision: number;
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
   workspaceIds: WorkspaceId[];
@@ -76,6 +77,7 @@ export interface AppState {
 }
 
 const initialEnvironmentState: EnvironmentState = {
+  orchestrationRevision: 0,
   projectIds: [],
   projectById: {},
   workspaceIds: [],
@@ -986,8 +988,9 @@ function pickFallbackActiveWorkspace(
 
 export interface WorkspaceRemovalRollbackSnapshot {
   readonly environmentId: EnvironmentId;
-  readonly workspaces: ReadonlyArray<Workspace>;
-  readonly workspaceSections: ReadonlyArray<WorkspaceSection>;
+  readonly revision: number;
+  readonly removedWorkspace: Workspace;
+  readonly relatedWorkspaceSections: ReadonlyArray<WorkspaceSection>;
 }
 
 function buildThreadState(
@@ -1116,6 +1119,7 @@ function syncEnvironmentReadModel(
     .map((thread) => mapThread(thread, environmentId));
   return {
     ...state,
+    orchestrationRevision: readModel.snapshotSequence,
     ...buildProjectState(projects),
     ...buildWorkspaceState(workspaces, workspaceSections),
     ...buildThreadState(threads),
@@ -1141,13 +1145,27 @@ export function syncServerReadModel(
 
 export function captureWorkspaceRemovalRollbackSnapshot(
   state: AppState,
-  environmentId: EnvironmentId,
-): WorkspaceRemovalRollbackSnapshot {
-  const environmentState = getStoredEnvironmentState(state, environmentId);
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  },
+): WorkspaceRemovalRollbackSnapshot | null {
+  const environmentState = getStoredEnvironmentState(state, input.environmentId);
+  const removedWorkspace = listWorkspaces(environmentState).find(
+    (workspace) => workspace.id === input.workspaceId,
+  );
+  if (!removedWorkspace) {
+    return null;
+  }
   return {
-    environmentId,
-    workspaces: listWorkspaces(environmentState),
-    workspaceSections: listWorkspaceSections(environmentState),
+    environmentId: input.environmentId,
+    revision: environmentState.orchestrationRevision,
+    removedWorkspace,
+    relatedWorkspaceSections: listWorkspaceSections(environmentState).filter(
+      (workspaceSection) =>
+        workspaceSection.projectId === removedWorkspace.projectId &&
+        workspaceSection.id === removedWorkspace.sectionId,
+    ),
   };
 }
 
@@ -1196,9 +1214,37 @@ export function restoreWorkspaceRemovalRollbackSnapshot(
   snapshot: WorkspaceRemovalRollbackSnapshot,
 ): AppState {
   const environmentState = getStoredEnvironmentState(state, snapshot.environmentId);
+  if (environmentState.orchestrationRevision > snapshot.revision) {
+    return state;
+  }
+
+  const currentWorkspaces = listWorkspaces(environmentState);
+  if (currentWorkspaces.some((workspace) => workspace.id === snapshot.removedWorkspace.id)) {
+    return state;
+  }
+
+  const currentWorkspaceSections = listWorkspaceSections(environmentState);
+  const nextWorkspaceSections = [
+    ...currentWorkspaceSections,
+    ...snapshot.relatedWorkspaceSections.filter(
+      (workspaceSection) =>
+        !currentWorkspaceSections.some(
+          (currentSection) => currentSection.id === workspaceSection.id,
+        ),
+    ),
+  ];
+  const nextWorkspaces = [
+    ...currentWorkspaces.map((workspace) =>
+      snapshot.removedWorkspace.isActive &&
+      workspace.projectId === snapshot.removedWorkspace.projectId
+        ? Object.assign({}, workspace, { isActive: false })
+        : workspace,
+    ),
+    snapshot.removedWorkspace,
+  ];
   return commitEnvironmentState(state, snapshot.environmentId, {
     ...environmentState,
-    ...buildWorkspaceState(snapshot.workspaces, snapshot.workspaceSections),
+    ...buildWorkspaceState(nextWorkspaces, nextWorkspaceSections),
   });
 }
 
@@ -1709,7 +1755,16 @@ export function applyOrchestrationEvents(
     (nextState, event) => applyEnvironmentOrchestrationEvent(nextState, event, environmentId),
     currentEnvironmentState,
   );
-  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
+  if (nextEnvironmentState === currentEnvironmentState) {
+    return state;
+  }
+  return commitEnvironmentState(state, environmentId, {
+    ...nextEnvironmentState,
+    orchestrationRevision: Math.max(
+      nextEnvironmentState.orchestrationRevision,
+      events[events.length - 1]?.sequence ?? nextEnvironmentState.orchestrationRevision,
+    ),
+  });
 }
 
 function getEnvironmentEntries(
@@ -1928,15 +1983,19 @@ export function applyOrchestrationEvent(
   event: OrchestrationEvent,
   environmentId: EnvironmentId,
 ): AppState {
-  return commitEnvironmentState(
-    state,
+  const environmentState = getStoredEnvironmentState(state, environmentId);
+  const nextEnvironmentState = applyEnvironmentOrchestrationEvent(
+    environmentState,
+    event,
     environmentId,
-    applyEnvironmentOrchestrationEvent(
-      getStoredEnvironmentState(state, environmentId),
-      event,
-      environmentId,
-    ),
   );
+  if (nextEnvironmentState === environmentState) {
+    return state;
+  }
+  return commitEnvironmentState(state, environmentId, {
+    ...nextEnvironmentState,
+    orchestrationRevision: Math.max(environmentState.orchestrationRevision, event.sequence),
+  });
 }
 
 export function setActiveEnvironmentId(state: AppState, environmentId: EnvironmentId): AppState {
@@ -1981,9 +2040,10 @@ interface AppStore extends AppState {
     events: ReadonlyArray<OrchestrationEvent>,
     environmentId: EnvironmentId,
   ) => void;
-  captureWorkspaceRemovalRollbackSnapshot: (
-    environmentId: EnvironmentId,
-  ) => WorkspaceRemovalRollbackSnapshot;
+  captureWorkspaceRemovalRollbackSnapshot: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  }) => WorkspaceRemovalRollbackSnapshot | null;
   removeWorkspaceOptimistically: (input: {
     readonly environmentId: EnvironmentId;
     readonly workspaceId: WorkspaceId;
@@ -2007,8 +2067,8 @@ export const useStore = create<AppStore>((set, get) => ({
     set((state) => applyOrchestrationEvent(state, event, environmentId)),
   applyOrchestrationEvents: (events, environmentId) =>
     set((state) => applyOrchestrationEvents(state, events, environmentId)),
-  captureWorkspaceRemovalRollbackSnapshot: (environmentId) =>
-    captureWorkspaceRemovalRollbackSnapshot(get(), environmentId),
+  captureWorkspaceRemovalRollbackSnapshot: (input) =>
+    captureWorkspaceRemovalRollbackSnapshot(get(), input),
   removeWorkspaceOptimistically: (input) =>
     set((state) => removeWorkspaceOptimistically(state, input)),
   restoreWorkspaceRemovalRollbackSnapshot: (snapshot) =>

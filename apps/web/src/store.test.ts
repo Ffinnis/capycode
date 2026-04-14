@@ -112,6 +112,7 @@ function makeState(thread: Thread): AppState {
     [thread.projectId]: [thread.id],
   };
   const environmentState = {
+    orchestrationRevision: 1,
     projectIds: [projectId],
     projectById: {
       [projectId]: project,
@@ -196,6 +197,7 @@ function makeState(thread: Thread): AppState {
 
 function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): AppState {
   const environmentState: EnvironmentState = {
+    orchestrationRevision: 0,
     projectIds: [],
     projectById: {},
     workspaceIds: [],
@@ -859,14 +861,18 @@ describe("store read model sync", () => {
       },
     });
 
-    const rollbackSnapshot = captureWorkspaceRemovalRollbackSnapshot(state, localEnvironmentId);
+    const rollbackSnapshot = captureWorkspaceRemovalRollbackSnapshot(state, {
+      environmentId: localEnvironmentId,
+      workspaceId: featureWorkspaceId,
+    });
     const optimisticallyRemoved = removeWorkspaceOptimistically(state, {
       environmentId: localEnvironmentId,
       workspaceId: featureWorkspaceId,
     });
+    expect(rollbackSnapshot).not.toBeNull();
     const restored = restoreWorkspaceRemovalRollbackSnapshot(
       optimisticallyRemoved,
-      rollbackSnapshot,
+      rollbackSnapshot!,
     );
 
     const restoredEnvironmentState = localEnvironmentStateOf(restored);
@@ -879,6 +885,130 @@ describe("store read model sync", () => {
       featureWorkspaceId,
     );
     expect(restoredEnvironmentState.workspaceById[featureWorkspaceId]?.isActive).toBe(true);
+  });
+
+  it("skips rollback when a newer orchestration revision has already been applied", () => {
+    const projectId = ProjectId.make("project-1");
+    const defaultWorkspaceId = WorkspaceId.make("workspace-default");
+    const featureWorkspaceId = WorkspaceId.make("workspace-feature");
+    const replacementWorkspaceId = WorkspaceId.make("workspace-replacement");
+    const state = makeEmptyState({
+      orchestrationRevision: 5,
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+      workspaceIds: [defaultWorkspaceId, featureWorkspaceId],
+      workspaceById: {
+        [defaultWorkspaceId]: {
+          id: defaultWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: null,
+          type: "branch",
+          name: "main",
+          branch: "main",
+          worktreePath: null,
+          sectionId: null,
+          tabOrder: 0,
+          isDefault: true,
+          isActive: false,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+        [featureWorkspaceId]: {
+          id: featureWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: WorktreeId.make("worktree-1"),
+          type: "worktree",
+          name: "feature/delete-me",
+          branch: "feature/delete-me",
+          worktreePath: "/tmp/project-feature",
+          sectionId: null,
+          tabOrder: 1,
+          isDefault: false,
+          isActive: true,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [defaultWorkspaceId, featureWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: featureWorkspaceId,
+      },
+    });
+
+    const rollbackSnapshot = captureWorkspaceRemovalRollbackSnapshot(state, {
+      environmentId: localEnvironmentId,
+      workspaceId: featureWorkspaceId,
+    });
+    expect(rollbackSnapshot).not.toBeNull();
+
+    const newerState = makeEmptyState({
+      orchestrationRevision: 6,
+      projectIds: [projectId],
+      projectById: state.environmentStateById[localEnvironmentId]!.projectById,
+      workspaceIds: [defaultWorkspaceId, replacementWorkspaceId],
+      workspaceById: {
+        [defaultWorkspaceId]:
+          state.environmentStateById[localEnvironmentId]!.workspaceById[defaultWorkspaceId]!,
+        [replacementWorkspaceId]: {
+          id: replacementWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: WorktreeId.make("worktree-2"),
+          type: "worktree",
+          name: "replacement",
+          branch: "replacement",
+          worktreePath: "/tmp/project-replacement",
+          sectionId: null,
+          tabOrder: 2,
+          isDefault: false,
+          isActive: true,
+          createdAt: "2026-02-27T00:01:00.000Z",
+          updatedAt: "2026-02-27T00:01:00.000Z",
+          lastOpenedAt: "2026-02-27T00:01:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [defaultWorkspaceId, replacementWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: replacementWorkspaceId,
+      },
+    });
+
+    const restored = restoreWorkspaceRemovalRollbackSnapshot(newerState, rollbackSnapshot!);
+    const restoredEnvironmentState = localEnvironmentStateOf(restored);
+    expect(restoredEnvironmentState.orchestrationRevision).toBe(6);
+    expect(restoredEnvironmentState.workspaceIds).toEqual([
+      defaultWorkspaceId,
+      replacementWorkspaceId,
+    ]);
+    expect(restoredEnvironmentState.workspaceById[featureWorkspaceId]).toBeUndefined();
+    expect(restoredEnvironmentState.activeWorkspaceIdByProjectId[projectId]).toBe(
+      replacementWorkspaceId,
+    );
   });
 });
 

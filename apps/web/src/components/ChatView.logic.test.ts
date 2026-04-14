@@ -233,6 +233,7 @@ const makeThread = (input?: {
 function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) {
   const projectId = ProjectId.make("project-1");
   const environmentState: EnvironmentState = {
+    orchestrationRevision: 1,
     projectIds: [projectId],
     projectById: {
       [projectId]: {
