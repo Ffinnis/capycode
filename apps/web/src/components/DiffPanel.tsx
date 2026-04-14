@@ -21,6 +21,7 @@ import {
   TextWrapIcon,
 } from "lucide-react";
 import {
+  type PointerEventHandler,
   type RefObject,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
@@ -47,6 +48,7 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
 import { resolvePathLinkTarget } from "../terminal-links";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
 import type { ColorScheme } from "../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../hooks/useSettings";
@@ -58,7 +60,13 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import GitActionsControl from "./GitActionsControl";
+import {
+  useMeasuredElementHeight,
+  usePersistedGitPanelLayout,
+  usePersistedVerticalSectionHeight,
+} from "./git/usePersistedGitPanelLayout";
 import { Checkbox } from "./ui/checkbox";
+import { ScrollArea } from "./ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 
@@ -475,6 +483,196 @@ function CommitRow(props: {
   );
 }
 
+const GIT_PANEL_RESIZE_HANDLE_CLASS_NAME =
+  "h-1.5 shrink-0 cursor-row-resize bg-border/70 transition-colors hover:bg-border";
+const GIT_PANEL_RESIZE_HANDLE_HEIGHT = 6;
+const GIT_PANEL_DIVIDER_HEIGHT = 1;
+const GIT_PANEL_REPOSITORIES_DEFAULT_HEIGHT = 220;
+const GIT_PANEL_REPOSITORIES_MIN_HEIGHT = 120;
+const GIT_PANEL_REVIEW_DEFAULT_RATIO = 0.4;
+const GIT_PANEL_REVIEW_MIN_HEIGHT = 160;
+const GIT_PANEL_DIFF_MIN_HEIGHT = 220;
+const GIT_PANEL_NESTED_MIN_HEIGHT = 120;
+
+function resolveFortyFivePercentHeight(containerHeight: number) {
+  return containerHeight * 0.45;
+}
+
+function resolveReviewSectionDefaultHeight(containerHeight: number) {
+  return containerHeight * GIT_PANEL_REVIEW_DEFAULT_RATIO;
+}
+
+function resolveHalfHeight(containerHeight: number) {
+  return containerHeight * 0.5;
+}
+
+function GitSectionHeading(props: { title: string; count?: number; leading?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      {props.leading}
+      <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
+        {props.title}
+      </h3>
+      {props.count !== undefined ? (
+        <span className="text-[10px] tabular-nums text-muted-foreground/50">{props.count}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function GitPanelResizeHandle(props: {
+  ariaLabel: string;
+  disabled?: boolean;
+  testId?: string;
+  onPointerCancel?: PointerEventHandler<HTMLDivElement>;
+  onPointerDown?: PointerEventHandler<HTMLDivElement>;
+  onPointerMove?: PointerEventHandler<HTMLDivElement>;
+  onPointerUp?: PointerEventHandler<HTMLDivElement>;
+}) {
+  if (props.disabled) {
+    return <div className="h-px shrink-0 bg-border/70" aria-hidden="true" />;
+  }
+
+  return (
+    <div
+      aria-label={props.ariaLabel}
+      className={GIT_PANEL_RESIZE_HANDLE_CLASS_NAME}
+      data-testid={props.testId}
+      onPointerCancel={props.onPointerCancel}
+      onPointerDown={props.onPointerDown}
+      onPointerMove={props.onPointerMove}
+      onPointerUp={props.onPointerUp}
+      role="separator"
+    />
+  );
+}
+
+function GitScrollableSection(props: {
+  testId: string;
+  height: number;
+  header: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className="min-h-0 overflow-hidden"
+      data-testid={props.testId}
+      style={{ height: `${props.height}px` }}
+    >
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="shrink-0 px-3 pt-3">{props.header}</div>
+        <ScrollArea className="min-h-0 flex-1 px-3 pb-3">{props.children}</ScrollArea>
+      </div>
+    </section>
+  );
+}
+
+function GitFileSectionHeader(props: {
+  title: string;
+  entries: ReadonlyArray<GitFileListEntry>;
+  filterMode: GitFilterMode;
+  onBatchToggleFiles?: ((paths: ReadonlyArray<string>, selected: boolean) => void) | undefined;
+  selectedFilePaths?: ReadonlySet<string> | undefined;
+}) {
+  const isSelectable = props.filterMode !== "commit";
+  const selectablePaths = isSelectable
+    ? props.entries
+        .filter((entry) => entry.category !== "committed")
+        .map((entry) => entry.file.path)
+    : [];
+  const selectedCount = selectablePaths.filter((path) => props.selectedFilePaths?.has(path)).length;
+  const allSectionSelected = selectablePaths.length > 0 && selectedCount === selectablePaths.length;
+  const someSectionSelected = selectedCount > 0 && !allSectionSelected;
+
+  return (
+    <GitSectionHeading
+      title={props.title}
+      count={props.entries.length}
+      leading={
+        selectablePaths.length > 0 && props.onBatchToggleFiles ? (
+          <Checkbox
+            checked={allSectionSelected}
+            indeterminate={someSectionSelected}
+            onCheckedChange={() => {
+              props.onBatchToggleFiles?.(selectablePaths, !allSectionSelected);
+            }}
+            aria-label={`Select all ${props.title.toLowerCase()} files`}
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+function GitFileSection(props: {
+  title: string;
+  entries: ReadonlyArray<GitFileListEntry>;
+  emptyLabel: string;
+  filterMode: GitFilterMode;
+  onSelectFile: (selection: GitPreviewSelection) => void;
+  onToggleFileSelection?: ((path: string) => void) | undefined;
+  onBatchToggleFiles?: ((paths: ReadonlyArray<string>, selected: boolean) => void) | undefined;
+  selectedFilePaths?: ReadonlySet<string> | undefined;
+  selectedPreviewCommitHash?: string | undefined;
+  selectedPreviewKey: string | null;
+  showHeader?: boolean | undefined;
+}) {
+  const isSelectable = props.filterMode !== "commit";
+  const selectablePaths = isSelectable
+    ? props.entries
+        .filter((entry) => entry.category !== "committed")
+        .map((entry) => entry.file.path)
+    : [];
+  const selectedCount = selectablePaths.filter((path) => props.selectedFilePaths?.has(path)).length;
+  const allSectionSelected = selectablePaths.length > 0 && selectedCount === selectablePaths.length;
+  const someSectionSelected = selectedCount > 0 && !allSectionSelected;
+
+  return (
+    <>
+      {props.showHeader !== false ? (
+        <GitSectionHeading
+          title={props.title}
+          count={props.entries.length}
+          leading={
+            selectablePaths.length > 0 && props.onBatchToggleFiles ? (
+              <Checkbox
+                checked={allSectionSelected}
+                indeterminate={someSectionSelected}
+                onCheckedChange={() => {
+                  props.onBatchToggleFiles?.(selectablePaths, !allSectionSelected);
+                }}
+                aria-label={`Select all ${props.title.toLowerCase()} files`}
+              />
+            ) : null
+          }
+        />
+      ) : null}
+      {props.entries.length === 0 ? (
+        <div className="px-2 py-2 text-[11px] text-muted-foreground/50">{props.emptyLabel}</div>
+      ) : (
+        <div className="space-y-px">
+          {props.entries.map((entry) => (
+            <GitFileRow
+              key={entry.key}
+              entry={entry}
+              selected={
+                props.selectedPreviewKey ===
+                `${entry.category}:${props.selectedPreviewCommitHash ?? ""}:${entry.file.oldPath ?? ""}:${entry.file.path}`
+              }
+              selectable={entry.category !== "committed" && props.filterMode !== "commit"}
+              selectedForAction={props.selectedFilePaths?.has(entry.file.path) ?? false}
+              onSelect={props.onSelectFile}
+              {...(props.onToggleFileSelection
+                ? { onToggleSelectedForAction: props.onToggleFileSelection }
+                : {})}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function PatchPreview(props: {
   patch: string | undefined;
   isLoading: boolean;
@@ -887,68 +1085,77 @@ export function GitDiffView(props: {
     props.selectedPreview === null
       ? null
       : `${props.selectedPreview.category}:${props.selectedPreview.commitHash ?? ""}:${props.selectedPreview.oldPath ?? ""}:${props.selectedPreview.path}`;
+  const isMobile = useIsMobile();
+  const { layout, setSectionHeight } = usePersistedGitPanelLayout();
+  const sectionsRef = useRef<HTMLDivElement | null>(null);
+  const sectionsHeight = useMeasuredElementHeight(sectionsRef);
+  const repositoriesVisible =
+    props.repositories.length > 1 || props.repositoriesLoading || props.repositoriesError !== null;
+  const mainHandleHeight = isMobile ? GIT_PANEL_DIVIDER_HEIGHT : GIT_PANEL_RESIZE_HANDLE_HEIGHT;
+  const mainSectionsHeight = Math.max(
+    0,
+    sectionsHeight - mainHandleHeight * (repositoriesVisible ? 2 : 1),
+  );
 
-  const renderFileSection = (
-    title: string,
-    entries: ReadonlyArray<GitFileListEntry>,
-    emptyLabel: string,
-  ) => {
-    const isSelectable = props.filterMode !== "commit";
-    const selectablePaths = isSelectable
-      ? entries.filter((e) => e.category !== "committed").map((e) => e.file.path)
-      : [];
-    const selectedCount = selectablePaths.filter((p) => props.selectedFilePaths?.has(p)).length;
-    const allSectionSelected =
-      selectablePaths.length > 0 && selectedCount === selectablePaths.length;
-    const someSectionSelected = selectedCount > 0 && !allSectionSelected;
+  const repositoriesSection = usePersistedVerticalSectionHeight({
+    containerHeight: mainSectionsHeight,
+    defaultHeight: GIT_PANEL_REPOSITORIES_DEFAULT_HEIGHT,
+    key: "repositoriesHeight",
+    layout,
+    minHeight: GIT_PANEL_REPOSITORIES_MIN_HEIGHT,
+    minRemainingHeight: GIT_PANEL_REVIEW_MIN_HEIGHT + GIT_PANEL_DIFF_MIN_HEIGHT,
+    maxHeight: resolveFortyFivePercentHeight,
+    resizable: repositoriesVisible && !isMobile,
+    setSectionHeight,
+  });
+  const repositoriesHeight = repositoriesVisible ? repositoriesSection.height : 0;
+  const remainingSectionsHeight = Math.max(0, mainSectionsHeight - repositoriesHeight);
 
-    return (
-      <section>
-        <div className="flex items-center gap-2 px-2 py-1">
-          {selectablePaths.length > 0 && props.onBatchToggleFiles ? (
-            <Checkbox
-              checked={allSectionSelected}
-              indeterminate={someSectionSelected}
-              onCheckedChange={() => {
-                props.onBatchToggleFiles!(selectablePaths, !allSectionSelected);
-              }}
-              aria-label={`Select all ${title.toLowerCase()} files`}
-            />
-          ) : null}
-          <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
-            {title}
-          </h3>
-          <span className="text-[10px] tabular-nums text-muted-foreground/50">
-            {entries.length}
-          </span>
-        </div>
-        {entries.length === 0 ? (
-          <div className="px-2 py-2 text-[11px] text-muted-foreground/50">{emptyLabel}</div>
-        ) : (
-          <div className="space-y-px">
-            {entries.map((entry) => (
-              <GitFileRow
-                key={entry.key}
-                entry={entry}
-                selected={
-                  selectedPreviewKey ===
-                  `${entry.category}:${
-                    props.selectedPreview?.commitHash ?? ""
-                  }:${entry.file.oldPath ?? ""}:${entry.file.path}`
-                }
-                selectable={entry.category !== "committed" && props.filterMode !== "commit"}
-                selectedForAction={props.selectedFilePaths?.has(entry.file.path) ?? false}
-                onSelect={props.onSelectFile}
-                {...(props.onToggleFileSelection
-                  ? { onToggleSelectedForAction: props.onToggleFileSelection }
-                  : {})}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-    );
-  };
+  const reviewSection = usePersistedVerticalSectionHeight({
+    containerHeight: remainingSectionsHeight,
+    defaultHeight: resolveReviewSectionDefaultHeight,
+    key: "reviewHeight",
+    layout,
+    minHeight: GIT_PANEL_REVIEW_MIN_HEIGHT,
+    minRemainingHeight: GIT_PANEL_DIFF_MIN_HEIGHT,
+    maxHeight: Number.POSITIVE_INFINITY,
+    resizable: !isMobile,
+    setSectionHeight,
+  });
+  const reviewHeight = reviewSection.height;
+  const diffHeight = Math.max(0, remainingSectionsHeight - reviewHeight);
+
+  const stagedSection = usePersistedVerticalSectionHeight({
+    containerHeight: Math.max(0, reviewHeight - mainHandleHeight),
+    defaultHeight: resolveHalfHeight,
+    key: "stagedHeight",
+    layout,
+    minHeight: GIT_PANEL_NESTED_MIN_HEIGHT,
+    minRemainingHeight: GIT_PANEL_NESTED_MIN_HEIGHT,
+    maxHeight: Number.POSITIVE_INFINITY,
+    resizable: props.filterMode === "uncommitted" && !isMobile,
+    setSectionHeight,
+  });
+  const stagedHeight = props.filterMode === "uncommitted" ? stagedSection.height : 0;
+  const unstagedHeight = Math.max(0, reviewHeight - mainHandleHeight - stagedHeight);
+
+  const hasCommitFilesSection = props.filterMode === "commit" && props.selectedCommitHash !== null;
+  const commitFilesSection = usePersistedVerticalSectionHeight({
+    containerHeight: Math.max(0, reviewHeight - mainHandleHeight),
+    defaultHeight: resolveFortyFivePercentHeight,
+    edge: "bottom",
+    key: "commitFilesHeight",
+    layout,
+    minHeight: GIT_PANEL_NESTED_MIN_HEIGHT,
+    minRemainingHeight: GIT_PANEL_NESTED_MIN_HEIGHT,
+    maxHeight: Number.POSITIVE_INFINITY,
+    resizable: hasCommitFilesSection && !isMobile,
+    setSectionHeight,
+  });
+  const commitFilesHeight = hasCommitFilesSection ? commitFilesSection.height : 0;
+  const commitsHeight = hasCommitFilesSection
+    ? Math.max(0, reviewHeight - mainHandleHeight - commitFilesHeight)
+    : reviewHeight;
 
   if (!props.hasActiveThread) {
     return (
@@ -1032,123 +1239,247 @@ export function GitDiffView(props: {
         </Select>
       </div>
 
-      {props.repositories.length > 1 || props.repositoriesLoading || props.repositoriesError ? (
-        <div className="shrink-0 border-b border-border/70 px-3 py-2">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
-              Repositories
-            </h3>
-            {props.repositories.length > 0 ? (
-              <span className="text-[10px] tabular-nums text-muted-foreground/50">
-                {props.repositories.length}
-              </span>
-            ) : null}
-          </div>
-          {props.repositoriesLoading ? (
-            <DiffPanelLoadingState label="Loading repositories..." />
-          ) : props.repositoriesError ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/6 px-3 py-2 text-[11px] text-destructive/85">
-              {props.repositoriesError}
-            </div>
-          ) : (
-            <div className="space-y-px">
-              {props.repositories.map((repository) => (
-                <GitRepositoryRow
-                  key={repository.cwd}
-                  repository={repository}
-                  environmentId={props.environmentId}
-                  selected={props.selectedRepositoryCwd === repository.cwd}
-                  onSelect={props.onSelectRepository}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-
       {props.actionBar ? (
         <div className="shrink-0 border-b border-border/70 px-3 py-2">{props.actionBar}</div>
       ) : null}
 
-      <div className="min-h-0 basis-[40%] shrink-0 overflow-hidden border-b border-border/70">
-        <div className="h-full overflow-y-auto px-3 py-3">
-          {reviewLoading ? (
-            <DiffPanelLoadingState label="Loading git review status..." />
-          ) : props.reviewStatusError || props.commitsError ? (
-            <div className="rounded-md border border-red-500/30 bg-red-500/6 px-3 py-2 text-[11px] text-red-500/85">
-              {props.reviewStatusError ?? props.commitsError}
-            </div>
-          ) : props.filterMode === "all-changes" ? (
-            renderFileSection("All changes", props.allChanges, "No changes to review.")
-          ) : props.filterMode === "uncommitted" ? (
-            <div className="space-y-3">
-              {renderFileSection("Staged", props.staged, "No staged changes.")}
-              {renderFileSection("Unstaged", props.unstaged, "No unstaged changes.")}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <section>
-                <div className="flex items-center gap-2 px-2 py-1">
-                  <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
-                    Ahead of {props.baseBranch ?? "base"}
-                  </h3>
-                  <span className="text-[10px] tabular-nums text-muted-foreground/50">
-                    {props.commits.length}
-                  </span>
-                </div>
-                {props.commits.length === 0 ? (
+      <div ref={sectionsRef} className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          {repositoriesVisible ? (
+            <>
+              <GitScrollableSection
+                testId="git-section-repositories"
+                height={repositoriesHeight}
+                header={
+                  <GitSectionHeading title="Repositories" count={props.repositories.length} />
+                }
+              >
+                {props.repositoriesLoading ? (
                   <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
-                    No commits ahead of the selected base branch.
+                    Loading repositories...
+                  </div>
+                ) : props.repositoriesError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/6 px-3 py-2 text-[11px] text-destructive/85">
+                    {props.repositoriesError}
                   </div>
                 ) : (
                   <div className="space-y-px">
-                    {props.commits.map((commit) => (
-                      <CommitRow
-                        key={commit.hash}
-                        hash={commit.hash}
-                        shortHash={commit.shortHash}
-                        message={commit.message}
-                        author={commit.author}
-                        date={commit.date}
-                        selected={commit.hash === props.selectedCommitHash}
-                        onSelect={() => props.onSelectCommit(commit.hash)}
+                    {props.repositories.map((repository) => (
+                      <GitRepositoryRow
+                        key={repository.cwd}
+                        repository={repository}
+                        environmentId={props.environmentId}
+                        selected={props.selectedRepositoryCwd === repository.cwd}
+                        onSelect={props.onSelectRepository}
                       />
                     ))}
                   </div>
                 )}
-              </section>
+              </GitScrollableSection>
+              <GitPanelResizeHandle
+                ariaLabel="Resize repositories section"
+                disabled={isMobile}
+                testId="git-resize-handle-repositories"
+                onPointerCancel={repositoriesSection.handlePointerCancel}
+                onPointerDown={repositoriesSection.handlePointerDown}
+                onPointerMove={repositoriesSection.handlePointerMove}
+                onPointerUp={repositoriesSection.handlePointerUp}
+              />
+            </>
+          ) : null}
 
-              {props.selectedCommitHash ? (
-                <section>
-                  <div className="flex items-center gap-2 px-2 py-1">
-                    <h3 className="flex-1 text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
-                      Commit files
-                    </h3>
-                    <span className="text-[10px] tabular-nums text-muted-foreground/50">
-                      {props.commitFiles.length}
-                    </span>
-                  </div>
-                  {props.commitFilesLoading ? (
-                    <DiffPanelLoadingState label="Loading commit files..." />
-                  ) : props.commitFilesError ? (
-                    <div className="px-2 py-2 text-[11px] text-destructive/85">
-                      {props.commitFilesError}
-                    </div>
-                  ) : props.commitFiles.length === 0 ? (
+          {reviewLoading ? (
+            <GitScrollableSection
+              testId="git-section-review"
+              height={reviewHeight}
+              header={<GitSectionHeading title="Review" />}
+            >
+              <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
+                Loading git review status...
+              </div>
+            </GitScrollableSection>
+          ) : props.reviewStatusError || props.commitsError ? (
+            <GitScrollableSection
+              testId="git-section-review"
+              height={reviewHeight}
+              header={<GitSectionHeading title="Review" />}
+            >
+              <div className="rounded-md border border-red-500/30 bg-red-500/6 px-3 py-2 text-[11px] text-red-500/85">
+                {props.reviewStatusError ?? props.commitsError}
+              </div>
+            </GitScrollableSection>
+          ) : props.filterMode === "all-changes" ? (
+            <GitScrollableSection
+              testId="git-section-review"
+              height={reviewHeight}
+              header={
+                <GitFileSectionHeader
+                  title="All changes"
+                  entries={props.allChanges}
+                  filterMode={props.filterMode}
+                  onBatchToggleFiles={props.onBatchToggleFiles}
+                  selectedFilePaths={props.selectedFilePaths}
+                />
+              }
+            >
+              <GitFileSection
+                title="All changes"
+                entries={props.allChanges}
+                emptyLabel="No changes to review."
+                filterMode={props.filterMode}
+                onSelectFile={props.onSelectFile}
+                onToggleFileSelection={props.onToggleFileSelection}
+                onBatchToggleFiles={props.onBatchToggleFiles}
+                selectedFilePaths={props.selectedFilePaths}
+                selectedPreviewKey={selectedPreviewKey}
+                showHeader={false}
+              />
+            </GitScrollableSection>
+          ) : props.filterMode === "uncommitted" ? (
+            <section
+              className="min-h-0 overflow-hidden"
+              data-testid="git-section-review"
+              style={{ height: `${reviewHeight}px` }}
+            >
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <GitScrollableSection
+                  testId="git-section-staged"
+                  height={stagedHeight}
+                  header={
+                    <GitFileSectionHeader
+                      title="Staged"
+                      entries={props.staged}
+                      filterMode={props.filterMode}
+                      onBatchToggleFiles={props.onBatchToggleFiles}
+                      selectedFilePaths={props.selectedFilePaths}
+                    />
+                  }
+                >
+                  <GitFileSection
+                    title="Staged"
+                    entries={props.staged}
+                    emptyLabel="No staged changes."
+                    filterMode={props.filterMode}
+                    onSelectFile={props.onSelectFile}
+                    onToggleFileSelection={props.onToggleFileSelection}
+                    onBatchToggleFiles={props.onBatchToggleFiles}
+                    selectedFilePaths={props.selectedFilePaths}
+                    selectedPreviewKey={selectedPreviewKey}
+                    showHeader={false}
+                  />
+                </GitScrollableSection>
+                <GitPanelResizeHandle
+                  ariaLabel="Resize staged section"
+                  disabled={isMobile}
+                  testId="git-resize-handle-staged"
+                  onPointerCancel={stagedSection.handlePointerCancel}
+                  onPointerDown={stagedSection.handlePointerDown}
+                  onPointerMove={stagedSection.handlePointerMove}
+                  onPointerUp={stagedSection.handlePointerUp}
+                />
+                <GitScrollableSection
+                  testId="git-section-unstaged"
+                  height={unstagedHeight}
+                  header={
+                    <GitFileSectionHeader
+                      title="Unstaged"
+                      entries={props.unstaged}
+                      filterMode={props.filterMode}
+                      onBatchToggleFiles={props.onBatchToggleFiles}
+                      selectedFilePaths={props.selectedFilePaths}
+                    />
+                  }
+                >
+                  <GitFileSection
+                    title="Unstaged"
+                    entries={props.unstaged}
+                    emptyLabel="No unstaged changes."
+                    filterMode={props.filterMode}
+                    onSelectFile={props.onSelectFile}
+                    onToggleFileSelection={props.onToggleFileSelection}
+                    onBatchToggleFiles={props.onBatchToggleFiles}
+                    selectedFilePaths={props.selectedFilePaths}
+                    selectedPreviewKey={selectedPreviewKey}
+                    showHeader={false}
+                  />
+                </GitScrollableSection>
+              </div>
+            </section>
+          ) : (
+            <section
+              className="min-h-0 overflow-hidden"
+              data-testid="git-section-review"
+              style={{ height: `${reviewHeight}px` }}
+            >
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <GitScrollableSection
+                  testId="git-section-commits"
+                  height={commitsHeight}
+                  header={
+                    <GitSectionHeading
+                      title={`Ahead of ${props.baseBranch ?? "base"}`}
+                      count={props.commits.length}
+                    />
+                  }
+                >
+                  {props.commits.length === 0 ? (
                     <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
-                      This commit does not change any files.
+                      No commits ahead of the selected base branch.
                     </div>
                   ) : (
                     <div className="space-y-px">
-                      {props.commitFiles.map((entry) => (
-                        <GitFileRow
-                          key={entry.key}
-                          entry={entry}
-                          selected={
-                            selectedPreviewKey ===
-                            `${entry.category}:${props.selectedCommitHash}:${entry.file.oldPath ?? ""}:${entry.file.path}`
-                          }
-                          onSelect={(selection) =>
+                      {props.commits.map((commit) => (
+                        <CommitRow
+                          key={commit.hash}
+                          hash={commit.hash}
+                          shortHash={commit.shortHash}
+                          message={commit.message}
+                          author={commit.author}
+                          date={commit.date}
+                          selected={commit.hash === props.selectedCommitHash}
+                          onSelect={() => props.onSelectCommit(commit.hash)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </GitScrollableSection>
+                {hasCommitFilesSection ? (
+                  <>
+                    <GitPanelResizeHandle
+                      ariaLabel="Resize commit files section"
+                      disabled={isMobile}
+                      testId="git-resize-handle-commit-files"
+                      onPointerCancel={commitFilesSection.handlePointerCancel}
+                      onPointerDown={commitFilesSection.handlePointerDown}
+                      onPointerMove={commitFilesSection.handlePointerMove}
+                      onPointerUp={commitFilesSection.handlePointerUp}
+                    />
+                    <GitScrollableSection
+                      testId="git-section-commit-files"
+                      height={commitFilesHeight}
+                      header={
+                        <GitFileSectionHeader
+                          title="Commit files"
+                          entries={props.commitFiles}
+                          filterMode="commit"
+                        />
+                      }
+                    >
+                      {props.commitFilesLoading ? (
+                        <div className="px-2 py-2 text-[11px] text-muted-foreground/50">
+                          Loading commit files...
+                        </div>
+                      ) : props.commitFilesError ? (
+                        <div className="px-2 py-2 text-[11px] text-destructive/85">
+                          {props.commitFilesError}
+                        </div>
+                      ) : (
+                        <GitFileSection
+                          title="Commit files"
+                          entries={props.commitFiles}
+                          emptyLabel="This commit does not change any files."
+                          filterMode="commit"
+                          onSelectFile={(selection) =>
                             props.onSelectFile({
                               ...(props.selectedCommitHash
                                 ? { commitHash: props.selectedCommitHash }
@@ -1156,36 +1487,52 @@ export function GitDiffView(props: {
                               ...selection,
                             })
                           }
-                          selectable={false}
+                          selectedPreviewCommitHash={props.selectedCommitHash ?? undefined}
+                          selectedPreviewKey={selectedPreviewKey}
+                          showHeader={false}
                         />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              ) : null}
-            </div>
+                      )}
+                    </GitScrollableSection>
+                  </>
+                ) : null}
+              </div>
+            </section>
           )}
-        </div>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <PatchPreview
-          patch={props.diffPatch}
-          isLoading={props.diffLoading}
-          error={props.diffError}
-          emptyLabel={
-            props.selectedPreview
-              ? "No patch available for the selected file."
-              : "Select a file to preview its diff."
-          }
-          cacheScope={`git:${props.resolvedTheme}`}
-          diffRenderMode={props.diffRenderMode}
-          diffWordWrap={props.diffWordWrap}
-          resolvedTheme={props.resolvedTheme}
-          colorScheme={props.colorScheme}
-          patchViewportRef={props.patchViewportRef}
-          onOpenFileInEditor={props.onOpenFileInEditor}
-        />
+          <GitPanelResizeHandle
+            ariaLabel="Resize review section"
+            disabled={isMobile}
+            testId="git-resize-handle-review"
+            onPointerCancel={reviewSection.handlePointerCancel}
+            onPointerDown={reviewSection.handlePointerDown}
+            onPointerMove={reviewSection.handlePointerMove}
+            onPointerUp={reviewSection.handlePointerUp}
+          />
+
+          <section
+            className="min-h-0 flex-1 overflow-hidden"
+            data-testid="git-section-diff"
+            style={{ height: `${diffHeight}px` }}
+          >
+            <PatchPreview
+              patch={props.diffPatch}
+              isLoading={props.diffLoading}
+              error={props.diffError}
+              emptyLabel={
+                props.selectedPreview
+                  ? "No patch available for the selected file."
+                  : "Select a file to preview its diff."
+              }
+              cacheScope={`git:${props.resolvedTheme}`}
+              diffRenderMode={props.diffRenderMode}
+              diffWordWrap={props.diffWordWrap}
+              resolvedTheme={props.resolvedTheme}
+              colorScheme={props.colorScheme}
+              patchViewportRef={props.patchViewportRef}
+              onOpenFileInEditor={props.onOpenFileInEditor}
+            />
+          </section>
+        </div>
       </div>
     </div>
   );
