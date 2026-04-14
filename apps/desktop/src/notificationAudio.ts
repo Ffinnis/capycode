@@ -25,6 +25,21 @@ interface PlaySoundCallbacks {
   onProcessChange?: (process: ChildProcess) => void;
 }
 
+export function resolveSoundPlayerExecutable(input: {
+  command: string;
+  candidates: readonly string[];
+  fileExists?: (path: string) => boolean;
+}): string {
+  const fileExists = input.fileExists ?? existsSync;
+  for (const candidate of input.candidates) {
+    if (fileExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return input.command;
+}
+
 export function clampNotificationVolume(value: number): number {
   if (!Number.isFinite(value)) {
     return DEFAULT_NOTIFICATION_VOLUME;
@@ -45,14 +60,22 @@ export function playSoundFile(
   const volumeDecimal = clampedVolume / 100;
 
   if (process.platform === "darwin") {
-    return execFile("afplay", ["-v", volumeDecimal.toString(), soundPath], () =>
+    const afplayCommand = resolveSoundPlayerExecutable({
+      command: "afplay",
+      candidates: ["/usr/bin/afplay"],
+    });
+    return execFile(afplayCommand, ["-v", volumeDecimal.toString(), soundPath], () =>
       callbacks?.onComplete?.(),
     );
   }
 
   if (process.platform === "linux") {
+    const paplayCommand = resolveSoundPlayerExecutable({
+      command: "paplay",
+      candidates: ["/usr/bin/paplay", "/bin/paplay"],
+    });
     const paVolume = Math.round(volumeDecimal * 65536);
-    return execFile("paplay", ["--volume", paVolume.toString(), soundPath], (error) => {
+    return execFile(paplayCommand, ["--volume", paVolume.toString(), soundPath], (error) => {
       if (error) {
         if (callbacks?.isCanceled?.()) {
           callbacks?.onComplete?.();
@@ -62,7 +85,11 @@ export function playSoundFile(
           callbacks?.onComplete?.();
           return;
         }
-        const fallback = execFile("aplay", [soundPath], () => callbacks?.onComplete?.());
+        const aplayCommand = resolveSoundPlayerExecutable({
+          command: "aplay",
+          candidates: ["/usr/bin/aplay", "/bin/aplay"],
+        });
+        const fallback = execFile(aplayCommand, [soundPath], () => callbacks?.onComplete?.());
         callbacks?.onProcessChange?.(fallback);
         return;
       }

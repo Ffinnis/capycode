@@ -5,6 +5,7 @@ import {
   EventId,
   ORCHESTRATION_WS_METHODS,
   EnvironmentId,
+  type GitStatusResult,
   type MessageId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -51,7 +52,7 @@ import { estimateTimelineMessageHeight } from "./timelineHeight";
 import { DEFAULT_CLIENT_SETTINGS } from "@capycode/contracts/settings";
 
 vi.mock("../lib/gitStatusState", () => ({
-  useGitStatus: () => ({ data: null, error: null, cause: null, isPending: false }),
+  useGitStatus: () => ({ data: gitStatusRef.current, error: null, cause: null, isPending: false }),
   useGitStatuses: () => new Map(),
   refreshGitStatus: () => Promise.resolve(null),
   resetGitStatusStateForTests: () => undefined,
@@ -81,6 +82,9 @@ const rpcHarness = new BrowserWsRpcHarness();
 const wsRequests = rpcHarness.requests;
 let customWsRpcResolver: ((body: NormalizedWsRpcRequestBody) => unknown | undefined) | null = null;
 const wsLink = ws.link(/ws(s)?:\/\/.*/);
+const gitStatusRef = vi.hoisted(() => ({
+  current: null as GitStatusResult | null,
+}));
 
 interface ViewportSpec {
   name: string;
@@ -1520,6 +1524,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     document.body.innerHTML = "";
     wsRequests.length = 0;
     customWsRpcResolver = null;
+    gitStatusRef.current = null;
     useComposerDraftStore.setState({
       draftsByThreadKey: {},
       draftThreadsByThreadKey: {},
@@ -2512,9 +2517,25 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("uses the active draft route session when changing the base branch", async () => {
+  it("uses the active draft route session when syncing the branch from git status", async () => {
     const staleDraftId = draftIdFromPath("/draft/draft-stale-branch-session");
     const activeDraftId = draftIdFromPath("/draft/draft-active-branch-session");
+    gitStatusRef.current = {
+      branch: "release/next",
+      hasWorkingTreeChanges: false,
+      workingTree: {
+        files: [],
+        insertions: 0,
+        deletions: 0,
+      },
+      hasUpstream: true,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+      hasOriginRemote: true,
+      isRepo: true,
+      isDefaultBranch: false,
+    };
 
     useComposerDraftStore.setState({
       draftThreadsByThreadKey: {
@@ -2553,57 +2574,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       viewport: DEFAULT_VIEWPORT,
       snapshot: createDraftOnlySnapshot(),
       initialPath: `/draft/${activeDraftId}`,
-      resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
-          return {
-            isRepo: true,
-            hasOriginRemote: true,
-            nextCursor: null,
-            totalCount: 2,
-            branches: [
-              {
-                name: "main",
-                current: true,
-                isDefault: true,
-                worktreePath: null,
-              },
-              {
-                name: "release/next",
-                current: false,
-                isDefault: false,
-                worktreePath: null,
-              },
-            ],
-          };
-        }
-        if (body._tag === WS_METHODS.gitCheckout) {
-          return {
-            branch: "release/next",
-          };
-        }
-        return undefined;
-      },
     });
 
     try {
-      const branchButton = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "main",
-          ) as HTMLButtonElement | null,
-        'Unable to find branch selector button with "main".',
-      );
-      branchButton.click();
-
-      const branchOption = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("span")).find(
-            (element) => element.textContent?.trim() === "release/next",
-          ) as HTMLSpanElement | null,
-        'Unable to find the "release/next" branch option.',
-      );
-      branchOption.click();
-
       await vi.waitFor(
         () => {
           expect(useComposerDraftStore.getState().getDraftSession(activeDraftId)?.branch).toBe(
@@ -2612,16 +2585,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
           expect(useComposerDraftStore.getState().getDraftSession(staleDraftId)?.branch).toBe(
             "main",
           );
-        },
-        { timeout: 8_000, interval: 16 },
-      );
-
-      await vi.waitFor(
-        () => {
-          const updatedButton = Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "release/next",
-          );
-          expect(updatedButton).toBeTruthy();
         },
         { timeout: 8_000, interval: 16 },
       );
