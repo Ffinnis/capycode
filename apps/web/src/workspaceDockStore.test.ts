@@ -4,6 +4,7 @@ import {
   __resetWorkspaceDockStoreForTests,
   getWorkspaceDockScopeKey,
   getWorkspaceDockScopeState,
+  resolveWorkspaceDockScopeId,
   WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "./workspaceDockStore";
@@ -66,6 +67,54 @@ describe("workspaceDockStore", () => {
     expect(
       getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), otherScope).openFileTabs,
     ).toEqual(["main.go"]);
+  });
+
+  it("keeps scopes isolated by workspace id even when cwd matches", () => {
+    const firstWorkspaceScope = getWorkspaceDockScopeKey({
+      environmentId: "env-1",
+      threadId: "thread-1",
+      workspaceId: "workspace-1",
+      cwd: "/repo",
+    });
+    const secondWorkspaceScope = getWorkspaceDockScopeKey({
+      environmentId: "env-1",
+      threadId: "thread-1",
+      workspaceId: "workspace-2",
+      cwd: "/repo",
+    });
+    const store = useWorkspaceDockStore.getState();
+
+    store.syncRouteState(firstWorkspaceScope, {
+      filesOpen: false,
+      diffOpen: false,
+      terminalOpen: true,
+      filePath: null,
+    });
+    store.openFile(secondWorkspaceScope, "src/other.ts");
+
+    expect(
+      getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), firstWorkspaceScope),
+    ).toMatchObject({
+      terminalTabOpen: true,
+      activeTab: WORKSPACE_TERMINAL_TAB_ID,
+      openFileTabs: [],
+    });
+    expect(
+      getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), secondWorkspaceScope),
+    ).toMatchObject({
+      terminalTabOpen: false,
+      activeTab: "src/other.ts",
+      openFileTabs: ["src/other.ts"],
+    });
+  });
+
+  it("prefers the thread workspace id over the project's active workspace id", () => {
+    expect(
+      resolveWorkspaceDockScopeId({
+        effectiveWorkspaceId: "workspace-thread",
+        activeWorkspaceId: "workspace-project",
+      }),
+    ).toBe("workspace-thread");
   });
 
   it("returns a stable default snapshot for missing scopes", () => {

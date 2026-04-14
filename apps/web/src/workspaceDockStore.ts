@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const PERSISTED_STATE_KEY = "capycode:workspace-dock:v1";
+const PERSISTED_STATE_KEY = "capycode:workspace-dock:v2";
 const DEFAULT_FILES_PANEL_WIDTH = 280;
 const DEFAULT_CONTEXT_PANEL_WIDTH = 640;
 export const WORKSPACE_TERMINAL_TAB_ID = "__workspace_terminal__" as const;
@@ -368,9 +368,26 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
 export function getWorkspaceDockScopeKey(input: {
   environmentId: string;
   threadId: string;
+  workspaceId?: string | null;
   cwd: string;
 }): string {
-  return `${input.environmentId}:${input.threadId}:${input.cwd}`;
+  const workspaceScope = input.workspaceId?.trim();
+  return workspaceScope
+    ? `${input.environmentId}:${input.threadId}:workspace:${workspaceScope}`
+    : `${input.environmentId}:${input.threadId}:cwd:${input.cwd}`;
+}
+
+export function resolveWorkspaceDockScopeId(input: {
+  effectiveWorkspaceId?: string | null;
+  activeWorkspaceId?: string | null;
+}): string | null {
+  const effectiveWorkspaceId = input.effectiveWorkspaceId?.trim();
+  if (effectiveWorkspaceId) {
+    return effectiveWorkspaceId;
+  }
+
+  const activeWorkspaceId = input.activeWorkspaceId?.trim();
+  return activeWorkspaceId && activeWorkspaceId.length > 0 ? activeWorkspaceId : null;
 }
 
 export function getWorkspaceDockScopeState(
