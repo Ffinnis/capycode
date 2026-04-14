@@ -79,29 +79,29 @@ function RootRouteView() {
     };
   }, [pathname]);
 
-  if (pathname === "/pair") {
-    return <Outlet />;
-  }
+  const shouldRenderAuthenticatedShell =
+    pathname !== "/pair" && authGateState.status === "authenticated";
 
-  if (authGateState.status !== "authenticated") {
-    return <Outlet />;
-  }
   return (
     <ToastProvider>
-      <AnchoredToastProvider>
-        <AuthenticatedTracingBootstrap />
-        <ServerStateBootstrap />
-        <EnvironmentConnectionManagerBootstrap />
-        <EventRouter />
-        <DesktopNotificationsCoordinator />
-        <WebSocketConnectionCoordinator />
-        <SlowRpcAckToastCoordinator />
-        <WebSocketConnectionSurface>
-          <AppSidebarLayout>
-            <Outlet />
-          </AppSidebarLayout>
-        </WebSocketConnectionSurface>
-      </AnchoredToastProvider>
+      {shouldRenderAuthenticatedShell ? (
+        <AnchoredToastProvider>
+          <AuthenticatedTracingBootstrap />
+          <ServerStateBootstrap />
+          <EnvironmentConnectionManagerBootstrap />
+          <EventRouter />
+          <DesktopNotificationsCoordinator />
+          <WebSocketConnectionCoordinator />
+          <SlowRpcAckToastCoordinator />
+          <WebSocketConnectionSurface>
+            <AppSidebarLayout>
+              <Outlet />
+            </AppSidebarLayout>
+          </WebSocketConnectionSurface>
+        </AnchoredToastProvider>
+      ) : (
+        <Outlet />
+      )}
       <ConfirmationDialogProvider />
     </ToastProvider>
   );
