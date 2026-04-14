@@ -15,6 +15,7 @@ import {
   createThreadSelectorAcrossEnvironments,
 } from "../storeSelectors";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { resolveWorkspaceDockScopeId } from "../workspaceDockStore";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
@@ -78,6 +79,10 @@ function DraftChatThreadRouteView() {
     [activeProject, draftSession, linkedWorkspace],
   );
   const activeWorkspaceRoot = effectiveGitContext.worktreePath ?? activeProject?.cwd ?? null;
+  const activeWorkspaceScopeId = resolveWorkspaceDockScopeId({
+    effectiveWorkspaceId: effectiveGitContext.workspaceId,
+    activeWorkspaceId: linkedWorkspace?.id ?? null,
+  });
 
   useEffect(() => {
     if (!canonicalThreadRef) {
@@ -120,6 +125,7 @@ function DraftChatThreadRouteView() {
       environmentId={draftSession.environmentId}
       threadId={draftSession.threadId}
       draftId={draftId}
+      activeWorkspaceId={activeWorkspaceScopeId}
       activeWorkspaceRoot={activeWorkspaceRoot}
       search={search}
     />

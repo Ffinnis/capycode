@@ -17,6 +17,7 @@ import {
 } from "../store";
 import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { resolveWorkspaceDockScopeId } from "../workspaceDockStore";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -81,6 +82,10 @@ function ChatThreadRouteView() {
     [activeProject, linkedWorkspace, serverThread],
   );
   const activeWorkspaceRoot = effectiveGitContext.worktreePath ?? activeProject?.cwd ?? null;
+  const activeWorkspaceScopeId = resolveWorkspaceDockScopeId({
+    effectiveWorkspaceId: effectiveGitContext.workspaceId,
+    activeWorkspaceId: linkedWorkspace?.id ?? null,
+  });
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -108,6 +113,7 @@ function ChatThreadRouteView() {
       routeKind="server"
       environmentId={threadRef.environmentId}
       threadId={threadRef.threadId}
+      activeWorkspaceId={activeWorkspaceScopeId}
       activeWorkspaceRoot={activeWorkspaceRoot}
       search={search}
     />

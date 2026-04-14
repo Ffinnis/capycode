@@ -66,6 +66,7 @@ export function ThreadWorkspaceShell(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
+  activeWorkspaceId: string | null;
   activeWorkspaceRoot: string | null;
   search: DiffRouteSearch;
 }) {
@@ -78,10 +79,11 @@ export function ThreadWorkspaceShell(props: {
         ? getWorkspaceDockScopeKey({
             environmentId: props.environmentId,
             threadId: props.threadId,
+            workspaceId: props.activeWorkspaceId,
             cwd: props.activeWorkspaceRoot,
           })
         : null,
-    [props.activeWorkspaceRoot, props.environmentId, props.threadId],
+    [props.activeWorkspaceId, props.activeWorkspaceRoot, props.environmentId, props.threadId],
   );
   const workspaceDockState = useWorkspaceDockStore(
     useMemo(

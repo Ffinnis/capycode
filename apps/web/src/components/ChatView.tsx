@@ -182,6 +182,7 @@ import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import {
   getWorkspaceDockScopeKey,
   getWorkspaceDockScopeState,
+  resolveWorkspaceDockScopeId,
   WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "~/workspaceDockStore";
@@ -1325,16 +1326,21 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = effectiveGitContext.worktreePath;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const activeWorkspaceScopeId = resolveWorkspaceDockScopeId({
+    effectiveWorkspaceId: effectiveGitContext.workspaceId,
+    activeWorkspaceId: activeWorkspace?.id ?? null,
+  });
   const workspaceDockScopeKey = useMemo(
     () =>
       activeThread && activeWorkspaceRoot
         ? getWorkspaceDockScopeKey({
             environmentId,
             threadId,
+            workspaceId: activeWorkspaceScopeId,
             cwd: activeWorkspaceRoot,
           })
         : null,
-    [activeThread, activeWorkspaceRoot, environmentId, threadId],
+    [activeThread, activeWorkspaceRoot, activeWorkspaceScopeId, environmentId, threadId],
   );
   const workspaceDockState = useWorkspaceDockStore(
     useMemo(
