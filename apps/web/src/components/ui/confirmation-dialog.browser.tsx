@@ -2,10 +2,7 @@ import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { ConfirmationDialogProvider } from "./confirmation-dialog";
-import {
-  confirm,
-  resetConfirmationDialogForTests,
-} from "./confirmation-dialog.logic";
+import { confirm, resetConfirmationDialogForTests } from "./confirmation-dialog.logic";
 
 function findButtonByText(text: string): HTMLButtonElement | null {
   return (

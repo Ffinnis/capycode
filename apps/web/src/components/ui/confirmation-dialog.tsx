@@ -18,7 +18,6 @@ import {
   AlertDialogClose,
 } from "./alert-dialog";
 import { Button } from "./button";
-import { cn } from "~/lib/utils";
 
 export function ConfirmationDialogProvider() {
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
@@ -40,14 +39,8 @@ export function ConfirmationDialogProvider() {
     cancelConfirmation();
   }, []);
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) {
-      cancelConfirmation();
-    }
-  }, []);
-
   return (
-    <AlertDialog onOpenChange={handleOpenChange} open={pending !== null}>
+    <AlertDialog open={pending !== null}>
       <AlertDialogPopup data-slot="confirmation-dialog">
         <AlertDialogHeader>
           <div className="flex items-start gap-4">
