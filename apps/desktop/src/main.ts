@@ -57,6 +57,7 @@ import { isBackendReadinessAborted, waitForHttpReady } from "./backendReadiness"
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { DesktopNotificationManager } from "./desktopNotifications";
 import {
+  ensureExternalPlaybackSoundPath,
   NotificationSoundPreviewController,
   importCustomNotificationSoundFromPath,
   playSoundFile,
@@ -263,12 +264,18 @@ function writeDesktopClientSettings(settings: ClientSettings): void {
 
 function resolveNotificationSoundFile(soundId: NotificationSoundId): string | null {
   const settings = readDesktopClientSettings();
-  return resolveNotificationSoundPath({
+  const soundPath = resolveNotificationSoundPath({
     stateDir: STATE_DIR,
     soundId,
     customSound: settings.customNotificationSound,
     resolveResourcePath,
   });
+  return soundPath
+    ? ensureExternalPlaybackSoundPath({
+        stateDir: STATE_DIR,
+        soundPath,
+      })
+    : null;
 }
 
 function playSelectedNotificationSound(): void {
@@ -277,12 +284,7 @@ function playSelectedNotificationSound(): void {
     return;
   }
 
-  const soundPath = resolveNotificationSoundPath({
-    stateDir: STATE_DIR,
-    soundId: settings.selectedNotificationSoundId,
-    customSound: settings.customNotificationSound,
-    resolveResourcePath,
-  });
+  const soundPath = resolveNotificationSoundFile(settings.selectedNotificationSoundId);
 
   if (!soundPath) {
     return;
