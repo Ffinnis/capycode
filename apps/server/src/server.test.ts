@@ -2693,6 +2693,116 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("keeps branch cleanup enabled when the tracked worktree path is already missing", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-delete-missing-path-",
+      });
+      const removableWorktreePath = `${projectRoot}/missing-worktree`;
+      const removeWorktree = vi.fn(() => Effect.void);
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            removeWorktree,
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-delete-missing-path");
+      yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+      const workspaceId = crypto.randomUUID();
+      const worktreeId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      yield* sql`
+        INSERT INTO worktrees (
+          id,
+          project_id,
+          path,
+          branch,
+          base_branch,
+          created_at,
+          created_by_capycode
+        )
+        VALUES (
+          ${worktreeId},
+          ${projectId},
+          ${removableWorktreePath},
+          ${"feature/delete-missing-path"},
+          ${"main"},
+          ${now},
+          1
+        )
+      `;
+      yield* sql`
+        INSERT INTO workspaces (
+          id,
+          project_id,
+          worktree_id,
+          type,
+          branch,
+          name,
+          tab_order,
+          is_default,
+          created_at,
+          updated_at,
+          last_opened_at,
+          deleting_at,
+          section_id
+        )
+        VALUES (
+          ${workspaceId},
+          ${projectId},
+          ${worktreeId},
+          ${"worktree"},
+          ${"feature/delete-missing-path"},
+          ${"feature/delete-missing-path"},
+          1,
+          0,
+          ${now},
+          ${now},
+          ${now},
+          NULL,
+          NULL
+        )
+      `;
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const preview = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesGetDeletePreview]({
+            workspaceId: workspaceId as never,
+          }),
+        ),
+      );
+
+      assert.equal(preview.deletesWorktreePath, false);
+      assert.equal(preview.worktreePath, removableWorktreePath);
+      assert.equal(preview.deletesBranch, true);
+      assert.equal(preview.branchToDelete, "feature/delete-missing-path");
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.workspacesDelete]({
+            workspaceId: workspaceId as never,
+          }),
+        ),
+      );
+
+      expect(removeWorktree).toHaveBeenCalledWith({
+        cwd: projectRoot,
+        path: removableWorktreePath,
+        branchToDelete: "feature/delete-missing-path",
+        force: true,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc shell.openInEditor", () =>
     Effect.gen(function* () {
       let openedInput: { cwd: string; editor: EditorId } | null = null;

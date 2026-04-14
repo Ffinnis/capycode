@@ -1196,6 +1196,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           const row = counts[0];
           const deletesWorktreePath =
             worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path);
+          const deletesBranch = worktree !== null && worktree.createdByCapycode === 1;
           return {
             workspaceId: workspace.id,
             activeThreadCount: row?.activeThreadCount ?? 0,
@@ -1203,8 +1204,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             totalThreadCount: row?.totalThreadCount ?? 0,
             deletesWorktreePath,
             worktreePath: workspace.worktreePath,
-            deletesBranch: deletesWorktreePath,
-            branchToDelete: deletesWorktreePath ? (worktree?.branch ?? null) : null,
+            deletesBranch,
+            branchToDelete: deletesBranch ? (worktree?.branch ?? null) : null,
           };
         });
 
@@ -1698,7 +1699,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               : [];
           const worktree = worktreeRows[0];
 
-          if (worktree && worktree.createdByCapycode === 1 && existsSync(worktree.path)) {
+          if (worktree && worktree.createdByCapycode === 1) {
             yield* git
               .removeWorktree({
                 cwd: projectRoot,

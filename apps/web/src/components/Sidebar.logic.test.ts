@@ -89,6 +89,19 @@ describe("formatWorkspaceDeleteImpactMessage", () => {
       }),
     ).toBe("The imported worktree at /tmp/imported-worktree will stay on disk.");
   });
+
+  it("falls back to a generic branch deletion warning when the branch name is unavailable", () => {
+    expect(
+      formatWorkspaceDeleteImpactMessage({
+        deletesWorktreePath: true,
+        worktreePath: "/tmp/worktree",
+        deletesBranch: true,
+        branchToDelete: null,
+      }),
+    ).toBe(
+      "The worktree at /tmp/worktree will be removed from disk. A Git branch will also be deleted.",
+    );
+  });
 });
 
 describe("createThreadJumpHintVisibilityController", () => {

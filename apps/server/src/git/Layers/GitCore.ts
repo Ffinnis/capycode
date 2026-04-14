@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   Cache,
   Data,
@@ -2665,25 +2666,28 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
 
   const removeWorktree: GitCoreShape["removeWorktree"] = Effect.fn("removeWorktree")(
     function* (input) {
-      const args = ["worktree", "remove"];
-      if (input.force) {
-        args.push("--force");
-      }
-      args.push(input.path);
-      yield* executeGit("GitCore.removeWorktree", input.cwd, args, {
-        timeoutMs: 15_000,
-        fallbackErrorMessage: "git worktree remove failed",
-      }).pipe(
-        Effect.mapError((error) =>
-          createGitCommandError(
-            "GitCore.removeWorktree",
-            input.cwd,
-            args,
-            `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
-            error,
+      const shouldRemoveWorktreePath = !input.branchToDelete || existsSync(input.path);
+      if (shouldRemoveWorktreePath) {
+        const args = ["worktree", "remove"];
+        if (input.force) {
+          args.push("--force");
+        }
+        args.push(input.path);
+        yield* executeGit("GitCore.removeWorktree", input.cwd, args, {
+          timeoutMs: 15_000,
+          fallbackErrorMessage: "git worktree remove failed",
+        }).pipe(
+          Effect.mapError((error) =>
+            createGitCommandError(
+              "GitCore.removeWorktree",
+              input.cwd,
+              args,
+              `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
+              error,
+            ),
           ),
-        ),
-      );
+        );
+      }
 
       if (!input.branchToDelete) {
         return;
@@ -2694,14 +2698,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         timeoutMs: 15_000,
         fallbackErrorMessage: "git branch delete failed",
       }).pipe(
-        Effect.mapError((error) =>
-          createGitCommandError(
-            "GitCore.removeWorktree.deleteBranch",
-            input.cwd,
-            deleteBranchArgs,
-            `${commandLabel(deleteBranchArgs)} failed (cwd: ${input.cwd}): ${error.message}`,
-            error,
-          ),
+        Effect.catch((error) =>
+          Effect.logWarning("GitCore.removeWorktree: best-effort branch deletion failed", {
+            cwd: input.cwd,
+            branch: input.branchToDelete,
+            command: commandLabel(deleteBranchArgs),
+            detail: error.message,
+          }),
         ),
       );
     },

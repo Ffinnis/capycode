@@ -223,8 +223,12 @@ export function formatWorkspaceDeleteImpactMessage(
     details.push("This workspace has no separate worktree path.");
   }
 
-  if (preview.deletesBranch && preview.branchToDelete) {
-    details.push(`The Git branch ${preview.branchToDelete} will also be deleted.`);
+  if (preview.deletesBranch) {
+    details.push(
+      preview.branchToDelete
+        ? `The Git branch ${preview.branchToDelete} will also be deleted.`
+        : "A Git branch will also be deleted.",
+    );
   }
 
   return details.join(" ");

@@ -1453,6 +1453,74 @@ it.layer(TestLayer)("git integration", (it) => {
         }),
     );
 
+    it.effect("removeGitWorktree continues when best-effort branch deletion fails", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        yield* initRepoWithCommit(tmp);
+
+        const wtPath = path.join(tmp, "wt-branch-delete-failure-dir");
+        const currentBranch = (yield* (yield* GitCore).listBranches({ cwd: tmp })).branches.find(
+          (b) => b.current,
+        )!.name;
+
+        yield* (yield* GitCore).createWorktree({
+          cwd: tmp,
+          branch: currentBranch,
+          newBranch: "wt-branch-delete-failure",
+          path: wtPath,
+        });
+
+        const liveCore = yield* GitCore;
+        const core = yield* makeIsolatedGitCore((input) =>
+          input.operation === "GitCore.removeWorktree.deleteBranch"
+            ? Effect.fail(
+                new GitCommandError({
+                  operation: input.operation,
+                  command: `git ${input.args.join(" ")}`,
+                  cwd: input.cwd,
+                  detail: "simulated branch delete failure",
+                }),
+              )
+            : liveCore.execute(input),
+        );
+
+        yield* core.removeWorktree({
+          cwd: tmp,
+          path: wtPath,
+          branchToDelete: "wt-branch-delete-failure",
+        });
+
+        expect(existsSync(wtPath)).toBe(false);
+        expect(yield* liveCore.listLocalBranchNames(tmp)).toContain("wt-branch-delete-failure");
+      }),
+    );
+
+    it.effect(
+      "removeGitWorktree deletes branch even when the worktree path is already missing",
+      () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          yield* (yield* GitCore).createBranch({
+            cwd: tmp,
+            branch: "feature/missing-worktree-path",
+          });
+
+          const missingWorktreePath = path.join(tmp, "missing-worktree-path");
+          expect(existsSync(missingWorktreePath)).toBe(false);
+
+          yield* (yield* GitCore).removeWorktree({
+            cwd: tmp,
+            path: missingWorktreePath,
+            branchToDelete: "feature/missing-worktree-path",
+          });
+
+          expect(yield* (yield* GitCore).listLocalBranchNames(tmp)).not.toContain(
+            "feature/missing-worktree-path",
+          );
+        }),
+    );
+
     it.effect("removeGitWorktree force removes a dirty worktree", () =>
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();
