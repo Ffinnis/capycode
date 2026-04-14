@@ -6,6 +6,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
+  type WorkspaceId,
 } from "@capycode/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { randomUUID } from "~/lib/utils";
@@ -230,6 +231,37 @@ export function deriveLockedProvider(input: {
     return null;
   }
   return input.thread?.session?.provider ?? input.threadProvider ?? input.selectedProvider ?? null;
+}
+
+export function resolveThreadWorkspaceId(input: {
+  thread:
+    | {
+        workspaceId?: WorkspaceId | null;
+        worktreePath: string | null;
+      }
+    | null
+    | undefined;
+  activeWorkspace:
+    | {
+        id: WorkspaceId;
+        worktreePath: string | null;
+      }
+    | null
+    | undefined;
+}): WorkspaceId | null {
+  if (input.thread?.workspaceId && input.thread.workspaceId.trim().length > 0) {
+    return input.thread.workspaceId;
+  }
+
+  const threadWorktreePath = input.thread?.worktreePath?.trim();
+  const activeWorkspaceId = input.activeWorkspace?.id;
+  const activeWorkspacePath = input.activeWorkspace?.worktreePath?.trim();
+
+  if (!threadWorktreePath || !activeWorkspaceId) {
+    return null;
+  }
+
+  return activeWorkspacePath === threadWorktreePath ? activeWorkspaceId : null;
 }
 
 export async function waitForStartedServerThread(

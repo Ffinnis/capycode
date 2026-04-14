@@ -14,6 +14,7 @@ import {
   type ServerLifecycleWelcomePayload,
   type ThreadId,
   type TurnId,
+  type WorktreeId,
   type WorkspaceId,
   WS_METHODS,
   OrchestrationSessionStatus,
@@ -2375,6 +2376,107 @@ describe("ChatView timeline estimator parity (full app)", () => {
             request.data === "bun install\r",
         ),
       ).toBe(false);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("does not attach the active workspace to local main-checkout drafts", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: {
+        ...createDraftOnlySnapshot(),
+        workspaces: [
+          {
+            id: DEFAULT_WORKSPACE_ID,
+            projectId: PROJECT_ID,
+            worktreeId: null,
+            type: "branch",
+            name: "Main workspace",
+            branch: "main",
+            worktreePath: null,
+            sectionId: null,
+            tabOrder: 0,
+            isDefault: true,
+            isActive: false,
+            createdAt: NOW_ISO,
+            updatedAt: NOW_ISO,
+            lastOpenedAt: NOW_ISO,
+            deletingAt: null,
+          },
+          {
+            id: "workspace-feature" as WorkspaceId,
+            projectId: PROJECT_ID,
+            worktreeId: "worktree-feature" as WorktreeId,
+            type: "worktree",
+            name: "In app confirm",
+            branch: "in-app-confirm",
+            worktreePath: "/repo/worktrees/in-app-confirm",
+            sectionId: null,
+            tabOrder: 1,
+            isDefault: false,
+            isActive: true,
+            createdAt: NOW_ISO,
+            updatedAt: NOW_ISO,
+            lastOpenedAt: NOW_ISO,
+            deletingAt: null,
+          },
+        ],
+      },
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Discuss main branch");
+      await waitForLayout();
+
+      const sendButton = await waitForSendButton();
+      expect(sendButton.disabled).toBe(false);
+      sendButton.click();
+
+      await vi.waitFor(
+        () => {
+          const dispatchRequest = wsRequests.find(
+            (request) => request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand,
+          ) as
+            | {
+                _tag: string;
+                type?: string;
+                bootstrap?: {
+                  createThread?: {
+                    projectId?: string;
+                    workspaceId?: string | null;
+                    branch?: string | null;
+                    worktreePath?: string | null;
+                  };
+                };
+              }
+            | undefined;
+
+          expect(dispatchRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            type: "thread.turn.start",
+            bootstrap: {
+              createThread: {
+                projectId: PROJECT_ID,
+                workspaceId: null,
+                branch: null,
+                worktreePath: null,
+              },
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
     } finally {
       await mounted.cleanup();
     }
