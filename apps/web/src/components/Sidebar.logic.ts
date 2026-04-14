@@ -217,6 +217,8 @@ export function formatWorkspaceDeleteImpactMessage(
 
   if (preview.deletesWorktreePath && preview.worktreePath) {
     details.push(`The worktree at ${preview.worktreePath} will be removed from disk.`);
+  } else if (preview.deletesBranch && preview.worktreePath) {
+    details.push(`The managed worktree at ${preview.worktreePath} is already gone from disk.`);
   } else if (preview.worktreePath) {
     details.push(`The imported worktree at ${preview.worktreePath} will stay on disk.`);
   } else {

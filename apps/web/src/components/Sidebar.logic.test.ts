@@ -102,6 +102,19 @@ describe("formatWorkspaceDeleteImpactMessage", () => {
       "The worktree at /tmp/worktree will be removed from disk. A Git branch will also be deleted.",
     );
   });
+
+  it("explains when the branch will be deleted but the managed worktree path is already gone", () => {
+    expect(
+      formatWorkspaceDeleteImpactMessage({
+        deletesWorktreePath: false,
+        worktreePath: "/tmp/missing-worktree",
+        deletesBranch: true,
+        branchToDelete: "feature/workspace",
+      }),
+    ).toBe(
+      "The managed worktree at /tmp/missing-worktree is already gone from disk. The Git branch feature/workspace will also be deleted.",
+    );
+  });
 });
 
 describe("createThreadJumpHintVisibilityController", () => {

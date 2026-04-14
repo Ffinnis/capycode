@@ -1521,6 +1521,44 @@ it.layer(TestLayer)("git integration", (it) => {
         }),
     );
 
+    it.effect(
+      "removeGitWorktree continues when worktree removal races with a missing-path failure",
+      () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          yield* (yield* GitCore).createBranch({
+            cwd: tmp,
+            branch: "feature/remove-race",
+          });
+
+          const racedWorktreePath = path.join(tmp, "raced-worktree");
+          yield* makeDirectory(racedWorktreePath);
+
+          const liveCore = yield* GitCore;
+          const core = yield* makeIsolatedGitCore((input) =>
+            input.operation === "GitCore.removeWorktree"
+              ? Effect.fail(
+                  new GitCommandError({
+                    operation: input.operation,
+                    command: `git ${input.args.join(" ")}`,
+                    cwd: input.cwd,
+                    detail: `fatal: '${racedWorktreePath}' is not a working tree`,
+                  }),
+                )
+              : liveCore.execute(input),
+          );
+
+          yield* core.removeWorktree({
+            cwd: tmp,
+            path: racedWorktreePath,
+            branchToDelete: "feature/remove-race",
+          });
+
+          expect(yield* liveCore.listLocalBranchNames(tmp)).not.toContain("feature/remove-race");
+        }),
+    );
+
     it.effect("removeGitWorktree force removes a dirty worktree", () =>
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();

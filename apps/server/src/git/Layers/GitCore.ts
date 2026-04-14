@@ -581,6 +581,10 @@ function commandLabel(args: readonly string[]): string {
   return `git ${args.join(" ")}`;
 }
 
+function isMissingWorktreeRemoveFailure(error: GitCommandError, worktreePath: string): boolean {
+  return error.detail.includes(worktreePath) && error.detail.includes("is not a working tree");
+}
+
 function parseDefaultBranchFromRemoteHeadRef(value: string, remoteName: string): string | null {
   const trimmed = value.trim();
   const prefix = `refs/remotes/${remoteName}/`;
@@ -2677,14 +2681,23 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           timeoutMs: 15_000,
           fallbackErrorMessage: "git worktree remove failed",
         }).pipe(
-          Effect.mapError((error) =>
-            createGitCommandError(
-              "GitCore.removeWorktree",
-              input.cwd,
-              args,
-              `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
-              error,
-            ),
+          Effect.catch((error) =>
+            input.branchToDelete && isMissingWorktreeRemoveFailure(error, input.path)
+              ? Effect.logWarning("GitCore.removeWorktree: worktree path already missing", {
+                  cwd: input.cwd,
+                  path: input.path,
+                  command: commandLabel(args),
+                  detail: error.message,
+                })
+              : Effect.fail(
+                  createGitCommandError(
+                    "GitCore.removeWorktree",
+                    input.cwd,
+                    args,
+                    `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
+                    error,
+                  ),
+                ),
           ),
         );
       }
