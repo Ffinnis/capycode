@@ -17,7 +17,8 @@ export default Effect.gen(function* () {
       branch TEXT NOT NULL,
       base_branch TEXT,
       created_at TEXT NOT NULL,
-      created_by_capycode INTEGER NOT NULL DEFAULT 1
+      created_by_capycode INTEGER NOT NULL DEFAULT 1,
+      owns_branch INTEGER NOT NULL DEFAULT 0
     )
   `;
 

@@ -118,6 +118,7 @@ type WorktreeDbRow = {
   readonly branch: string;
   readonly baseBranch: string | null;
   readonly createdByCapycode: number;
+  readonly ownsBranch: number;
 };
 
 type WorkspaceSectionDbRow = {
@@ -838,7 +839,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               path,
               branch,
               base_branch AS "baseBranch",
-              created_by_capycode AS "createdByCapycode"
+              created_by_capycode AS "createdByCapycode",
+              owns_branch AS "ownsBranch"
             FROM worktrees
             WHERE id = ${worktreeId}
             LIMIT 1
@@ -858,7 +860,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             path,
             branch,
             base_branch AS "baseBranch",
-            created_by_capycode AS "createdByCapycode"
+            created_by_capycode AS "createdByCapycode",
+            owns_branch AS "ownsBranch"
           FROM worktrees
           WHERE project_id = ${projectId}
             AND path = ${worktreePath}
@@ -1038,7 +1041,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   path,
                   branch,
                   base_branch AS "baseBranch",
-                  created_by_capycode AS "createdByCapycode"
+                  created_by_capycode AS "createdByCapycode",
+                  owns_branch AS "ownsBranch"
                 FROM worktrees
                 WHERE project_id = ${input.projectId}
                   AND path = ${targetWorktreePath}
@@ -1066,7 +1070,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   branch,
                   base_branch,
                   created_at,
-                  created_by_capycode
+                  created_by_capycode,
+                  owns_branch
                 )
                 VALUES (
                   ${worktreeId},
@@ -1075,18 +1080,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   ${resolvedBranch},
                   ${baseBranch},
                   ${now},
+                  0,
                   0
                 )
                 ON CONFLICT (id)
                 DO UPDATE SET
                   branch = excluded.branch,
-                  base_branch = excluded.base_branch
+                  base_branch = excluded.base_branch,
+                  owns_branch = excluded.owns_branch
               `.pipe(
                 Effect.mapError((cause) =>
                   makeWorkspaceError("Failed to import existing worktree", cause),
                 ),
               );
             } else {
+              const ownsBranch = targetBranch !== baseBranch;
               const createdWorktree = yield* git
                 .createWorktree({
                   cwd: projectRoot,
@@ -1109,7 +1117,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   branch,
                   base_branch,
                   created_at,
-                  created_by_capycode
+                  created_by_capycode,
+                  owns_branch
                 )
                 VALUES (
                   ${worktreeId},
@@ -1118,7 +1127,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   ${createdWorktree.worktree.branch},
                   ${baseBranch},
                   ${now},
-                  1
+                  1,
+                  ${ownsBranch ? 1 : 0}
                 )
               `.pipe(
                 Effect.mapError((cause) =>
@@ -1194,14 +1204,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   Effect.orElseSucceed(() => null),
                 );
           const row = counts[0];
+          const deletesWorktreePath =
+            worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path);
+          const deletesBranch = worktree !== null && worktree.ownsBranch === 1;
           return {
             workspaceId: workspace.id,
             activeThreadCount: row?.activeThreadCount ?? 0,
             archivedThreadCount: row?.archivedThreadCount ?? 0,
             totalThreadCount: row?.totalThreadCount ?? 0,
-            deletesWorktreePath:
-              worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path),
+            deletesWorktreePath,
             worktreePath: workspace.worktreePath,
+            deletesBranch,
+            branchToDelete: deletesBranch ? (worktree?.branch ?? null) : null,
           };
         });
 
@@ -1216,7 +1230,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               worktrees.path,
               worktrees.branch,
               worktrees.base_branch AS "baseBranch",
-              worktrees.created_by_capycode AS "createdByCapycode"
+              worktrees.created_by_capycode AS "createdByCapycode",
+              worktrees.owns_branch AS "ownsBranch"
             FROM worktrees
             LEFT JOIN workspaces
               ON workspaces.worktree_id = worktrees.id
@@ -1370,7 +1385,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               branch,
               base_branch,
               created_at,
-              created_by_capycode
+              created_by_capycode,
+              owns_branch
             )
             VALUES (
               ${worktreeId},
@@ -1379,6 +1395,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               ${branch},
               NULL,
               ${now},
+              0,
               0
             )
           `.pipe(
@@ -1683,7 +1700,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     path,
                     branch,
                     base_branch AS "baseBranch",
-                    created_by_capycode AS "createdByCapycode"
+                    created_by_capycode AS "createdByCapycode",
+                    owns_branch AS "ownsBranch"
                   FROM worktrees
                   WHERE id = ${workspace.worktreeId}
                   LIMIT 1
@@ -1695,11 +1713,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               : [];
           const worktree = worktreeRows[0];
 
-          if (worktree && worktree.createdByCapycode === 1 && existsSync(worktree.path)) {
+          if (worktree && worktree.createdByCapycode === 1) {
             yield* git
               .removeWorktree({
                 cwd: projectRoot,
                 path: worktree.path,
+                ...(worktree.ownsBranch === 1 ? { branchToDelete: worktree.branch } : {}),
                 force: true,
               })
               .pipe(

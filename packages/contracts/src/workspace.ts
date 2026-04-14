@@ -77,6 +77,8 @@ export const WorkspaceDeletePreview = Schema.Struct({
   totalThreadCount: NonNegativeInt,
   deletesWorktreePath: Schema.Boolean,
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  deletesBranch: Schema.Boolean,
+  branchToDelete: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type WorkspaceDeletePreview = typeof WorkspaceDeletePreview.Type;
 

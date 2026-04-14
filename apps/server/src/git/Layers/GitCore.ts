@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   Cache,
   Data,
@@ -578,6 +579,10 @@ function deriveLocalBranchNameFromRemoteRef(branchName: string): string | null {
 
 function commandLabel(args: readonly string[]): string {
   return `git ${args.join(" ")}`;
+}
+
+function isMissingWorktreeRemoveFailure(error: GitCommandError, worktreePath: string): boolean {
+  return error.detail.includes(worktreePath) && error.detail.includes("is not a working tree");
 }
 
 function parseDefaultBranchFromRemoteHeadRef(value: string, remoteName: string): string | null {
@@ -2665,23 +2670,72 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
 
   const removeWorktree: GitCoreShape["removeWorktree"] = Effect.fn("removeWorktree")(
     function* (input) {
-      const args = ["worktree", "remove"];
-      if (input.force) {
-        args.push("--force");
-      }
-      args.push(input.path);
-      yield* executeGit("GitCore.removeWorktree", input.cwd, args, {
-        timeoutMs: 15_000,
-        fallbackErrorMessage: "git worktree remove failed",
-      }).pipe(
-        Effect.mapError((error) =>
-          createGitCommandError(
-            "GitCore.removeWorktree",
-            input.cwd,
-            args,
-            `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
-            error,
+      let shouldPruneMissingWorktree = Boolean(input.branchToDelete) && !existsSync(input.path);
+      const shouldRemoveWorktreePath = !input.branchToDelete || existsSync(input.path);
+      if (shouldRemoveWorktreePath) {
+        const args = ["worktree", "remove"];
+        if (input.force) {
+          args.push("--force");
+        }
+        args.push(input.path);
+        yield* executeGit("GitCore.removeWorktree", input.cwd, args, {
+          timeoutMs: 15_000,
+          fallbackErrorMessage: "git worktree remove failed",
+        }).pipe(
+          Effect.catch((error) =>
+            input.branchToDelete && isMissingWorktreeRemoveFailure(error, input.path)
+              ? ((shouldPruneMissingWorktree = true),
+                Effect.logWarning("GitCore.removeWorktree: worktree path already missing", {
+                  cwd: input.cwd,
+                  path: input.path,
+                  command: commandLabel(args),
+                  detail: error.message,
+                }))
+              : Effect.fail(
+                  createGitCommandError(
+                    "GitCore.removeWorktree",
+                    input.cwd,
+                    args,
+                    `${commandLabel(args)} failed (cwd: ${input.cwd}): ${error.message}`,
+                    error,
+                  ),
+                ),
           ),
+        );
+      }
+
+      if (!input.branchToDelete) {
+        return;
+      }
+
+      if (shouldPruneMissingWorktree) {
+        yield* executeGit("GitCore.removeWorktree.prune", input.cwd, ["worktree", "prune"], {
+          timeoutMs: 15_000,
+          fallbackErrorMessage: "git worktree prune failed",
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("GitCore.removeWorktree: best-effort worktree prune failed", {
+              cwd: input.cwd,
+              path: input.path,
+              command: commandLabel(["worktree", "prune"]),
+              detail: error.message,
+            }),
+          ),
+        );
+      }
+
+      const deleteBranchArgs = ["branch", input.force ? "-D" : "-d", input.branchToDelete];
+      yield* executeGit("GitCore.removeWorktree.deleteBranch", input.cwd, deleteBranchArgs, {
+        timeoutMs: 15_000,
+        fallbackErrorMessage: "git branch delete failed",
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("GitCore.removeWorktree: best-effort branch deletion failed", {
+            cwd: input.cwd,
+            branch: input.branchToDelete,
+            command: commandLabel(deleteBranchArgs),
+            detail: error.message,
+          }),
         ),
       );
     },

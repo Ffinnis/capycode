@@ -6,6 +6,7 @@ import {
   GitGetFileDiffResult,
   GitListCommitsResult,
   GitReviewStatusResult,
+  GitRemoveWorktreeInput,
   GitCreateWorktreeInput,
   GitPreparePullRequestThreadInput,
   GitRunStackedActionResult,
@@ -14,6 +15,7 @@ import {
 } from "./git";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(GitCreateWorktreeInput);
+const decodeRemoveWorktreeInput = Schema.decodeUnknownSync(GitRemoveWorktreeInput);
 const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
   GitPreparePullRequestThreadInput,
 );
@@ -35,6 +37,20 @@ describe("GitCreateWorktreeInput", () => {
 
     expect(parsed.newBranch).toBeUndefined();
     expect(parsed.branch).toBe("feature/existing");
+  });
+});
+
+describe("GitRemoveWorktreeInput", () => {
+  it("accepts an explicit branchToDelete for capycode-managed worktree cleanup", () => {
+    const parsed = decodeRemoveWorktreeInput({
+      cwd: "/repo",
+      path: "/tmp/worktree",
+      force: true,
+      branchToDelete: "feature/workspace",
+    });
+
+    expect(parsed.branchToDelete).toBe("feature/workspace");
+    expect(parsed.force).toBe(true);
   });
 });
 
