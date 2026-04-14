@@ -18,6 +18,7 @@ import {
   ProjectId,
   ResolvedKeybindingRule,
   ThreadId,
+  WorkspaceId,
   WS_METHODS,
   WsRpcGroup,
   EditorId,
@@ -3582,6 +3583,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     () =>
       Effect.gen(function* () {
         const dispatchedCommands: Array<OrchestrationCommand> = [];
+        const workspaceId = WorkspaceId.make("workspace-bootstrap");
         const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
           Effect.succeed({
             worktree: {
@@ -3640,6 +3642,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               bootstrap: {
                 createThread: {
                   projectId: defaultProjectId,
+                  workspaceId,
                   title: "Bootstrap Thread",
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
@@ -3671,6 +3674,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             "thread.turn.start",
           ],
         );
+        const createThreadCommand = dispatchedCommands[0];
+        assertTrue(createThreadCommand?.type === "thread.create");
+        if (createThreadCommand?.type === "thread.create") {
+          assert.equal(createThreadCommand.workspaceId, workspaceId);
+        }
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           branch: "main",
@@ -3698,6 +3706,77 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           assert.equal(finalCommand.bootstrap, undefined);
         }
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("forwards bootstrap createThread workspaceId before turn start", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const workspaceId = WorkspaceId.make("workspace-bootstrap-explicit");
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const createdAt = new Date().toISOString();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-turn-start-workspace"),
+            threadId: ThreadId.make("thread-bootstrap-workspace"),
+            message: {
+              messageId: MessageId.make("msg-bootstrap-workspace"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                workspaceId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.equal(response.sequence, 2);
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        ["thread.create", "thread.turn.start"],
+      );
+      const createThreadCommand = dispatchedCommands[0];
+      assertTrue(createThreadCommand?.type === "thread.create");
+      if (createThreadCommand?.type === "thread.create") {
+        assert.equal(createThreadCommand.workspaceId, workspaceId);
+      }
+      const finalCommand = dispatchedCommands[1];
+      assertTrue(finalCommand?.type === "thread.turn.start");
+      if (finalCommand?.type === "thread.turn.start") {
+        assert.equal(finalCommand.bootstrap, undefined);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("records setup-script failures without aborting bootstrap turn start", () =>

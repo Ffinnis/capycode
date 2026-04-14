@@ -685,6 +685,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 commandId: serverCommandId("bootstrap-thread-create"),
                 threadId: command.threadId,
                 projectId: bootstrap.createThread.projectId,
+                workspaceId: bootstrap.createThread.workspaceId,
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
                 runtimeMode: bootstrap.createThread.runtimeMode,
