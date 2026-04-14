@@ -1,7 +1,11 @@
+import "../index.css";
+
 import { TurnId } from "@capycode/contracts";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import type { ComponentProps, ComponentType } from "react";
+import type { GitDiffView } from "./DiffPanel";
 
 const {
   settingsRef,
@@ -73,6 +77,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../hooks/useTheme", () => ({
   useTheme: vi.fn(() => ({ resolvedTheme: "light", colorScheme: "default" })),
+}));
+
+vi.mock("../hooks/useMediaQuery", () => ({
+  useIsMobile: vi.fn(() => false),
 }));
 
 vi.mock("../hooks/useSettings", () => ({
@@ -157,6 +165,156 @@ vi.mock("./GitActionsControl", () => ({
   }),
 }));
 
+type GitDiffViewProps = ComponentProps<typeof GitDiffView>;
+
+function createGitDiffViewProps(overrides: Partial<GitDiffViewProps> = {}): GitDiffViewProps {
+  return {
+    hasActiveThread: true,
+    activeCwd: "/repo/project",
+    environmentId: null,
+    isGitRepo: true,
+    repositories: [],
+    repositoriesLoading: false,
+    repositoriesError: null,
+    selectedRepositoryCwd: null,
+    onSelectRepository: () => undefined,
+    actionBar: undefined,
+    baseBranch: "main",
+    baseBranchOptions: ["main", "release"],
+    filterMode: "all-changes" as const,
+    onSelectBaseBranch: gitBaseBranchChangeSpy,
+    onSelectFilterMode: gitFilterChangeSpy,
+    allChanges: [],
+    staged: [],
+    unstaged: [],
+    commits: [],
+    selectedCommitHash: null,
+    onSelectCommit: gitCommitSelectSpy,
+    commitFiles: [],
+    selectedPreview: null,
+    onSelectFile: gitFileSelectSpy,
+    selectedFilePaths: new Set<string>(),
+    onToggleFileSelection: gitFileSelectionToggleSpy,
+    onBatchToggleFiles: vi.fn(),
+    reviewStatusLoading: false,
+    reviewStatusError: null,
+    commitsLoading: false,
+    commitsError: null,
+    commitFilesLoading: false,
+    commitFilesError: null,
+    diffPatch: undefined,
+    diffLoading: false,
+    diffError: null,
+    diffRenderMode: "stacked" as const,
+    diffWordWrap: false,
+    resolvedTheme: "light" as const,
+    colorScheme: "default" as const,
+    patchViewportRef: { current: null },
+    onOpenFileInEditor: () => undefined,
+    ...overrides,
+  };
+}
+
+async function mountGitDiffView<P extends object>(
+  Component: ComponentType<P>,
+  props: P,
+  options: { height?: number; width?: number } = {},
+) {
+  const host = document.createElement("div");
+  host.style.width = `${options.width ?? 420}px`;
+  host.style.height = `${options.height ?? 780}px`;
+  host.style.display = "flex";
+  host.style.minHeight = "0";
+  host.style.minWidth = "0";
+  document.body.append(host);
+
+  const mounted = await render(
+    <div
+      style={{
+        display: "flex",
+        flex: "1 1 auto",
+        height: "100%",
+        minHeight: 0,
+        minWidth: 0,
+        width: "100%",
+      }}
+    >
+      <Component {...props} />
+    </div>,
+    { container: host },
+  );
+
+  return {
+    host,
+    rerender: async (nextProps: P) => {
+      await mounted.rerender(
+        <div
+          style={{
+            display: "flex",
+            flex: "1 1 auto",
+            height: "100%",
+            minHeight: 0,
+            minWidth: 0,
+            width: "100%",
+          }}
+        >
+          <Component {...nextProps} />
+        </div>,
+      );
+    },
+    unmount: async () => {
+      await mounted.unmount();
+      host.remove();
+    },
+  };
+}
+
+async function getElementHeight(testId: string) {
+  const element = await page.getByTestId(testId).element();
+  return Math.round(element.getBoundingClientRect().height);
+}
+
+async function dragVerticalResizeHandle(testId: string, deltaY: number) {
+  const element = await page.getByTestId(testId).element();
+  const rect = element.getBoundingClientRect();
+  const clientX = rect.left + rect.width / 2;
+  const clientY = rect.top + rect.height / 2;
+  const pointerId = 1;
+
+  element.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      pointerId,
+      clientX,
+      clientY,
+    }),
+  );
+  element.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      pointerId,
+      clientX,
+      clientY: clientY + deltaY,
+    }),
+  );
+  element.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId,
+      clientX,
+      clientY: clientY + deltaY,
+    }),
+  );
+}
+
+function countTextOccurrences(text: string) {
+  const bodyText = document.body.textContent ?? "";
+  return bodyText.split(text).length - 1;
+}
+
 describe("DiffPanel", () => {
   afterEach(() => {
     settingsRef.current = {
@@ -180,6 +338,7 @@ describe("DiffPanel", () => {
     gitCommitSelectSpy.mockReset();
     gitFileSelectSpy.mockReset();
     gitFileSelectionToggleSpy.mockReset();
+    localStorage.clear();
   });
 
   it("opens in the remembered git mode and persists switching back to iterations", async () => {
@@ -228,6 +387,184 @@ describe("DiffPanel", () => {
 });
 
 describe("GitDiffView", () => {
+  it("renders one repository list and preserves persisted heights across temporary shrink", async () => {
+    const { GitDiffView } = await import("./DiffPanel");
+    const props = createGitDiffViewProps({
+      repositories: [
+        {
+          cwd: "/repo/project",
+          rootCwd: "/repo/project",
+          parentCwd: null,
+          name: "project",
+          relativePath: ".",
+          depth: 0,
+          kind: "root",
+          repositoryIdentity: null,
+        },
+        {
+          cwd: "/repo/project/packages/shared",
+          rootCwd: "/repo/project",
+          parentCwd: "/repo/project",
+          name: "shared",
+          relativePath: "packages/shared",
+          depth: 1,
+          kind: "nested",
+          repositoryIdentity: null,
+        },
+      ],
+      selectedRepositoryCwd: "/repo/project",
+      actionBar: <div data-testid="git-panel-action-bar">Panel actions</div>,
+      allChanges: [
+        {
+          key: "unstaged:current:none:src/alpha.ts",
+          category: "unstaged",
+          label: "Unstaged",
+          file: {
+            path: "src/alpha.ts",
+            status: "modified",
+            additions: 4,
+            deletions: 1,
+          },
+        },
+      ],
+    });
+    const mounted = await mountGitDiffView(GitDiffView, props, { height: 1100, width: 720 });
+
+    try {
+      await expect.element(page.getByTestId("git-section-repositories")).toBeInTheDocument();
+      await expect.element(page.getByTestId("git-section-review")).toBeInTheDocument();
+      await expect.element(page.getByTestId("git-section-diff")).toBeInTheDocument();
+      expect(countTextOccurrences("packages/shared")).toBe(1);
+
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-review")).toBeGreaterThan(160);
+      });
+
+      const initialReviewHeight = await getElementHeight("git-section-review");
+      await dragVerticalResizeHandle("git-resize-handle-review", 60);
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-review")).toBeGreaterThan(initialReviewHeight);
+      });
+
+      const resizedReviewHeight = await getElementHeight("git-section-review");
+      mounted.host.style.height = "760px";
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-review")).toBeLessThan(resizedReviewHeight);
+      });
+
+      mounted.host.style.height = "1100px";
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-review")).toBe(resizedReviewHeight);
+      });
+    } catch (error) {
+      await mounted.unmount();
+      throw error;
+    }
+  });
+
+  it("renders staged and unstaged as independently scrollable resizable sections", async () => {
+    const { GitDiffView } = await import("./DiffPanel");
+    const mounted = await mountGitDiffView(
+      GitDiffView,
+      createGitDiffViewProps({
+        filterMode: "uncommitted",
+        staged: [
+          {
+            key: "staged:current:none:src/staged.ts",
+            category: "staged",
+            label: "Staged",
+            file: {
+              path: "src/staged.ts",
+              status: "modified",
+              additions: 2,
+              deletions: 0,
+            },
+          },
+        ],
+        unstaged: [
+          {
+            key: "unstaged:current:none:src/unstaged.ts",
+            category: "unstaged",
+            label: "Unstaged",
+            file: {
+              path: "src/unstaged.ts",
+              status: "modified",
+              additions: 0,
+              deletions: 3,
+            },
+          },
+        ],
+      }),
+      { height: 960, width: 720 },
+    );
+
+    try {
+      await expect.element(page.getByTestId("git-section-staged")).toBeInTheDocument();
+      await expect.element(page.getByTestId("git-section-unstaged")).toBeInTheDocument();
+
+      const initialStagedHeight = await getElementHeight("git-section-staged");
+      await dragVerticalResizeHandle("git-resize-handle-staged", 50);
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-staged")).toBeGreaterThan(initialStagedHeight);
+      });
+    } finally {
+      await mounted.unmount();
+    }
+  });
+
+  it("renders commits and commit files as resizable sections in commit mode", async () => {
+    const { GitDiffView } = await import("./DiffPanel");
+    const mounted = await mountGitDiffView(
+      GitDiffView,
+      createGitDiffViewProps({
+        filterMode: "commit",
+        commits: [
+          {
+            hash: "abc123",
+            shortHash: "abc123",
+            message: "feat: add git mode",
+            author: "Capy",
+            date: "2026-04-12T10:00:00.000Z",
+          },
+        ],
+        selectedCommitHash: "abc123",
+        commitFiles: [
+          {
+            key: "committed:abc123:none:src/DiffPanel.tsx",
+            category: "committed",
+            label: "Commit",
+            file: {
+              path: "src/DiffPanel.tsx",
+              status: "modified",
+              additions: 10,
+              deletions: 2,
+            },
+          },
+        ],
+      }),
+      { height: 960, width: 720 },
+    );
+
+    try {
+      await expect.element(page.getByTestId("git-section-commits")).toBeInTheDocument();
+      await expect.element(page.getByTestId("git-section-commit-files")).toBeInTheDocument();
+
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-commit-files")).toBeGreaterThan(0);
+      });
+
+      const initialCommitFilesHeight = await getElementHeight("git-section-commit-files");
+      await dragVerticalResizeHandle("git-resize-handle-commit-files", 40);
+      await vi.waitFor(async () => {
+        expect(await getElementHeight("git-section-commit-files")).toBeLessThan(
+          initialCommitFilesHeight,
+        );
+      });
+    } finally {
+      await mounted.unmount();
+    }
+  });
+
   it("surfaces toolbar callbacks and commit file browsing", async () => {
     const { GitDiffView } = await import("./DiffPanel");
     const mounted = await render(
