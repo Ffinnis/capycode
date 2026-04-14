@@ -991,6 +991,7 @@ function configureAppIdentity(): void {
   app.setAboutPanelOptions({
     applicationName: APP_DISPLAY_NAME,
     applicationVersion: app.getVersion(),
+    copyright: "Copyright \u00a9 2026 Ffinnis",
     version: commitHash ?? "unknown",
   });
 
