@@ -7,6 +7,8 @@ import { render } from "vitest-browser-react";
 import type { ComponentProps, ComponentType } from "react";
 import type { GitDiffView } from "./DiffPanel";
 
+const GIT_PANEL_LAYOUT_STORAGE_KEY = "capycode:git-panel-layout:v1";
+
 const {
   settingsRef,
   threadRef,
@@ -389,6 +391,7 @@ describe("DiffPanel", () => {
 describe("GitDiffView", () => {
   it("renders one repository list and preserves persisted heights across temporary shrink", async () => {
     const { GitDiffView } = await import("./DiffPanel");
+    localStorage.removeItem(GIT_PANEL_LAYOUT_STORAGE_KEY);
     const props = createGitDiffViewProps({
       repositories: [
         {
@@ -456,9 +459,9 @@ describe("GitDiffView", () => {
       await vi.waitFor(async () => {
         expect(await getElementHeight("git-section-review")).toBe(resizedReviewHeight);
       });
-    } catch (error) {
+    } finally {
+      localStorage.removeItem(GIT_PANEL_LAYOUT_STORAGE_KEY);
       await mounted.unmount();
-      throw error;
     }
   });
 

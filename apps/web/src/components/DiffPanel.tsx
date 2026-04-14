@@ -494,6 +494,18 @@ const GIT_PANEL_REVIEW_MIN_HEIGHT = 160;
 const GIT_PANEL_DIFF_MIN_HEIGHT = 220;
 const GIT_PANEL_NESTED_MIN_HEIGHT = 120;
 
+function resolveFortyFivePercentHeight(containerHeight: number) {
+  return containerHeight * 0.45;
+}
+
+function resolveReviewSectionDefaultHeight(containerHeight: number) {
+  return containerHeight * GIT_PANEL_REVIEW_DEFAULT_RATIO;
+}
+
+function resolveHalfHeight(containerHeight: number) {
+  return containerHeight * 0.5;
+}
+
 function GitSectionHeading(props: { title: string; count?: number; leading?: ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-2 py-1">
@@ -1092,7 +1104,7 @@ export function GitDiffView(props: {
     layout,
     minHeight: GIT_PANEL_REPOSITORIES_MIN_HEIGHT,
     minRemainingHeight: GIT_PANEL_REVIEW_MIN_HEIGHT + GIT_PANEL_DIFF_MIN_HEIGHT,
-    maxHeight: (containerHeight) => containerHeight * 0.45,
+    maxHeight: resolveFortyFivePercentHeight,
     resizable: repositoriesVisible && !isMobile,
     setSectionHeight,
   });
@@ -1101,7 +1113,7 @@ export function GitDiffView(props: {
 
   const reviewSection = usePersistedVerticalSectionHeight({
     containerHeight: remainingSectionsHeight,
-    defaultHeight: (containerHeight) => containerHeight * GIT_PANEL_REVIEW_DEFAULT_RATIO,
+    defaultHeight: resolveReviewSectionDefaultHeight,
     key: "reviewHeight",
     layout,
     minHeight: GIT_PANEL_REVIEW_MIN_HEIGHT,
@@ -1115,7 +1127,7 @@ export function GitDiffView(props: {
 
   const stagedSection = usePersistedVerticalSectionHeight({
     containerHeight: Math.max(0, reviewHeight - mainHandleHeight),
-    defaultHeight: (containerHeight) => containerHeight * 0.5,
+    defaultHeight: resolveHalfHeight,
     key: "stagedHeight",
     layout,
     minHeight: GIT_PANEL_NESTED_MIN_HEIGHT,
@@ -1130,7 +1142,7 @@ export function GitDiffView(props: {
   const hasCommitFilesSection = props.filterMode === "commit" && props.selectedCommitHash !== null;
   const commitFilesSection = usePersistedVerticalSectionHeight({
     containerHeight: Math.max(0, reviewHeight - mainHandleHeight),
-    defaultHeight: (containerHeight) => containerHeight * 0.45,
+    defaultHeight: resolveFortyFivePercentHeight,
     edge: "bottom",
     key: "commitFilesHeight",
     layout,
