@@ -19,6 +19,7 @@ import {
   WebSocketConnectionSurface,
 } from "../components/WebSocketConnectionSurface";
 import { Button } from "../components/ui/button";
+import { ConfirmationDialogProvider } from "../components/ui/confirmation-dialog";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { readLocalApi } from "../localApi";
@@ -101,6 +102,7 @@ function RootRouteView() {
           </AppSidebarLayout>
         </WebSocketConnectionSurface>
       </AnchoredToastProvider>
+      <ConfirmationDialogProvider />
     </ToastProvider>
   );
 }
