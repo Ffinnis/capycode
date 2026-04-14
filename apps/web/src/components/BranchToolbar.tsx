@@ -1,84 +1,35 @@
-import { scopeProjectRef, scopeThreadRef } from "@capycode/client-runtime";
-import type { EnvironmentId, ThreadId } from "@capycode/contracts";
-import { memo, useMemo } from "react";
+import type { EnvironmentId } from "@capycode/contracts";
+import { memo } from "react";
 
-import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
-import { useStore } from "../store";
-import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
 import { type EnvironmentOption } from "./BranchToolbar.logic";
-import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
-import { Separator } from "./ui/separator";
 
 interface BranchToolbarProps {
   environmentId: EnvironmentId;
-  threadId: ThreadId;
-  draftId?: DraftId;
   envLocked: boolean;
-  onCheckoutPullRequestRequest?: (reference: string) => void;
-  onComposerFocusRequest?: () => void;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
 
 export const BranchToolbar = memo(function BranchToolbar({
   environmentId,
-  threadId,
-  draftId,
   envLocked,
-  onCheckoutPullRequestRequest,
-  onComposerFocusRequest,
   availableEnvironments,
   onEnvironmentChange,
 }: BranchToolbarProps) {
-  const threadRef = useMemo(
-    () => scopeThreadRef(environmentId, threadId),
-    [environmentId, threadId],
-  );
-  const serverThreadSelector = useMemo(() => createThreadSelectorByRef(threadRef), [threadRef]);
-  const serverThread = useStore(serverThreadSelector);
-  const draftThread = useComposerDraftStore((store) =>
-    draftId ? store.getDraftSession(draftId) : store.getDraftThreadByRef(threadRef),
-  );
-  const activeProjectRef = serverThread
-    ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
-    : draftThread
-      ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
-      : null;
-  const activeProjectSelector = useMemo(
-    () => createProjectSelectorByRef(activeProjectRef),
-    [activeProjectRef],
-  );
-  const activeProject = useStore(activeProjectSelector);
-  const hasActiveThread = serverThread !== undefined || draftThread !== null;
-
   const showEnvironmentPicker =
     availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange;
 
-  if (!hasActiveThread || !activeProject) return null;
+  if (!showEnvironmentPicker) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-208 items-center justify-between px-2.5 pb-3 pt-1 sm:px-3">
-      <div className="flex items-center gap-1">
-        {showEnvironmentPicker && (
-          <>
-            <BranchToolbarEnvironmentSelector
-              envLocked={envLocked}
-              environmentId={environmentId}
-              availableEnvironments={availableEnvironments}
-              onEnvironmentChange={onEnvironmentChange}
-            />
-            <Separator orientation="vertical" className="mx-0.5 h-3.5!" />
-          </>
-        )}
-        <BranchToolbarBranchSelector
-          environmentId={environmentId}
-          threadId={threadId}
-          {...(draftId ? { draftId } : {})}
-          {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
-          {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
-        />
-      </div>
+    <div className="mx-auto flex w-full max-w-208 items-center px-2.5 pb-3 pt-1 sm:px-3">
+      <BranchToolbarEnvironmentSelector
+        envLocked={envLocked}
+        environmentId={environmentId}
+        availableEnvironments={availableEnvironments}
+        onEnvironmentChange={onEnvironmentChange}
+      />
     </div>
   );
 });

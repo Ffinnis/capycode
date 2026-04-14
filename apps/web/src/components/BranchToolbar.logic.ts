@@ -1,8 +1,4 @@
 import type { EnvironmentId, ProjectId } from "@capycode/contracts";
-export {
-  dedupeRemoteBranchesWithLocalMatches,
-  deriveLocalBranchNameFromRemoteRef,
-} from "@capycode/shared/git";
 
 export interface EnvironmentOption {
   environmentId: EnvironmentId;
@@ -40,35 +36,4 @@ export function resolveEnvironmentOptionLabel(input: {
 
 export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
   return activeWorktreePath ? "Current worktree" : "Current checkout";
-}
-
-export function resolveBranchToolbarValue(input: {
-  activeThreadBranch: string | null;
-  currentGitBranch: string | null;
-}): string | null {
-  const { activeThreadBranch, currentGitBranch } = input;
-  return currentGitBranch ?? activeThreadBranch;
-}
-
-export function shouldIncludeBranchPickerItem(input: {
-  itemValue: string;
-  normalizedQuery: string;
-  createBranchItemValue: string | null;
-  checkoutPullRequestItemValue: string | null;
-}): boolean {
-  const { itemValue, normalizedQuery, createBranchItemValue, checkoutPullRequestItemValue } = input;
-
-  if (normalizedQuery.length === 0) {
-    return true;
-  }
-
-  if (createBranchItemValue && itemValue === createBranchItemValue) {
-    return true;
-  }
-
-  if (checkoutPullRequestItemValue && itemValue === checkoutPullRequestItemValue) {
-    return true;
-  }
-
-  return itemValue.toLowerCase().includes(normalizedQuery);
 }

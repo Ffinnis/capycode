@@ -2253,125 +2253,24 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("prepares pull request drafts in the current checkout only", async () => {
-    useComposerDraftStore.setState({
-      draftThreadsByThreadKey: {
-        [THREAD_KEY]: {
-          threadId: THREAD_ID,
-          environmentId: LOCAL_ENVIRONMENT_ID,
-          projectId: PROJECT_ID,
-          logicalProjectKey: PROJECT_DRAFT_KEY,
-          createdAt: NOW_ISO,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          envMode: "local",
-        },
-      },
-      logicalProjectDraftThreadKeyByLogicalProjectKey: {
-        [PROJECT_DRAFT_KEY]: THREAD_KEY,
-      },
-    });
-
+  it("does not render branch switching controls in the composer", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
-      snapshot: withProjectScripts(createDraftOnlySnapshot(), [
-        {
-          id: "setup",
-          name: "Setup",
-          command: "bun install",
-          icon: "configure",
-          runOnWorktreeCreate: true,
-        },
-      ]),
-      resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitResolvePullRequest) {
-          return {
-            pullRequest: {
-              number: 1359,
-              title: "Add thread archiving and settings navigation",
-              url: "https://github.com/pingdotgg/capycode/pull/1359",
-              baseBranch: "main",
-              headBranch: "archive-settings-overhaul",
-              state: "open",
-            },
-          };
-        }
-        if (body._tag === WS_METHODS.gitPreparePullRequestThread) {
-          return {
-            pullRequest: {
-              number: 1359,
-              title: "Add thread archiving and settings navigation",
-              url: "https://github.com/pingdotgg/capycode/pull/1359",
-              baseBranch: "main",
-              headBranch: "archive-settings-overhaul",
-              state: "open",
-            },
-            branch: "archive-settings-overhaul",
-            worktreePath: "/repo/worktrees/pr-1359",
-          };
-        }
-        return undefined;
-      },
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-no-branch-picker" as MessageId,
+        targetText: "no branch switching target",
+      }),
     });
 
     try {
-      const branchButton = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "main",
-          ) as HTMLButtonElement | null,
-        "Unable to find branch selector button.",
-      );
-      branchButton.click();
-
-      const branchInput = await waitForElement(
-        () => document.querySelector<HTMLInputElement>('input[placeholder="Search branches..."]'),
-        "Unable to find branch search input.",
-      );
-      branchInput.focus();
-      await page.getByPlaceholder("Search branches...").fill("1359");
-
-      const checkoutItem = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("span")).find(
-            (element) => element.textContent?.trim() === "Checkout Pull Request",
-          ) as HTMLSpanElement | null,
-        "Unable to find checkout pull request option.",
-      );
-      checkoutItem.click();
-
-      const localButton = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "Local",
-          ) as HTMLButtonElement | null,
-        "Unable to find Local button.",
-      );
-      localButton.click();
-
-      await vi.waitFor(
-        () => {
-          const prepareRequest = wsRequests.find(
-            (request) => request._tag === WS_METHODS.gitPreparePullRequestThread,
-          );
-          expect(prepareRequest).toMatchObject({
-            _tag: WS_METHODS.gitPreparePullRequestThread,
-            cwd: "/repo/project",
-            reference: "1359",
-            mode: "local",
-          });
-        },
-        { timeout: 8_000, interval: 16 },
-      );
-
       expect(
-        wsRequests.some(
-          (request) =>
-            request._tag === WS_METHODS.terminalWrite && request.data === "bun install\r",
+        Array.from(document.querySelectorAll("button")).some(
+          (button) => button.textContent?.trim() === "main",
         ),
       ).toBe(false);
+      expect(
+        document.querySelector<HTMLInputElement>('input[placeholder="Search branches..."]'),
+      ).toBeNull();
     } finally {
       await mounted.cleanup();
     }

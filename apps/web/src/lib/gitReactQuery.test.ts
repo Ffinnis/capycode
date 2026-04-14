@@ -32,7 +32,6 @@ import {
   gitFileDiffQueryOptions,
   gitListCommitsQueryOptions,
   gitMutationKeys,
-  gitPreparePullRequestThreadMutationOptions,
   gitPullMutationOptions,
   gitReviewStatusQueryOptions,
   gitRunStackedActionMutationOptions,
@@ -90,12 +89,6 @@ describe("gitMutationKeys", () => {
       gitMutationKeys.pull(ENVIRONMENT_A, "/repo/b"),
     );
   });
-
-  it("scopes pull request thread preparation keys by cwd", () => {
-    expect(gitMutationKeys.preparePullRequestThread(ENVIRONMENT_A, "/repo/a")).not.toEqual(
-      gitMutationKeys.preparePullRequestThread(ENVIRONMENT_A, "/repo/b"),
-    );
-  });
 });
 
 describe("git mutation options", () => {
@@ -117,17 +110,6 @@ describe("git mutation options", () => {
       queryClient,
     });
     expect(options.mutationKey).toEqual(gitMutationKeys.pull(ENVIRONMENT_A, "/repo/a"));
-  });
-
-  it("attaches cwd-scoped mutation key for preparePullRequestThread", () => {
-    const options = gitPreparePullRequestThreadMutationOptions({
-      environmentId: ENVIRONMENT_A,
-      cwd: "/repo/a",
-      queryClient,
-    });
-    expect(options.mutationKey).toEqual(
-      gitMutationKeys.preparePullRequestThread(ENVIRONMENT_A, "/repo/a"),
-    );
   });
 });
 

@@ -114,7 +114,7 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
 import { resolveAppModelSelection } from "../modelSelection";
@@ -158,7 +158,6 @@ import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
-  PullRequestDialogState,
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
@@ -168,7 +167,6 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
-import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { getWorkspaceTerminalSurfaceState } from "./workspaceTerminalSurfaceState";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
@@ -478,13 +476,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
-  const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
-    (store) => store.getDraftSessionByLogicalProjectKey,
-  );
-  const getDraftSession = useComposerDraftStore((store) => store.getDraftSession);
-  const setLogicalProjectDraftThreadId = useComposerDraftStore(
-    (store) => store.setLogicalProjectDraftThreadId,
-  );
   const draftThread = useComposerDraftStore((store) =>
     routeKind === "server"
       ? store.getDraftSessionByRef(routeThreadRef)
@@ -524,8 +515,6 @@ export default function ChatView(props: ChatViewProps) {
   const planSidebarOpenOnNextThreadRef = useRef(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
-  const [pullRequestDialogState, setPullRequestDialogState] =
-    useState<PullRequestDialogState | null>(null);
   const [terminalLaunchContext, setTerminalLaunchContext] = useState<TerminalLaunchContext | null>(
     null,
   );
@@ -636,7 +625,6 @@ export default function ChatView(props: ChatViewProps) {
   const interactionMode =
     composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const diffOpen = rawSearch.diff === "1";
   const filesOpen = rawSearch.files === "1";
   const terminalSurfaceOpen = rawSearch.terminal === "1";
@@ -754,108 +742,6 @@ export default function ChatView(props: ChatViewProps) {
     savedEnvironmentRegistry,
     savedEnvironmentRuntimeById,
   ]);
-  const _hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
-
-  const _openPullRequestDialog = useCallback(
-    (reference?: string) => {
-      if (!canCheckoutPullRequestIntoThread) {
-        return;
-      }
-      setPullRequestDialogState({
-        initialReference: reference ?? null,
-        key: Date.now(),
-      });
-    },
-    [canCheckoutPullRequestIntoThread],
-  );
-
-  const _closePullRequestDialog = useCallback(() => {
-    setPullRequestDialogState(null);
-  }, []);
-
-  const openOrReuseProjectDraftThread = useCallback(
-    async (input: { branch: string; worktreePath: string | null }) => {
-      if (!activeProject) {
-        throw new Error("No active project is available for this pull request.");
-      }
-      const activeProjectRef = scopeProjectRef(activeProject.environmentId, activeProject.id);
-      const logicalProjectKey = deriveLogicalProjectKey(activeProject);
-      const storedDraftSession = getDraftSessionByLogicalProjectKey(logicalProjectKey);
-      const nextDraftThreadContext = {
-        ...input,
-        envMode: "local" as const,
-      };
-      if (storedDraftSession) {
-        setDraftThreadContext(storedDraftSession.draftId, nextDraftThreadContext);
-        setLogicalProjectDraftThreadId(
-          logicalProjectKey,
-          activeProjectRef,
-          storedDraftSession.draftId,
-          {
-            threadId: storedDraftSession.threadId,
-            ...nextDraftThreadContext,
-          },
-        );
-        if (routeKind !== "draft" || draftId !== storedDraftSession.draftId) {
-          await navigate({
-            to: "/draft/$draftId",
-            params: buildDraftThreadRouteParams(storedDraftSession.draftId),
-          });
-        }
-        return storedDraftSession.threadId;
-      }
-
-      const activeDraftSession = routeKind === "draft" && draftId ? getDraftSession(draftId) : null;
-      if (
-        !isServerThread &&
-        activeDraftSession?.logicalProjectKey === logicalProjectKey &&
-        draftId
-      ) {
-        setDraftThreadContext(draftId, nextDraftThreadContext);
-        setLogicalProjectDraftThreadId(logicalProjectKey, activeProjectRef, draftId, {
-          threadId: activeDraftSession.threadId,
-          createdAt: activeDraftSession.createdAt,
-          runtimeMode: activeDraftSession.runtimeMode,
-          interactionMode: activeDraftSession.interactionMode,
-          ...nextDraftThreadContext,
-        });
-        return activeDraftSession.threadId;
-      }
-
-      const nextDraftId = newDraftId();
-      const nextThreadId = newThreadId();
-      setLogicalProjectDraftThreadId(logicalProjectKey, activeProjectRef, nextDraftId, {
-        threadId: nextThreadId,
-        createdAt: new Date().toISOString(),
-        runtimeMode: DEFAULT_RUNTIME_MODE,
-        interactionMode: DEFAULT_INTERACTION_MODE,
-        ...nextDraftThreadContext,
-      });
-      await navigate({
-        to: "/draft/$draftId",
-        params: buildDraftThreadRouteParams(nextDraftId),
-      });
-      return nextThreadId;
-    },
-    [
-      activeProject,
-      draftId,
-      getDraftSession,
-      getDraftSessionByLogicalProjectKey,
-      isServerThread,
-      navigate,
-      routeKind,
-      setDraftThreadContext,
-      setLogicalProjectDraftThreadId,
-    ],
-  );
-
-  const _handlePreparedPullRequestThread = useCallback(
-    async (input: { branch: string; worktreePath: string | null }) => {
-      await openOrReuseProjectDraftThread(input);
-    },
-    [openOrReuseProjectDraftThread],
-  );
 
   const handleSetChangedFilesExpanded = useCallback(
     (turnId: TurnId, expanded: boolean) => {
@@ -2213,7 +2099,6 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     setExpandedWorkGroups({});
-    setPullRequestDialogState(null);
     if (planSidebarOpenOnNextThreadRef.current) {
       planSidebarOpenOnNextThreadRef.current = false;
       setPlanSidebarOpen(true);
@@ -3580,11 +3465,7 @@ export default function ChatView(props: ChatViewProps) {
               >
                 <BranchToolbar
                   environmentId={environmentId}
-                  threadId={threadId}
-                  {...(draftId ? { draftId } : {})}
                   envLocked={envLocked}
-                  onCheckoutPullRequestRequest={_openPullRequestDialog}
-                  onComposerFocusRequest={scheduleComposerFocus}
                   availableEnvironments={logicalProjectEnvironments}
                   onEnvironmentChange={_onEnvironmentChange}
                 />
@@ -3655,21 +3536,6 @@ export default function ChatView(props: ChatViewProps) {
                   setThreadError={setThreadError}
                   onExpandImage={onExpandTimelineImage}
                 />
-                {pullRequestDialogState ? (
-                  <PullRequestThreadDialog
-                    key={pullRequestDialogState.key}
-                    open
-                    environmentId={environmentId}
-                    cwd={activeProject?.cwd ?? null}
-                    initialReference={pullRequestDialogState.initialReference}
-                    onOpenChange={(open) => {
-                      if (!open) {
-                        setPullRequestDialogState(null);
-                      }
-                    }}
-                    onPrepared={_handlePreparedPullRequestThread}
-                  />
-                ) : null}
               </div>
             </div>
             {workspaceSurfaceOverlay}
