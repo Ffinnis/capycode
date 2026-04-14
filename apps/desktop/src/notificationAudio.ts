@@ -127,6 +127,20 @@ function isPackagedArchivePath(filePath: string): boolean {
   return filePath.includes(PACKAGED_APP_ARCHIVE_SEGMENT);
 }
 
+function isBundledPlaybackSoundFresh(sourcePath: string, playbackPath: string): boolean {
+  if (!existsSync(playbackPath)) {
+    return false;
+  }
+
+  try {
+    const sourceStat = statSync(sourcePath);
+    const playbackStat = statSync(playbackPath);
+    return playbackStat.isFile() && playbackStat.mtimeMs >= sourceStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
 export function ensureExternalPlaybackSoundPath(input: {
   stateDir: string;
   soundPath: string;
@@ -136,11 +150,19 @@ export function ensureExternalPlaybackSoundPath(input: {
   }
 
   const bundledSoundsDir = getBundledNotificationSoundsDir(input.stateDir);
-  mkdirSync(bundledSoundsDir, { recursive: true });
+  try {
+    mkdirSync(bundledSoundsDir, { recursive: true });
+  } catch {
+    return input.soundPath;
+  }
 
   const playbackPath = join(bundledSoundsDir, basename(input.soundPath));
-  if (!existsSync(playbackPath)) {
-    copyFileSync(input.soundPath, playbackPath);
+  if (!isBundledPlaybackSoundFresh(input.soundPath, playbackPath)) {
+    try {
+      copyFileSync(input.soundPath, playbackPath);
+    } catch {
+      return input.soundPath;
+    }
   }
 
   return playbackPath;
