@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@capycode/client-runtime";
-import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@capycode/contracts";
+import { EnvironmentId, ProjectId, ThreadId, TurnId, WorkspaceId } from "@capycode/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EnvironmentState, useStore } from "../store";
 import { type Thread } from "../types";
@@ -11,6 +11,7 @@ import {
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
+  resolveThreadWorkspaceId,
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
@@ -79,6 +80,53 @@ describe("buildExpiredTerminalContextToastCopy", () => {
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
     });
+  });
+});
+
+describe("resolveThreadWorkspaceId", () => {
+  it("keeps an explicit workspace binding on the thread", () => {
+    expect(
+      resolveThreadWorkspaceId({
+        thread: {
+          workspaceId: WorkspaceId.make("workspace-thread"),
+          worktreePath: null,
+        },
+        activeWorkspace: {
+          id: WorkspaceId.make("workspace-active"),
+          worktreePath: "/tmp/worktrees/feature",
+        },
+      }),
+    ).toBe("workspace-thread");
+  });
+
+  it("does not inherit an unrelated active workspace for local checkout threads", () => {
+    expect(
+      resolveThreadWorkspaceId({
+        thread: {
+          workspaceId: null,
+          worktreePath: null,
+        },
+        activeWorkspace: {
+          id: WorkspaceId.make("workspace-active"),
+          worktreePath: "/tmp/worktrees/feature",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("links the active workspace only when the worktree path matches", () => {
+    expect(
+      resolveThreadWorkspaceId({
+        thread: {
+          workspaceId: null,
+          worktreePath: "/tmp/worktrees/feature",
+        },
+        activeWorkspace: {
+          id: WorkspaceId.make("workspace-active"),
+          worktreePath: "/tmp/worktrees/feature",
+        },
+      }),
+    ).toBe("workspace-active");
   });
 });
 

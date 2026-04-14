@@ -162,6 +162,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveThreadWorkspaceId,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -2606,7 +2607,10 @@ export default function ChatView(props: ChatViewProps) {
         ? {
             createThread: {
               projectId: activeProject.id,
-              workspaceId: activeWorkspace?.id ?? null,
+              workspaceId: resolveThreadWorkspaceId({
+                thread: activeThread,
+                activeWorkspace,
+              }),
               title,
               modelSelection: threadCreateModelSelection,
               runtimeMode,
@@ -3029,9 +3033,10 @@ export default function ChatView(props: ChatViewProps) {
     });
     const nextThreadTitle = truncate(buildPlanImplementationThreadTitle(planMarkdown));
     const nextThreadModelSelection: ModelSelection = ctxSelectedModelSelection;
-    const targetWorkspaceId = isServerThread
-      ? (activeThread.workspaceId ?? activeWorkspace?.id ?? null)
-      : (activeWorkspace?.id ?? null);
+    const targetWorkspaceId = resolveThreadWorkspaceId({
+      thread: activeThread,
+      activeWorkspace,
+    });
 
     sendInFlightRef.current = true;
     beginLocalDispatch({ preparingWorktree: false });
@@ -3111,7 +3116,7 @@ export default function ChatView(props: ChatViewProps) {
     activeProject,
     activeProposedPlan,
     activeThread,
-    activeWorkspace?.id,
+    activeWorkspace,
     beginLocalDispatch,
     isConnecting,
     isSendBusy,
