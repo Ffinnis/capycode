@@ -126,6 +126,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
+import { WorkspaceCreateDialog } from "./WorkspaceCreateDialog";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -149,6 +150,7 @@ import {
   getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
+  resolveActiveProjectThreadBranch,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
@@ -162,6 +164,7 @@ import {
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
+import { getProviderBrandIcon, getProviderBrandIconClassName } from "./providerBrandIcon";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureEnvironmentApi, readEnvironmentApi } from "../environmentApi";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
@@ -267,6 +270,10 @@ interface SidebarTextDialogRequest {
 
 interface SidebarTextDialogState extends SidebarTextDialogRequest {
   value: string;
+}
+
+interface SidebarWorkspaceCreateDialogState {
+  mode: "branch" | "worktree";
 }
 
 interface SidebarContextMenuState {
@@ -641,8 +648,25 @@ interface SidebarThreadRowProps {
   ) => Promise<void>;
   cancelRename: () => void;
   attemptArchiveThread: (threadRef: ScopedThreadRef) => Promise<void>;
-  attemptDeleteThread: (threadRef: ScopedThreadRef) => Promise<void>;
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
+}
+
+export function SidebarThreadProviderIcon(props: {
+  provider: SidebarThreadSummary["provider"];
+  threadId: SidebarThreadSummary["id"];
+}) {
+  const ProviderIcon = getProviderBrandIcon(props.provider);
+
+  return (
+    <ProviderIcon
+      aria-hidden="true"
+      data-testid={`thread-provider-icon-${props.threadId}`}
+      className={getProviderBrandIconClassName(
+        props.provider,
+        "size-3.5 shrink-0 text-muted-foreground/70",
+      )}
+    />
+  );
 }
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
@@ -667,7 +691,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     commitRename,
     cancelRename,
     attemptArchiveThread,
-    attemptDeleteThread,
     openPrLink,
     thread,
   } = props;
@@ -876,14 +899,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
     [attemptArchiveThread, threadRef],
   );
-  const handleDeleteClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void attemptDeleteThread(threadRef);
-    },
-    [attemptDeleteThread, threadRef],
-  );
   const rowButtonRender = useMemo(() => <div role="button" tabIndex={0} />, []);
 
   return (
@@ -907,6 +922,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         onContextMenu={handleRowContextMenu}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          <SidebarThreadProviderIcon provider={thread.provider} threadId={thread.id} />
           {prStatus && (
             <Tooltip>
               <TooltipTrigger
@@ -1000,24 +1016,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     </Tooltip>
                   )
                 ) : null}
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        data-thread-selection-safe
-                        data-testid={`thread-delete-${thread.id}`}
-                        aria-label={`Delete ${thread.title}`}
-                        className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                        onPointerDown={stopPropagationOnPointerDown}
-                        onClick={handleDeleteClick}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </button>
-                    }
-                  />
-                  <TooltipPopup side="top">Delete</TooltipPopup>
-                </Tooltip>
               </div>
             )}
             <span className={threadMetaClassName}>
@@ -1101,7 +1099,6 @@ interface SidebarProjectThreadListProps {
   ) => Promise<void>;
   cancelRename: () => void;
   attemptArchiveThread: (threadRef: ScopedThreadRef) => Promise<void>;
-  attemptDeleteThread: (threadRef: ScopedThreadRef) => Promise<void>;
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
 }
 
@@ -1134,7 +1131,6 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     commitRename,
     cancelRename,
     attemptArchiveThread,
-    attemptDeleteThread,
     openPrLink,
   } = props;
 
@@ -1181,7 +1177,6 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
               commitRename={commitRename}
               cancelRename={cancelRename}
               attemptArchiveThread={attemptArchiveThread}
-              attemptDeleteThread={attemptDeleteThread}
               openPrLink={openPrLink}
             />
           );
@@ -1212,7 +1207,6 @@ interface WorkspaceRowProps extends Pick<
   | "commitRename"
   | "cancelRename"
   | "attemptArchiveThread"
-  | "attemptDeleteThread"
   | "openPrLink"
 > {
   workspace: SidebarWorkspaceSnapshot;
@@ -1270,7 +1264,6 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     commitRename,
     cancelRename,
     attemptArchiveThread,
-    attemptDeleteThread,
     openPrLink,
     toggleWorkspaceThreadList,
     setWorkspaceActive,
@@ -1492,7 +1485,6 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
         commitRename={commitRename}
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
-        attemptDeleteThread={attemptDeleteThread}
         openPrLink={openPrLink}
       />
     </div>
@@ -1753,6 +1745,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const confirmArchiveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const [sidebarTextDialogState, setSidebarTextDialogState] =
     useState<SidebarTextDialogState | null>(null);
+  const [workspaceCreateDialogState, setWorkspaceCreateDialogState] =
+    useState<SidebarWorkspaceCreateDialogState | null>(null);
   const sidebarTextDialogResolverRef = useRef<((value: string | null) => void) | null>(null);
   const sidebarTextInputRef = useRef<HTMLInputElement | null>(null);
   const sidebarTextDialogWasOpenRef = useRef(false);
@@ -1887,6 +1881,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  const activeProjectThreadBranch = useMemo(
+    () =>
+      resolveActiveProjectThreadBranch({
+        activeThreadKey: activeRouteThreadKey,
+        projectThreads,
+      }),
+    [activeRouteThreadKey, projectThreads],
+  );
   const workspaceSnapshots = useMemo(
     () => buildSidebarWorkspaceSnapshots(project, projectWorkspaces),
     [project, projectWorkspaces],
@@ -2382,38 +2384,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     await refreshWorkspaceSnapshot(project.environmentId);
   }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
 
-  const createWorkspaceForProject = useCallback(
-    async (type: "branch" | "worktree") => {
-      const api = readEnvironmentApi(project.environmentId);
-      if (!api) {
-        throw new Error("Workspace API unavailable.");
-      }
-      const suffix = `${projectWorkspaces.length + 1}`;
-      const baseBranch =
-        activeProjectWorkspace?.branch ??
-        projectThreads.find((thread) => thread.branch !== null)?.branch ??
-        "main";
-      const workspaceName =
-        type === "worktree" ? `Workspace ${suffix}` : `${project.name} ${suffix}`;
-      await api.workspaces.create({
-        projectId: project.id,
-        name: workspaceName,
-        type,
-        baseBranch,
-        branch: type === "worktree" ? `workspace-${Date.now().toString(36)}` : baseBranch,
-      });
-      await refreshWorkspaceSnapshot(project.environmentId);
-    },
-    [
-      activeProjectWorkspace?.branch,
-      project.environmentId,
-      project.id,
-      project.name,
-      projectThreads,
-      projectWorkspaces.length,
-      refreshWorkspaceSnapshot,
-    ],
-  );
+  const openWorkspaceCreateDialog = useCallback((mode: "branch" | "worktree") => {
+    setWorkspaceCreateDialogState({ mode });
+  }, []);
 
   const setWorkspaceActive = useCallback(
     async (workspace: SidebarWorkspaceSnapshot) => {
@@ -2676,27 +2649,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           return;
         }
         if (clicked === "new-worktree-workspace") {
-          try {
-            await createWorkspaceForProject("worktree");
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to create workspace",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
+          openWorkspaceCreateDialog("worktree");
           return;
         }
         if (clicked === "new-branch-workspace") {
-          try {
-            await createWorkspaceForProject("branch");
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to create workspace",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
+          openWorkspaceCreateDialog("branch");
           return;
         }
         if (clicked !== "delete") return;
@@ -2751,9 +2708,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       clearProjectDraftThreadId,
       copyPathToClipboard,
       createSectionForProject,
-      createWorkspaceForProject,
       getDraftThreadByProjectRef,
       importAllWorkspaces,
+      openWorkspaceCreateDialog,
       openMainRepoWorkspace,
       project.cwd,
       project.environmentId,
@@ -2824,11 +2781,23 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const threadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
       if (threadKeys.length === 0) return;
       const count = threadKeys.length;
+      const selectedThreads = threadKeys.flatMap((threadKey) => {
+        const thread = sidebarThreadByKey.get(threadKey);
+        return thread ? [thread] : [];
+      });
+      const deletableThreads = selectedThreads.filter(
+        (thread) => !(thread.session?.status === "running" && thread.session.activeTurnId != null),
+      );
 
       const clicked = await requestSidebarContextMenu(
         [
           { id: "mark-unread", label: `Mark unread (${count})` },
-          { id: "delete", label: `Delete (${count})`, destructive: true },
+          {
+            id: "delete",
+            label: `Delete (${deletableThreads.length})`,
+            destructive: true,
+            disabled: deletableThreads.length === 0,
+          },
         ],
         position,
       );
@@ -2842,27 +2811,33 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
-      if (clicked !== "delete") return;
+      if (clicked !== "delete" || deletableThreads.length === 0) {
+        return;
+      }
 
       if (appSettingsConfirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
           [
-            `Delete ${count} thread${count === 1 ? "" : "s"}?`,
+            `Delete ${deletableThreads.length} thread${deletableThreads.length === 1 ? "" : "s"}?`,
             "This permanently clears conversation history for these threads.",
           ].join("\n"),
         );
-        if (!confirmed) return;
+        if (!confirmed) {
+          return;
+        }
       }
 
-      const deletedThreadKeys = new Set(threadKeys);
-      for (const threadKey of threadKeys) {
-        const thread = sidebarThreadByKey.get(threadKey);
-        if (!thread) continue;
+      const deletedThreadKeys = new Set(
+        deletableThreads.map((thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        ),
+      );
+      for (const thread of deletableThreads) {
         await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
           deletedThreadKeys,
         });
       }
-      removeFromSelection(threadKeys);
+      removeFromSelection([...deletedThreadKeys]);
     },
     [
       appSettingsConfirmThreadDelete,
@@ -2889,7 +2864,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [archiveThread],
   );
-  const _attemptDeleteThread = useCallback(
+  const attemptDeleteThread = useCallback(
     async (threadRef: ScopedThreadRef) => {
       const thread =
         projectThreads.find(
@@ -2900,6 +2875,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (!thread) {
         return;
       }
+      if (thread.session?.status === "running" && thread.session.activeTurnId != null) {
+        toastManager.add({
+          type: "warning",
+          title: "Stop the thread before deleting it",
+        });
+        return;
+      }
+
       try {
         const localApi = readLocalApi();
         if (appSettingsConfirmThreadDelete && localApi) {
@@ -2924,7 +2907,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [appSettingsConfirmThreadDelete, deleteThread, projectThreads],
   );
-
   const cancelRename = useCallback(() => {
     setRenamingThreadKey(null);
     renamingInputRef.current = null;
@@ -2980,8 +2962,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
   const handleThreadContextMenu = useCallback(
     async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
-      const api = readLocalApi();
-      if (!api) return;
       const threadKey = scopedThreadKey(threadRef);
       const thread =
         projectThreads.find(
@@ -2997,7 +2977,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
-          { id: "delete", label: "Delete", destructive: true },
+          {
+            id: "delete",
+            label: "Delete",
+            destructive: true,
+            disabled: thread.session?.status === "running" && thread.session.activeTurnId != null,
+          },
         ],
         position,
       );
@@ -3029,25 +3014,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         copyThreadIdToClipboard(thread.id, { threadId: thread.id });
         return;
       }
-      if (clicked !== "delete") return;
-      if (appSettingsConfirmThreadDelete) {
-        const confirmed = await api.dialogs.confirm(
-          [
-            `Delete thread "${thread.title}"?`,
-            "This permanently clears conversation history for this thread.",
-          ].join("\n"),
-        );
-        if (!confirmed) {
-          return;
-        }
+      if (clicked === "delete") {
+        await attemptDeleteThread(threadRef);
       }
-      await deleteThread(threadRef);
     },
     [
-      appSettingsConfirmThreadDelete,
+      attemptDeleteThread,
       copyPathToClipboard,
       copyThreadIdToClipboard,
-      deleteThread,
       markThreadUnread,
       project.cwd,
       projectThreads,
@@ -3099,7 +3073,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         commitRename={commitRename}
         cancelRename={cancelRename}
         attemptArchiveThread={attemptArchiveThread}
-        attemptDeleteThread={_attemptDeleteThread}
         openPrLink={openPrLink}
         toggleWorkspaceThreadList={toggleWorkspaceThreadList}
         setWorkspaceActive={setWorkspaceActive}
@@ -3208,13 +3181,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void createWorkspaceForProject("worktree").catch((error) => {
-                      toastManager.add({
-                        type: "error",
-                        title: "Failed to create workspace",
-                        description: error instanceof Error ? error.message : "An error occurred.",
-                      });
-                    });
+                    openWorkspaceCreateDialog("worktree");
                   }}
                 >
                   <PlusIcon className="size-3.5" />
@@ -3424,6 +3391,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </SortableContext>
         </DndContext>
       ) : null}
+
+      <WorkspaceCreateDialog
+        open={workspaceCreateDialogState !== null}
+        mode={workspaceCreateDialogState?.mode ?? "worktree"}
+        activeWorkspaceBranch={activeProjectWorkspace?.branch ?? null}
+        threadBranch={activeProjectThreadBranch}
+        onCreated={() => refreshWorkspaceSnapshot(project.environmentId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkspaceCreateDialogState(null);
+          }
+        }}
+        project={{
+          id: project.id,
+          environmentId: project.environmentId,
+          name: project.name,
+          cwd: project.cwd,
+        }}
+        workspaceCount={projectWorkspaces.length}
+      />
 
       <Dialog
         open={sidebarTextDialogState !== null}

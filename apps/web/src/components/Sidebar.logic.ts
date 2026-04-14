@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@capycode/contracts/settings";
+import { scopedThreadKey, scopeThreadRef } from "@capycode/client-runtime";
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
@@ -188,6 +189,22 @@ export function toggleWorkspaceThreadListOpen<TWorkspaceKey extends string>(
   return nextOpenWorkspaceKeys;
 }
 
+export function resolveActiveProjectThreadBranch(input: {
+  activeThreadKey: string | null;
+  projectThreads: readonly Pick<SidebarThreadSummary, "environmentId" | "id" | "branch">[];
+}): string | null {
+  if (input.activeThreadKey === null) {
+    return null;
+  }
+
+  const activeThread =
+    input.projectThreads.find(
+      (thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === input.activeThreadKey,
+    ) ?? null;
+
+  return activeThread?.branch ?? null;
+}
 export function orderItemsByPreferredIds<TItem, TId>(input: {
   items: readonly TItem[];
   preferredIds: readonly TId[];

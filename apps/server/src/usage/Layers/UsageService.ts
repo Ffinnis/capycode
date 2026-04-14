@@ -35,8 +35,8 @@ import {
 import { normalizeCodexRateWindows } from "../normalize/rateWindows";
 
 const HISTORICAL_USAGE_TTL_MS = 60_000;
-const CODEX_LIMITS_TTL_MS = 30_000;
-const CLAUDE_LIMITS_TTL_MS = 30_000;
+const CODEX_LIMITS_TTL_MS = 10_000; // Reduced from 30s for more frequent real-time updates
+const CLAUDE_LIMITS_TTL_MS = 10_000; // Reduced from 30s for more frequent real-time updates
 const CLAUDE_LIMITS_STALE_MS = 30 * 60_000;
 const DEFAULT_BUCKET_COUNT = 14;
 
