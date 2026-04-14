@@ -2492,8 +2492,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         const refreshedSnapshot = await api.orchestration.getSnapshot();
         useStore.getState().syncServerReadModel(refreshedSnapshot, workspace.environmentId);
       }
-      await api.workspaces.delete({ workspaceId: workspace.id });
-      await refreshWorkspaceSnapshot(workspace.environmentId);
+      const store = useStore.getState();
+      const snapshot = store.captureWorkspaceRemovalRollbackSnapshot(workspace.environmentId);
+      store.removeWorkspaceOptimistically({
+        environmentId: workspace.environmentId,
+        workspaceId: workspace.id,
+      });
+      try {
+        await api.workspaces.delete({ workspaceId: workspace.id });
+      } catch (error) {
+        useStore.getState().restoreWorkspaceRemovalRollbackSnapshot(snapshot);
+        throw error;
+      }
+      await refreshWorkspaceSnapshot(workspace.environmentId).catch(() => undefined);
     },
     [
       clearComposerDraftForThread,

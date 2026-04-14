@@ -948,6 +948,48 @@ function buildWorkspaceState(
   };
 }
 
+function listWorkspaces(state: EnvironmentState): Workspace[] {
+  return state.workspaceIds.flatMap((workspaceId) => {
+    const workspace = state.workspaceById[workspaceId];
+    return workspace ? [workspace] : [];
+  });
+}
+
+function listWorkspaceSections(state: EnvironmentState): WorkspaceSection[] {
+  return state.projectIds.flatMap((projectId) =>
+    (state.workspaceSectionIdsByProjectId[projectId] ?? []).flatMap((sectionId) => {
+      const section = state.workspaceSectionById[sectionId];
+      return section ? [section] : [];
+    }),
+  );
+}
+
+function pickFallbackActiveWorkspace(
+  workspaces: ReadonlyArray<Workspace>,
+  projectId: ProjectId,
+): WorkspaceId | null {
+  const candidates = workspaces.filter((workspace) => workspace.projectId === projectId);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const [fallbackWorkspace] = candidates.toSorted((left, right) => {
+    if (left.isDefault !== right.isDefault) {
+      return left.isDefault ? -1 : 1;
+    }
+    if (left.tabOrder !== right.tabOrder) {
+      return left.tabOrder - right.tabOrder;
+    }
+    return left.id.localeCompare(right.id);
+  });
+  return fallbackWorkspace?.id ?? null;
+}
+
+export interface WorkspaceRemovalRollbackSnapshot {
+  readonly environmentId: EnvironmentId;
+  readonly workspaces: ReadonlyArray<Workspace>;
+  readonly workspaceSections: ReadonlyArray<WorkspaceSection>;
+}
+
 function buildThreadState(
   threads: ReadonlyArray<Thread>,
 ): Pick<
@@ -1095,6 +1137,69 @@ export function syncServerReadModel(
       environmentId,
     ),
   );
+}
+
+export function captureWorkspaceRemovalRollbackSnapshot(
+  state: AppState,
+  environmentId: EnvironmentId,
+): WorkspaceRemovalRollbackSnapshot {
+  const environmentState = getStoredEnvironmentState(state, environmentId);
+  return {
+    environmentId,
+    workspaces: listWorkspaces(environmentState),
+    workspaceSections: listWorkspaceSections(environmentState),
+  };
+}
+
+export function removeWorkspaceOptimistically(
+  state: AppState,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  },
+): AppState {
+  const environmentState = getStoredEnvironmentState(state, input.environmentId);
+  const removedWorkspace = environmentState.workspaceById[input.workspaceId];
+  if (!removedWorkspace) {
+    return state;
+  }
+
+  const remainingWorkspaces = listWorkspaces(environmentState).filter(
+    (workspace) => workspace.id !== input.workspaceId,
+  );
+  const fallbackWorkspaceId =
+    removedWorkspace.isActive &&
+    !remainingWorkspaces.some(
+      (workspace) => workspace.projectId === removedWorkspace.projectId && workspace.isActive,
+    )
+      ? pickFallbackActiveWorkspace(remainingWorkspaces, removedWorkspace.projectId)
+      : null;
+  const nextWorkspaces =
+    fallbackWorkspaceId === null
+      ? remainingWorkspaces
+      : remainingWorkspaces.map((workspace) =>
+          workspace.projectId !== removedWorkspace.projectId
+            ? workspace
+            : Object.assign({}, workspace, {
+                isActive: workspace.id === fallbackWorkspaceId,
+              }),
+        );
+
+  return commitEnvironmentState(state, input.environmentId, {
+    ...environmentState,
+    ...buildWorkspaceState(nextWorkspaces, listWorkspaceSections(environmentState)),
+  });
+}
+
+export function restoreWorkspaceRemovalRollbackSnapshot(
+  state: AppState,
+  snapshot: WorkspaceRemovalRollbackSnapshot,
+): AppState {
+  const environmentState = getStoredEnvironmentState(state, snapshot.environmentId);
+  return commitEnvironmentState(state, snapshot.environmentId, {
+    ...environmentState,
+    ...buildWorkspaceState(snapshot.workspaces, snapshot.workspaceSections),
+  });
 }
 
 function applyEnvironmentOrchestrationEvent(
@@ -1876,6 +1981,14 @@ interface AppStore extends AppState {
     events: ReadonlyArray<OrchestrationEvent>,
     environmentId: EnvironmentId,
   ) => void;
+  captureWorkspaceRemovalRollbackSnapshot: (
+    environmentId: EnvironmentId,
+  ) => WorkspaceRemovalRollbackSnapshot;
+  removeWorkspaceOptimistically: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  }) => void;
+  restoreWorkspaceRemovalRollbackSnapshot: (snapshot: WorkspaceRemovalRollbackSnapshot) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (
     threadRef: ScopedThreadRef,
@@ -1884,7 +1997,7 @@ interface AppStore extends AppState {
   ) => void;
 }
 
-export const useStore = create<AppStore>((set) => ({
+export const useStore = create<AppStore>((set, get) => ({
   ...initialState,
   setActiveEnvironmentId: (environmentId) =>
     set((state) => setActiveEnvironmentId(state, environmentId)),
@@ -1894,6 +2007,12 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => applyOrchestrationEvent(state, event, environmentId)),
   applyOrchestrationEvents: (events, environmentId) =>
     set((state) => applyOrchestrationEvents(state, events, environmentId)),
+  captureWorkspaceRemovalRollbackSnapshot: (environmentId) =>
+    captureWorkspaceRemovalRollbackSnapshot(get(), environmentId),
+  removeWorkspaceOptimistically: (input) =>
+    set((state) => removeWorkspaceOptimistically(state, input)),
+  restoreWorkspaceRemovalRollbackSnapshot: (snapshot) =>
+    set((state) => restoreWorkspaceRemovalRollbackSnapshot(state, snapshot)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadRef, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadRef, branch, worktreePath)),

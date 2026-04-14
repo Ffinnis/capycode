@@ -8,6 +8,7 @@ import {
   ProjectId,
   ThreadId,
   TurnId,
+  WorktreeId,
   WorkspaceId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -17,7 +18,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyOrchestrationEvent,
   applyOrchestrationEvents,
+  captureWorkspaceRemovalRollbackSnapshot,
   removeWorkspaceOptimistically,
+  restoreWorkspaceRemovalRollbackSnapshot,
   selectEnvironmentState,
   selectProjectsAcrossEnvironments,
   selectThreadByRef,
@@ -752,7 +755,7 @@ describe("store read model sync", () => {
           id: featureWorkspaceId,
           environmentId: localEnvironmentId,
           projectId,
-          worktreeId: "worktree-1",
+          worktreeId: WorktreeId.make("worktree-1"),
           type: "worktree",
           name: "feature/delete-me",
           branch: "feature/delete-me",
@@ -786,6 +789,96 @@ describe("store read model sync", () => {
     expect(nextEnvironmentState.activeWorkspaceIdByProjectId[projectId]).toBe(defaultWorkspaceId);
     expect(nextEnvironmentState.workspaceById[featureWorkspaceId]).toBeUndefined();
     expect(nextEnvironmentState.workspaceById[defaultWorkspaceId]?.isActive).toBe(true);
+  });
+
+  it("restores workspaces from a rollback snapshot after optimistic removal", () => {
+    const projectId = ProjectId.make("project-1");
+    const defaultWorkspaceId = WorkspaceId.make("workspace-default");
+    const featureWorkspaceId = WorkspaceId.make("workspace-feature");
+    const state = makeEmptyState({
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+      workspaceIds: [defaultWorkspaceId, featureWorkspaceId],
+      workspaceById: {
+        [defaultWorkspaceId]: {
+          id: defaultWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: null,
+          type: "branch",
+          name: "main",
+          branch: "main",
+          worktreePath: null,
+          sectionId: null,
+          tabOrder: 0,
+          isDefault: true,
+          isActive: false,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+        [featureWorkspaceId]: {
+          id: featureWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: WorktreeId.make("worktree-1"),
+          type: "worktree",
+          name: "feature/delete-me",
+          branch: "feature/delete-me",
+          worktreePath: "/tmp/project-feature",
+          sectionId: null,
+          tabOrder: 1,
+          isDefault: false,
+          isActive: true,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [defaultWorkspaceId, featureWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: featureWorkspaceId,
+      },
+    });
+
+    const rollbackSnapshot = captureWorkspaceRemovalRollbackSnapshot(state, localEnvironmentId);
+    const optimisticallyRemoved = removeWorkspaceOptimistically(state, {
+      environmentId: localEnvironmentId,
+      workspaceId: featureWorkspaceId,
+    });
+    const restored = restoreWorkspaceRemovalRollbackSnapshot(
+      optimisticallyRemoved,
+      rollbackSnapshot,
+    );
+
+    const restoredEnvironmentState = localEnvironmentStateOf(restored);
+    expect(restoredEnvironmentState.workspaceIds).toEqual([defaultWorkspaceId, featureWorkspaceId]);
+    expect(restoredEnvironmentState.workspaceIdsByProjectId[projectId]).toEqual([
+      defaultWorkspaceId,
+      featureWorkspaceId,
+    ]);
+    expect(restoredEnvironmentState.activeWorkspaceIdByProjectId[projectId]).toBe(
+      featureWorkspaceId,
+    );
+    expect(restoredEnvironmentState.workspaceById[featureWorkspaceId]?.isActive).toBe(true);
   });
 });
 
