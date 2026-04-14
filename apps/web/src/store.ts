@@ -990,7 +990,82 @@ export interface WorkspaceRemovalRollbackSnapshot {
   readonly environmentId: EnvironmentId;
   readonly revision: number;
   readonly removedWorkspace: Workspace;
+  readonly originalWorkspaceIndex?: number;
   readonly relatedWorkspaceSections: ReadonlyArray<WorkspaceSection>;
+  readonly originalSectionIndices?: ReadonlyArray<number>;
+}
+
+function compareWorkspaceRestoreOrder(left: Workspace, right: Workspace): number {
+  if (left.tabOrder !== right.tabOrder) {
+    return left.tabOrder - right.tabOrder;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function compareWorkspaceSectionRestoreOrder(
+  left: WorkspaceSection,
+  right: WorkspaceSection,
+): number {
+  if (left.tabOrder !== right.tabOrder) {
+    return left.tabOrder - right.tabOrder;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function insertWorkspaceByRollbackOrder(
+  workspaces: ReadonlyArray<Workspace>,
+  workspace: Workspace,
+  originalIndex?: number,
+): Workspace[] {
+  const nextWorkspaces = [...workspaces];
+  if (originalIndex !== undefined && originalIndex >= 0) {
+    nextWorkspaces.splice(Math.min(originalIndex, nextWorkspaces.length), 0, workspace);
+    return nextWorkspaces;
+  }
+
+  const projectIndices = nextWorkspaces.flatMap((currentWorkspace, index) =>
+    currentWorkspace.projectId === workspace.projectId ? [index] : [],
+  );
+  let insertAt = nextWorkspaces.length;
+  for (const index of projectIndices) {
+    if (compareWorkspaceRestoreOrder(workspace, nextWorkspaces[index]!) < 0) {
+      insertAt = index;
+      break;
+    }
+    insertAt = index + 1;
+  }
+  nextWorkspaces.splice(insertAt, 0, workspace);
+  return nextWorkspaces;
+}
+
+function insertWorkspaceSectionByRollbackOrder(
+  workspaceSections: ReadonlyArray<WorkspaceSection>,
+  workspaceSection: WorkspaceSection,
+  originalIndex?: number,
+): WorkspaceSection[] {
+  const nextWorkspaceSections = [...workspaceSections];
+  if (originalIndex !== undefined && originalIndex >= 0) {
+    nextWorkspaceSections.splice(
+      Math.min(originalIndex, nextWorkspaceSections.length),
+      0,
+      workspaceSection,
+    );
+    return nextWorkspaceSections;
+  }
+
+  const projectIndices = nextWorkspaceSections.flatMap((currentSection, index) =>
+    currentSection.projectId === workspaceSection.projectId ? [index] : [],
+  );
+  let insertAt = nextWorkspaceSections.length;
+  for (const index of projectIndices) {
+    if (compareWorkspaceSectionRestoreOrder(workspaceSection, nextWorkspaceSections[index]!) < 0) {
+      insertAt = index;
+      break;
+    }
+    insertAt = index + 1;
+  }
+  nextWorkspaceSections.splice(insertAt, 0, workspaceSection);
+  return nextWorkspaceSections;
 }
 
 function buildThreadState(
@@ -1151,20 +1226,27 @@ export function captureWorkspaceRemovalRollbackSnapshot(
   },
 ): WorkspaceRemovalRollbackSnapshot | null {
   const environmentState = getStoredEnvironmentState(state, input.environmentId);
-  const removedWorkspace = listWorkspaces(environmentState).find(
-    (workspace) => workspace.id === input.workspaceId,
-  );
+  const workspaces = listWorkspaces(environmentState);
+  const removedWorkspace = workspaces.find((workspace) => workspace.id === input.workspaceId);
   if (!removedWorkspace) {
     return null;
   }
+  const workspaceSections = listWorkspaceSections(environmentState);
+  const relatedWorkspaceSections = workspaceSections.filter(
+    (workspaceSection) =>
+      workspaceSection.projectId === removedWorkspace.projectId &&
+      workspaceSection.id === removedWorkspace.sectionId,
+  );
   return {
     environmentId: input.environmentId,
     revision: environmentState.orchestrationRevision,
     removedWorkspace,
-    relatedWorkspaceSections: listWorkspaceSections(environmentState).filter(
-      (workspaceSection) =>
-        workspaceSection.projectId === removedWorkspace.projectId &&
-        workspaceSection.id === removedWorkspace.sectionId,
+    originalWorkspaceIndex: workspaces.findIndex(
+      (workspace) => workspace.id === removedWorkspace.id,
+    ),
+    relatedWorkspaceSections,
+    originalSectionIndices: relatedWorkspaceSections.map((workspaceSection) =>
+      workspaceSections.findIndex((currentSection) => currentSection.id === workspaceSection.id),
     ),
   };
 }
@@ -1224,24 +1306,27 @@ export function restoreWorkspaceRemovalRollbackSnapshot(
   }
 
   const currentWorkspaceSections = listWorkspaceSections(environmentState);
-  const nextWorkspaceSections = [
-    ...currentWorkspaceSections,
-    ...snapshot.relatedWorkspaceSections.filter(
-      (workspaceSection) =>
-        !currentWorkspaceSections.some(
-          (currentSection) => currentSection.id === workspaceSection.id,
-        ),
-    ),
-  ];
-  const nextWorkspaces = [
-    ...currentWorkspaces.map((workspace) =>
+  let nextWorkspaceSections = currentWorkspaceSections;
+  snapshot.relatedWorkspaceSections.forEach((workspaceSection, index) => {
+    if (nextWorkspaceSections.some((currentSection) => currentSection.id === workspaceSection.id)) {
+      return;
+    }
+    nextWorkspaceSections = insertWorkspaceSectionByRollbackOrder(
+      nextWorkspaceSections,
+      workspaceSection,
+      snapshot.originalSectionIndices?.[index],
+    );
+  });
+  const nextWorkspaces = insertWorkspaceByRollbackOrder(
+    currentWorkspaces.map((workspace) =>
       snapshot.removedWorkspace.isActive &&
       workspace.projectId === snapshot.removedWorkspace.projectId
         ? Object.assign({}, workspace, { isActive: false })
         : workspace,
     ),
     snapshot.removedWorkspace,
-  ];
+    snapshot.originalWorkspaceIndex,
+  );
   return commitEnvironmentState(state, snapshot.environmentId, {
     ...environmentState,
     ...buildWorkspaceState(nextWorkspaces, nextWorkspaceSections),
@@ -1755,15 +1840,19 @@ export function applyOrchestrationEvents(
     (nextState, event) => applyEnvironmentOrchestrationEvent(nextState, event, environmentId),
     currentEnvironmentState,
   );
-  if (nextEnvironmentState === currentEnvironmentState) {
+  const orchestrationRevision = Math.max(
+    nextEnvironmentState.orchestrationRevision,
+    events[events.length - 1]?.sequence ?? nextEnvironmentState.orchestrationRevision,
+  );
+  if (
+    nextEnvironmentState === currentEnvironmentState &&
+    orchestrationRevision === currentEnvironmentState.orchestrationRevision
+  ) {
     return state;
   }
   return commitEnvironmentState(state, environmentId, {
     ...nextEnvironmentState,
-    orchestrationRevision: Math.max(
-      nextEnvironmentState.orchestrationRevision,
-      events[events.length - 1]?.sequence ?? nextEnvironmentState.orchestrationRevision,
-    ),
+    orchestrationRevision,
   });
 }
 
@@ -1989,12 +2078,16 @@ export function applyOrchestrationEvent(
     event,
     environmentId,
   );
-  if (nextEnvironmentState === environmentState) {
+  const orchestrationRevision = Math.max(environmentState.orchestrationRevision, event.sequence);
+  if (
+    nextEnvironmentState === environmentState &&
+    orchestrationRevision === environmentState.orchestrationRevision
+  ) {
     return state;
   }
   return commitEnvironmentState(state, environmentId, {
     ...nextEnvironmentState,
-    orchestrationRevision: Math.max(environmentState.orchestrationRevision, event.sequence),
+    orchestrationRevision,
   });
 }
 
