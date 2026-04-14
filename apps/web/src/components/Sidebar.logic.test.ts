@@ -4,6 +4,7 @@ import { scopedThreadKey, scopeThreadRef } from "@capycode/client-runtime";
 import {
   createThreadJumpHintVisibilityController,
   ensureWorkspaceThreadListOpen,
+  formatWorkspaceDeleteImpactMessage,
   getVisibleSidebarThreadIds,
   getVisibleWorkspacePanelThreadIds,
   resolveAdjacentThreadId,
@@ -61,6 +62,32 @@ describe("hasUnseenCompletion", () => {
         session: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("formatWorkspaceDeleteImpactMessage", () => {
+  it("mentions both the worktree path and deleted branch when both will be removed", () => {
+    expect(
+      formatWorkspaceDeleteImpactMessage({
+        deletesWorktreePath: true,
+        worktreePath: "/tmp/worktree",
+        deletesBranch: true,
+        branchToDelete: "feature/workspace",
+      }),
+    ).toBe(
+      "The worktree at /tmp/worktree will be removed from disk. The Git branch feature/workspace will also be deleted.",
+    );
+  });
+
+  it("keeps the imported-worktree warning when the path stays on disk", () => {
+    expect(
+      formatWorkspaceDeleteImpactMessage({
+        deletesWorktreePath: false,
+        worktreePath: "/tmp/imported-worktree",
+        deletesBranch: false,
+        branchToDelete: null,
+      }),
+    ).toBe("The imported worktree at /tmp/imported-worktree will stay on disk.");
   });
 });
 

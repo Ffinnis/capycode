@@ -2655,6 +2655,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(preview.totalThreadCount, 0);
       assert.equal(preview.deletesWorktreePath, true);
       assert.equal(preview.worktreePath, removableWorktreePath);
+      assert.equal(preview.deletesBranch, true);
+      assert.equal(preview.branchToDelete, "feature/delete-me");
 
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
@@ -2667,6 +2669,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       expect(removeWorktree).toHaveBeenCalledWith({
         cwd: projectRoot,
         path: removableWorktreePath,
+        branchToDelete: "feature/delete-me",
         force: true,
       });
 

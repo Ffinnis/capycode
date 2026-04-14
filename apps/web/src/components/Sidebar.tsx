@@ -151,6 +151,7 @@ import {
   isWorkspaceThreadListOpen,
   resolveAdjacentThreadId,
   resolveActiveProjectThreadBranch,
+  formatWorkspaceDeleteImpactMessage,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
@@ -2453,11 +2454,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               preview.totalThreadCount === 1 ? "" : "s"
             }?`,
             "This permanently deletes every active and archived thread in the workspace before removing it.",
-            preview.deletesWorktreePath && preview.worktreePath
-              ? `The worktree at ${preview.worktreePath} will also be removed from disk.`
-              : preview.worktreePath
-                ? `The imported worktree at ${preview.worktreePath} will stay on disk.`
-                : "This workspace has no separate worktree path.",
+            formatWorkspaceDeleteImpactMessage(preview),
           ].join("\n"),
         );
         if (!confirmed) {
@@ -2523,14 +2520,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         workspaceId: workspace.id,
       });
       const confirmed = await localApi.dialogs.confirm(
-        [
-          `Delete workspace "${workspace.name}"?`,
-          preview.deletesWorktreePath && preview.worktreePath
-            ? `Its worktree at ${preview.worktreePath} will be removed from disk.`
-            : preview.worktreePath
-              ? `Its imported worktree at ${preview.worktreePath} will stay on disk.`
-              : "This workspace has no separate worktree path.",
-        ].join("\n"),
+        [`Delete workspace "${workspace.name}"?`, formatWorkspaceDeleteImpactMessage(preview)].join(
+          "\n",
+        ),
       );
       if (!confirmed) {
         return;

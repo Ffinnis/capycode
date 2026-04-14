@@ -2684,6 +2684,26 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           ),
         ),
       );
+
+      if (!input.branchToDelete) {
+        return;
+      }
+
+      const deleteBranchArgs = ["branch", input.force ? "-D" : "-d", input.branchToDelete];
+      yield* executeGit("GitCore.removeWorktree.deleteBranch", input.cwd, deleteBranchArgs, {
+        timeoutMs: 15_000,
+        fallbackErrorMessage: "git branch delete failed",
+      }).pipe(
+        Effect.mapError((error) =>
+          createGitCommandError(
+            "GitCore.removeWorktree.deleteBranch",
+            input.cwd,
+            deleteBranchArgs,
+            `${commandLabel(deleteBranchArgs)} failed (cwd: ${input.cwd}): ${error.message}`,
+            error,
+          ),
+        ),
+      );
     },
   );
 

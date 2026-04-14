@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { WorkspaceDeletePreview } from "@capycode/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@capycode/contracts/settings";
 import { scopedThreadKey, scopeThreadRef } from "@capycode/client-runtime";
 import type { SidebarThreadSummary, Thread } from "../types";
@@ -205,6 +206,30 @@ export function resolveActiveProjectThreadBranch(input: {
 
   return activeThread?.branch ?? null;
 }
+
+export function formatWorkspaceDeleteImpactMessage(
+  preview: Pick<
+    WorkspaceDeletePreview,
+    "deletesWorktreePath" | "worktreePath" | "deletesBranch" | "branchToDelete"
+  >,
+): string {
+  const details: string[] = [];
+
+  if (preview.deletesWorktreePath && preview.worktreePath) {
+    details.push(`The worktree at ${preview.worktreePath} will be removed from disk.`);
+  } else if (preview.worktreePath) {
+    details.push(`The imported worktree at ${preview.worktreePath} will stay on disk.`);
+  } else {
+    details.push("This workspace has no separate worktree path.");
+  }
+
+  if (preview.deletesBranch && preview.branchToDelete) {
+    details.push(`The Git branch ${preview.branchToDelete} will also be deleted.`);
+  }
+
+  return details.join(" ");
+}
+
 export function orderItemsByPreferredIds<TItem, TId>(input: {
   items: readonly TItem[];
   preferredIds: readonly TId[];

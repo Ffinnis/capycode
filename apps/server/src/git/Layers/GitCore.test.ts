@@ -1416,6 +1416,43 @@ it.layer(TestLayer)("git integration", (it) => {
       }),
     );
 
+    it.effect(
+      "removeGitWorktree deletes the requested branch even after the worktree checkout changes",
+      () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+
+          const wtPath = path.join(tmp, "wt-remove-branch-dir");
+          const currentBranch = (yield* (yield* GitCore).listBranches({ cwd: tmp })).branches.find(
+            (b) => b.current,
+          )!.name;
+
+          yield* (yield* GitCore).createWorktree({
+            cwd: tmp,
+            branch: currentBranch,
+            newBranch: "wt-remove-branch",
+            path: wtPath,
+          });
+          yield* git(wtPath, ["checkout", "-b", "manual-branch"]);
+
+          expect(yield* (yield* GitCore).listLocalBranchNames(tmp)).toContain("wt-remove-branch");
+          expect(yield* (yield* GitCore).listLocalBranchNames(tmp)).toContain("manual-branch");
+
+          yield* (yield* GitCore).removeWorktree({
+            cwd: tmp,
+            path: wtPath,
+            branchToDelete: "wt-remove-branch",
+          });
+
+          expect(existsSync(wtPath)).toBe(false);
+          expect(yield* (yield* GitCore).listLocalBranchNames(tmp)).not.toContain(
+            "wt-remove-branch",
+          );
+          expect(yield* (yield* GitCore).listLocalBranchNames(tmp)).toContain("manual-branch");
+        }),
+    );
+
     it.effect("removeGitWorktree force removes a dirty worktree", () =>
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();

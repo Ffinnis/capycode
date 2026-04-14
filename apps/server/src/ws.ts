@@ -1194,14 +1194,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   Effect.orElseSucceed(() => null),
                 );
           const row = counts[0];
+          const deletesWorktreePath =
+            worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path);
           return {
             workspaceId: workspace.id,
             activeThreadCount: row?.activeThreadCount ?? 0,
             archivedThreadCount: row?.archivedThreadCount ?? 0,
             totalThreadCount: row?.totalThreadCount ?? 0,
-            deletesWorktreePath:
-              worktree !== null && worktree.createdByCapycode === 1 && existsSync(worktree.path),
+            deletesWorktreePath,
             worktreePath: workspace.worktreePath,
+            deletesBranch: deletesWorktreePath,
+            branchToDelete: deletesWorktreePath ? (worktree?.branch ?? null) : null,
           };
         });
 
@@ -1700,6 +1703,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               .removeWorktree({
                 cwd: projectRoot,
                 path: worktree.path,
+                branchToDelete: worktree.branch,
                 force: true,
               })
               .pipe(
