@@ -1507,6 +1507,13 @@ it.layer(TestLayer)("git integration", (it) => {
           });
 
           const missingWorktreePath = path.join(tmp, "missing-worktree-path");
+          yield* (yield* GitCore).createWorktree({
+            cwd: tmp,
+            branch: "feature/missing-worktree-path",
+            path: missingWorktreePath,
+          });
+          expect(existsSync(missingWorktreePath)).toBe(true);
+          yield* removePath(missingWorktreePath);
           expect(existsSync(missingWorktreePath)).toBe(false);
 
           yield* (yield* GitCore).removeWorktree({
@@ -1533,6 +1540,15 @@ it.layer(TestLayer)("git integration", (it) => {
           });
 
           const racedWorktreePath = path.join(tmp, "raced-worktree");
+          yield* (yield* GitCore).createWorktree({
+            cwd: tmp,
+            branch: "feature/remove-race",
+            path: racedWorktreePath,
+          });
+          expect(existsSync(racedWorktreePath)).toBe(true);
+          yield* removePath(racedWorktreePath);
+          expect(existsSync(racedWorktreePath)).toBe(false);
+          // Recreate an empty placeholder so removeWorktree still attempts git worktree remove.
           yield* makeDirectory(racedWorktreePath);
 
           const liveCore = yield* GitCore;

@@ -2670,6 +2670,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
 
   const removeWorktree: GitCoreShape["removeWorktree"] = Effect.fn("removeWorktree")(
     function* (input) {
+      let shouldPruneMissingWorktree = Boolean(input.branchToDelete) && !existsSync(input.path);
       const shouldRemoveWorktreePath = !input.branchToDelete || existsSync(input.path);
       if (shouldRemoveWorktreePath) {
         const args = ["worktree", "remove"];
@@ -2683,12 +2684,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         }).pipe(
           Effect.catch((error) =>
             input.branchToDelete && isMissingWorktreeRemoveFailure(error, input.path)
-              ? Effect.logWarning("GitCore.removeWorktree: worktree path already missing", {
+              ? ((shouldPruneMissingWorktree = true),
+                Effect.logWarning("GitCore.removeWorktree: worktree path already missing", {
                   cwd: input.cwd,
                   path: input.path,
                   command: commandLabel(args),
                   detail: error.message,
-                })
+                }))
               : Effect.fail(
                   createGitCommandError(
                     "GitCore.removeWorktree",
@@ -2704,6 +2706,22 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
 
       if (!input.branchToDelete) {
         return;
+      }
+
+      if (shouldPruneMissingWorktree) {
+        yield* executeGit("GitCore.removeWorktree.prune", input.cwd, ["worktree", "prune"], {
+          timeoutMs: 15_000,
+          fallbackErrorMessage: "git worktree prune failed",
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("GitCore.removeWorktree: best-effort worktree prune failed", {
+              cwd: input.cwd,
+              path: input.path,
+              command: commandLabel(["worktree", "prune"]),
+              detail: error.message,
+            }),
+          ),
+        );
       }
 
       const deleteBranchArgs = ["branch", input.force ? "-D" : "-d", input.branchToDelete];
