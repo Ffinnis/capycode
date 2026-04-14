@@ -1,5 +1,6 @@
 import type { ContextMenuItem, LocalApi } from "@capycode/contracts";
 
+import { confirm as confirmDialog } from "./components/ui/confirmation-dialog.logic";
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 import { resetServerStateForTests } from "./rpc/serverState";
@@ -35,10 +36,8 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
         return window.desktopBridge.pickFolder();
       },
       confirm: async (message) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.confirm(message);
-        }
-        return window.confirm(message);
+        // Use in-app confirmation dialog instead of native dialogs
+        return confirmDialog(message);
       },
     },
     shell: {

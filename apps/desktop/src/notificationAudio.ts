@@ -1,9 +1,17 @@
 import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { copyFile, rename, unlink } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join, resolve, sep } from "node:path";
 
 import {
   BUILT_IN_NOTIFICATION_SOUNDS,
@@ -18,6 +26,8 @@ import {
 const CUSTOM_NOTIFICATION_SOUND_FILE_STEM = "notification-custom";
 const MAX_CUSTOM_NOTIFICATION_SOUND_SIZE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".ogg"]);
+const PACKAGED_APP_ARCHIVE_SEGMENT = `${sep}app.asar${sep}`;
+const BUNDLED_NOTIFICATION_SOUND_CACHE_DIR = "bundled";
 
 interface PlaySoundCallbacks {
   onComplete?: () => void;
@@ -105,8 +115,57 @@ export function getCustomNotificationSoundsDir(stateDir: string): string {
   return join(stateDir, "notification-sounds");
 }
 
+function getBundledNotificationSoundsDir(stateDir: string): string {
+  return join(getCustomNotificationSoundsDir(stateDir), BUNDLED_NOTIFICATION_SOUND_CACHE_DIR);
+}
+
 function ensureCustomNotificationSoundsDir(stateDir: string): void {
   mkdirSync(getCustomNotificationSoundsDir(stateDir), { recursive: true });
+}
+
+function isPackagedArchivePath(filePath: string): boolean {
+  return filePath.includes(PACKAGED_APP_ARCHIVE_SEGMENT);
+}
+
+function isBundledPlaybackSoundFresh(sourcePath: string, playbackPath: string): boolean {
+  if (!existsSync(playbackPath)) {
+    return false;
+  }
+
+  try {
+    const sourceStat = statSync(sourcePath);
+    const playbackStat = statSync(playbackPath);
+    return playbackStat.isFile() && playbackStat.mtimeMs >= sourceStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+export function ensureExternalPlaybackSoundPath(input: {
+  stateDir: string;
+  soundPath: string;
+}): string {
+  if (!isPackagedArchivePath(input.soundPath)) {
+    return input.soundPath;
+  }
+
+  const bundledSoundsDir = getBundledNotificationSoundsDir(input.stateDir);
+  try {
+    mkdirSync(bundledSoundsDir, { recursive: true });
+  } catch {
+    return input.soundPath;
+  }
+
+  const playbackPath = join(bundledSoundsDir, basename(input.soundPath));
+  if (!isBundledPlaybackSoundFresh(input.soundPath, playbackPath)) {
+    try {
+      copyFileSync(input.soundPath, playbackPath);
+    } catch {
+      return input.soundPath;
+    }
+  }
+
+  return playbackPath;
 }
 
 function isAllowedAudioExtension(filePath: string): boolean {

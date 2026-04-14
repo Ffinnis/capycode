@@ -677,7 +677,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     capycodeCommitHash: commitHash,
     private: true,
     description: "Capycode desktop build",
-    author: "T3 Tools",
+    author: "Ffinnis",
     main: "apps/desktop/dist-electron/main.js",
     build: yield* createBuildConfig(
       options.platform,
