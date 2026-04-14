@@ -73,6 +73,7 @@ function makeSidebarThreadSummary(
 
 function makeEmptyEnvironmentState(): EnvironmentState {
   return {
+    orchestrationRevision: 0,
     projectIds: [],
     projectById: {},
     workspaceIds: [],

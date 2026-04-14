@@ -45,6 +45,7 @@ import { sanitizeThreadErrorMessage } from "./rpc/transportError";
 import { getThreadFromEnvironmentState } from "./threadDerivation";
 
 export interface EnvironmentState {
+  orchestrationRevision: number;
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
   workspaceIds: WorkspaceId[];
@@ -76,6 +77,7 @@ export interface AppState {
 }
 
 const initialEnvironmentState: EnvironmentState = {
+  orchestrationRevision: 0,
   projectIds: [],
   projectById: {},
   workspaceIds: [],
@@ -948,6 +950,124 @@ function buildWorkspaceState(
   };
 }
 
+function listWorkspaces(state: EnvironmentState): Workspace[] {
+  return state.workspaceIds.flatMap((workspaceId) => {
+    const workspace = state.workspaceById[workspaceId];
+    return workspace ? [workspace] : [];
+  });
+}
+
+function listWorkspaceSections(state: EnvironmentState): WorkspaceSection[] {
+  return state.projectIds.flatMap((projectId) =>
+    (state.workspaceSectionIdsByProjectId[projectId] ?? []).flatMap((sectionId) => {
+      const section = state.workspaceSectionById[sectionId];
+      return section ? [section] : [];
+    }),
+  );
+}
+
+function pickFallbackActiveWorkspace(
+  workspaces: ReadonlyArray<Workspace>,
+  projectId: ProjectId,
+): WorkspaceId | null {
+  const candidates = workspaces.filter((workspace) => workspace.projectId === projectId);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const [fallbackWorkspace] = candidates.toSorted((left, right) => {
+    if (left.isDefault !== right.isDefault) {
+      return left.isDefault ? -1 : 1;
+    }
+    if (left.tabOrder !== right.tabOrder) {
+      return left.tabOrder - right.tabOrder;
+    }
+    return left.id.localeCompare(right.id);
+  });
+  return fallbackWorkspace?.id ?? null;
+}
+
+export interface WorkspaceRemovalRollbackSnapshot {
+  readonly environmentId: EnvironmentId;
+  readonly revision: number;
+  readonly removedWorkspace: Workspace;
+  readonly originalWorkspaceIndex?: number;
+  readonly relatedWorkspaceSections: ReadonlyArray<WorkspaceSection>;
+  readonly originalSectionIndices?: ReadonlyArray<number>;
+}
+
+function compareWorkspaceRestoreOrder(left: Workspace, right: Workspace): number {
+  if (left.tabOrder !== right.tabOrder) {
+    return left.tabOrder - right.tabOrder;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function compareWorkspaceSectionRestoreOrder(
+  left: WorkspaceSection,
+  right: WorkspaceSection,
+): number {
+  if (left.tabOrder !== right.tabOrder) {
+    return left.tabOrder - right.tabOrder;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function insertWorkspaceByRollbackOrder(
+  workspaces: ReadonlyArray<Workspace>,
+  workspace: Workspace,
+  originalIndex?: number,
+): Workspace[] {
+  const nextWorkspaces = [...workspaces];
+  if (originalIndex !== undefined && originalIndex >= 0) {
+    nextWorkspaces.splice(Math.min(originalIndex, nextWorkspaces.length), 0, workspace);
+    return nextWorkspaces;
+  }
+
+  const projectIndices = nextWorkspaces.flatMap((currentWorkspace, index) =>
+    currentWorkspace.projectId === workspace.projectId ? [index] : [],
+  );
+  let insertAt = nextWorkspaces.length;
+  for (const index of projectIndices) {
+    if (compareWorkspaceRestoreOrder(workspace, nextWorkspaces[index]!) < 0) {
+      insertAt = index;
+      break;
+    }
+    insertAt = index + 1;
+  }
+  nextWorkspaces.splice(insertAt, 0, workspace);
+  return nextWorkspaces;
+}
+
+function insertWorkspaceSectionByRollbackOrder(
+  workspaceSections: ReadonlyArray<WorkspaceSection>,
+  workspaceSection: WorkspaceSection,
+  originalIndex?: number,
+): WorkspaceSection[] {
+  const nextWorkspaceSections = [...workspaceSections];
+  if (originalIndex !== undefined && originalIndex >= 0) {
+    nextWorkspaceSections.splice(
+      Math.min(originalIndex, nextWorkspaceSections.length),
+      0,
+      workspaceSection,
+    );
+    return nextWorkspaceSections;
+  }
+
+  const projectIndices = nextWorkspaceSections.flatMap((currentSection, index) =>
+    currentSection.projectId === workspaceSection.projectId ? [index] : [],
+  );
+  let insertAt = nextWorkspaceSections.length;
+  for (const index of projectIndices) {
+    if (compareWorkspaceSectionRestoreOrder(workspaceSection, nextWorkspaceSections[index]!) < 0) {
+      insertAt = index;
+      break;
+    }
+    insertAt = index + 1;
+  }
+  nextWorkspaceSections.splice(insertAt, 0, workspaceSection);
+  return nextWorkspaceSections;
+}
+
 function buildThreadState(
   threads: ReadonlyArray<Thread>,
 ): Pick<
@@ -1074,6 +1194,7 @@ function syncEnvironmentReadModel(
     .map((thread) => mapThread(thread, environmentId));
   return {
     ...state,
+    orchestrationRevision: readModel.snapshotSequence,
     ...buildProjectState(projects),
     ...buildWorkspaceState(workspaces, workspaceSections),
     ...buildThreadState(threads),
@@ -1095,6 +1216,121 @@ export function syncServerReadModel(
       environmentId,
     ),
   );
+}
+
+export function captureWorkspaceRemovalRollbackSnapshot(
+  state: AppState,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  },
+): WorkspaceRemovalRollbackSnapshot | null {
+  const environmentState = getStoredEnvironmentState(state, input.environmentId);
+  const workspaces = listWorkspaces(environmentState);
+  const removedWorkspace = workspaces.find((workspace) => workspace.id === input.workspaceId);
+  if (!removedWorkspace) {
+    return null;
+  }
+  const workspaceSections = listWorkspaceSections(environmentState);
+  const relatedWorkspaceSections = workspaceSections.filter(
+    (workspaceSection) =>
+      workspaceSection.projectId === removedWorkspace.projectId &&
+      workspaceSection.id === removedWorkspace.sectionId,
+  );
+  return {
+    environmentId: input.environmentId,
+    revision: environmentState.orchestrationRevision,
+    removedWorkspace,
+    originalWorkspaceIndex: workspaces.findIndex(
+      (workspace) => workspace.id === removedWorkspace.id,
+    ),
+    relatedWorkspaceSections,
+    originalSectionIndices: relatedWorkspaceSections.map((workspaceSection) =>
+      workspaceSections.findIndex((currentSection) => currentSection.id === workspaceSection.id),
+    ),
+  };
+}
+
+export function removeWorkspaceOptimistically(
+  state: AppState,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  },
+): AppState {
+  const environmentState = getStoredEnvironmentState(state, input.environmentId);
+  const removedWorkspace = environmentState.workspaceById[input.workspaceId];
+  if (!removedWorkspace) {
+    return state;
+  }
+
+  const remainingWorkspaces = listWorkspaces(environmentState).filter(
+    (workspace) => workspace.id !== input.workspaceId,
+  );
+  const fallbackWorkspaceId =
+    removedWorkspace.isActive &&
+    !remainingWorkspaces.some(
+      (workspace) => workspace.projectId === removedWorkspace.projectId && workspace.isActive,
+    )
+      ? pickFallbackActiveWorkspace(remainingWorkspaces, removedWorkspace.projectId)
+      : null;
+  const nextWorkspaces =
+    fallbackWorkspaceId === null
+      ? remainingWorkspaces
+      : remainingWorkspaces.map((workspace) =>
+          workspace.projectId !== removedWorkspace.projectId
+            ? workspace
+            : Object.assign({}, workspace, {
+                isActive: workspace.id === fallbackWorkspaceId,
+              }),
+        );
+
+  return commitEnvironmentState(state, input.environmentId, {
+    ...environmentState,
+    ...buildWorkspaceState(nextWorkspaces, listWorkspaceSections(environmentState)),
+  });
+}
+
+export function restoreWorkspaceRemovalRollbackSnapshot(
+  state: AppState,
+  snapshot: WorkspaceRemovalRollbackSnapshot,
+): AppState {
+  const environmentState = getStoredEnvironmentState(state, snapshot.environmentId);
+  if (environmentState.orchestrationRevision > snapshot.revision) {
+    return state;
+  }
+
+  const currentWorkspaces = listWorkspaces(environmentState);
+  if (currentWorkspaces.some((workspace) => workspace.id === snapshot.removedWorkspace.id)) {
+    return state;
+  }
+
+  const currentWorkspaceSections = listWorkspaceSections(environmentState);
+  let nextWorkspaceSections = currentWorkspaceSections;
+  snapshot.relatedWorkspaceSections.forEach((workspaceSection, index) => {
+    if (nextWorkspaceSections.some((currentSection) => currentSection.id === workspaceSection.id)) {
+      return;
+    }
+    nextWorkspaceSections = insertWorkspaceSectionByRollbackOrder(
+      nextWorkspaceSections,
+      workspaceSection,
+      snapshot.originalSectionIndices?.[index],
+    );
+  });
+  const nextWorkspaces = insertWorkspaceByRollbackOrder(
+    currentWorkspaces.map((workspace) =>
+      snapshot.removedWorkspace.isActive &&
+      workspace.projectId === snapshot.removedWorkspace.projectId
+        ? Object.assign({}, workspace, { isActive: false })
+        : workspace,
+    ),
+    snapshot.removedWorkspace,
+    snapshot.originalWorkspaceIndex,
+  );
+  return commitEnvironmentState(state, snapshot.environmentId, {
+    ...environmentState,
+    ...buildWorkspaceState(nextWorkspaces, nextWorkspaceSections),
+  });
 }
 
 function applyEnvironmentOrchestrationEvent(
@@ -1604,7 +1840,20 @@ export function applyOrchestrationEvents(
     (nextState, event) => applyEnvironmentOrchestrationEvent(nextState, event, environmentId),
     currentEnvironmentState,
   );
-  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
+  const orchestrationRevision = Math.max(
+    nextEnvironmentState.orchestrationRevision,
+    events[events.length - 1]?.sequence ?? nextEnvironmentState.orchestrationRevision,
+  );
+  if (
+    nextEnvironmentState === currentEnvironmentState &&
+    orchestrationRevision === currentEnvironmentState.orchestrationRevision
+  ) {
+    return state;
+  }
+  return commitEnvironmentState(state, environmentId, {
+    ...nextEnvironmentState,
+    orchestrationRevision,
+  });
 }
 
 function getEnvironmentEntries(
@@ -1823,15 +2072,23 @@ export function applyOrchestrationEvent(
   event: OrchestrationEvent,
   environmentId: EnvironmentId,
 ): AppState {
-  return commitEnvironmentState(
-    state,
+  const environmentState = getStoredEnvironmentState(state, environmentId);
+  const nextEnvironmentState = applyEnvironmentOrchestrationEvent(
+    environmentState,
+    event,
     environmentId,
-    applyEnvironmentOrchestrationEvent(
-      getStoredEnvironmentState(state, environmentId),
-      event,
-      environmentId,
-    ),
   );
+  const orchestrationRevision = Math.max(environmentState.orchestrationRevision, event.sequence);
+  if (
+    nextEnvironmentState === environmentState &&
+    orchestrationRevision === environmentState.orchestrationRevision
+  ) {
+    return state;
+  }
+  return commitEnvironmentState(state, environmentId, {
+    ...nextEnvironmentState,
+    orchestrationRevision,
+  });
 }
 
 export function setActiveEnvironmentId(state: AppState, environmentId: EnvironmentId): AppState {
@@ -1876,6 +2133,15 @@ interface AppStore extends AppState {
     events: ReadonlyArray<OrchestrationEvent>,
     environmentId: EnvironmentId,
   ) => void;
+  captureWorkspaceRemovalRollbackSnapshot: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  }) => WorkspaceRemovalRollbackSnapshot | null;
+  removeWorkspaceOptimistically: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceId: WorkspaceId;
+  }) => void;
+  restoreWorkspaceRemovalRollbackSnapshot: (snapshot: WorkspaceRemovalRollbackSnapshot) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (
     threadRef: ScopedThreadRef,
@@ -1884,7 +2150,7 @@ interface AppStore extends AppState {
   ) => void;
 }
 
-export const useStore = create<AppStore>((set) => ({
+export const useStore = create<AppStore>((set, get) => ({
   ...initialState,
   setActiveEnvironmentId: (environmentId) =>
     set((state) => setActiveEnvironmentId(state, environmentId)),
@@ -1894,6 +2160,12 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => applyOrchestrationEvent(state, event, environmentId)),
   applyOrchestrationEvents: (events, environmentId) =>
     set((state) => applyOrchestrationEvents(state, events, environmentId)),
+  captureWorkspaceRemovalRollbackSnapshot: (input) =>
+    captureWorkspaceRemovalRollbackSnapshot(get(), input),
+  removeWorkspaceOptimistically: (input) =>
+    set((state) => removeWorkspaceOptimistically(state, input)),
+  restoreWorkspaceRemovalRollbackSnapshot: (snapshot) =>
+    set((state) => restoreWorkspaceRemovalRollbackSnapshot(state, snapshot)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadRef, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadRef, branch, worktreePath)),
