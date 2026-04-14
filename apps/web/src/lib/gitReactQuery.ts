@@ -2,7 +2,6 @@ import {
   type EnvironmentId,
   type GitActionProgressEvent,
   type GitStackedAction,
-  type ThreadId,
 } from "@capycode/contracts";
 import {
   infiniteQueryOptions,
@@ -70,8 +69,6 @@ export const gitMutationKeys = {
     ["git", "mutation", "run-stacked-action", environmentId ?? null, cwd] as const,
   pull: (environmentId: EnvironmentId | null, cwd: string | null) =>
     ["git", "mutation", "pull", environmentId ?? null, cwd] as const,
-  preparePullRequestThread: (environmentId: EnvironmentId | null, cwd: string | null) =>
-    ["git", "mutation", "prepare-pull-request-thread", environmentId ?? null, cwd] as const,
 };
 
 export function invalidateGitQueries(
@@ -136,31 +133,6 @@ export function gitListRepositoriesQueryOptions(input: {
     staleTime: 15_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-  });
-}
-
-export function gitResolvePullRequestQueryOptions(input: {
-  environmentId: EnvironmentId | null;
-  cwd: string | null;
-  reference: string | null;
-}) {
-  return queryOptions({
-    queryKey: [
-      ...gitQueryKeys.scope(input.environmentId, input.cwd),
-      "pull-request",
-      input.reference,
-    ] as const,
-    queryFn: async () => {
-      if (!input.cwd || !input.reference || !input.environmentId) {
-        throw new Error("Pull request lookup is unavailable.");
-      }
-      const api = ensureEnvironmentApi(input.environmentId);
-      return api.git.resolvePullRequest({ cwd: input.cwd, reference: input.reference });
-    },
-    enabled: input.environmentId !== null && input.cwd !== null && input.reference !== null,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   });
 }
 
@@ -430,38 +402,6 @@ export function gitRemoveWorktreeMutationOptions(input: {
     },
     onSuccess: async () => {
       await invalidateGitQueries(input.queryClient, { environmentId: input.environmentId });
-    },
-  });
-}
-
-export function gitPreparePullRequestThreadMutationOptions(input: {
-  environmentId: EnvironmentId | null;
-  cwd: string | null;
-  queryClient: QueryClient;
-}) {
-  return mutationOptions({
-    mutationKey: gitMutationKeys.preparePullRequestThread(input.environmentId, input.cwd),
-    mutationFn: async (args: {
-      reference: string;
-      mode: "local" | "worktree";
-      threadId?: ThreadId;
-    }) => {
-      if (!input.cwd || !input.environmentId) {
-        throw new Error("Pull request thread preparation is unavailable.");
-      }
-      const api = ensureEnvironmentApi(input.environmentId);
-      return api.git.preparePullRequestThread({
-        cwd: input.cwd,
-        reference: args.reference,
-        mode: args.mode,
-        ...(args.threadId ? { threadId: args.threadId } : {}),
-      });
-    },
-    onSuccess: async () => {
-      await invalidateGitQueries(input.queryClient, {
-        environmentId: input.environmentId,
-        cwd: input.cwd,
-      });
     },
   });
 }

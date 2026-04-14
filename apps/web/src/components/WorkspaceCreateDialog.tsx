@@ -6,7 +6,6 @@ import {
   AlertCircleIcon,
   ChevronDownIcon,
   GitBranchIcon,
-  GitBranchPlusIcon,
   Loader2Icon,
   PlusIcon,
 } from "lucide-react";
@@ -113,8 +112,6 @@ export function WorkspaceCreateDialog({
     () => branchQueryResult.data?.pages.flatMap((page) => page.branches) ?? [],
     [branchQueryResult.data?.pages],
   );
-  const branchNames = useMemo(() => branches.map((branch) => branch.name), [branches]);
-  const availableBranchNames = useMemo(() => new Set(branchNames), [branchNames]);
   const currentGitBranch = gitStatus.data?.branch ?? null;
   const defaultBranch = useMemo(
     () =>

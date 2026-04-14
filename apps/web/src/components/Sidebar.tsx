@@ -4063,7 +4063,6 @@ export default function Sidebar() {
   const isOnSettings = pathname.startsWith("/settings");
   const sidebarThreadSortOrder = useSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useSettings((s) => s.sidebarProjectSortOrder);
-  const defaultThreadEnvMode = useSettings((s) => s.defaultThreadEnvMode);
   const { updateSettings } = useUpdateSettings();
   const { handleNewThread } = useNewThreadHandler();
   const { archiveThread, deleteThread } = useThreadActions();
@@ -4288,9 +4287,7 @@ export default function Sidebar() {
           projectId: existing.id,
         });
         if (!openedExistingThread) {
-          await handleNewThread(scopeProjectRef(existing.environmentId, existing.id), {
-            envMode: defaultThreadEnvMode,
-          });
+          await handleNewThread(scopeProjectRef(existing.environmentId, existing.id));
         }
         finishAddingProject();
         return;
@@ -4314,9 +4311,7 @@ export default function Sidebar() {
         });
         const snapshot = await api.orchestration.getSnapshot();
         useStore.getState().syncServerReadModel(snapshot, environmentId);
-        await handleNewThread(scopeProjectRef(environmentId, projectId), {
-          envMode: defaultThreadEnvMode,
-        }).catch(() => undefined);
+        await handleNewThread(scopeProjectRef(environmentId, projectId)).catch(() => undefined);
       } catch (error) {
         const description =
           error instanceof Error ? error.message : "An error occurred while adding the project.";
@@ -4341,7 +4336,6 @@ export default function Sidebar() {
       isAddingProject,
       projects,
       shouldBrowseForProjectImmediately,
-      defaultThreadEnvMode,
     ],
   );
 
