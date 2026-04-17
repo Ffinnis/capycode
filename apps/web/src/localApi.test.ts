@@ -61,7 +61,6 @@ const rpcClientMock = {
     getDeletePreview: vi.fn(),
     delete: vi.fn(),
     listOpenCandidates: vi.fn(),
-    openMainRepo: vi.fn(),
     openTrackedWorktree: vi.fn(),
     openExternalWorktree: vi.fn(),
     importAll: vi.fn(),

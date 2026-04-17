@@ -71,7 +71,6 @@ export interface WsRpcClient {
     readonly getDeletePreview: RpcUnaryMethod<typeof WS_METHODS.workspacesGetDeletePreview>;
     readonly delete: RpcUnaryMethod<typeof WS_METHODS.workspacesDelete>;
     readonly listOpenCandidates: RpcUnaryMethod<typeof WS_METHODS.workspacesListOpenCandidates>;
-    readonly openMainRepo: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenMainRepo>;
     readonly openTrackedWorktree: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenTrackedWorktree>;
     readonly openExternalWorktree: RpcUnaryMethod<typeof WS_METHODS.workspacesOpenExternalWorktree>;
     readonly importAll: RpcUnaryMethod<typeof WS_METHODS.workspacesImportAll>;
@@ -196,8 +195,6 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       delete: (input) => transport.request((client) => client[WS_METHODS.workspacesDelete](input)),
       listOpenCandidates: (input) =>
         transport.request((client) => client[WS_METHODS.workspacesListOpenCandidates](input)),
-      openMainRepo: (input) =>
-        transport.request((client) => client[WS_METHODS.workspacesOpenMainRepo](input)),
       openTrackedWorktree: (input) =>
         transport.request((client) => client[WS_METHODS.workspacesOpenTrackedWorktree](input)),
       openExternalWorktree: (input) =>

@@ -584,9 +584,9 @@ const seedWorkspaceProject = (input: {
         ${defaultWorkspaceId},
         ${input.projectId},
         NULL,
-        ${"branch"},
+        ${"root"},
         ${defaultBranch},
-        ${defaultBranch},
+        ${"Workspace"},
         0,
         1,
         ${now},
@@ -2375,9 +2375,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-workspace-create-" });
+      const createdWorktreePath = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-create-worktree-",
+      });
+      const createWorktree = vi.fn(() =>
+        Effect.succeed({
+          worktree: { path: createdWorktreePath, branch: "feature/a" },
+        }),
+      );
       const { services } = yield* buildAppUnderTestWithServices({
         layers: {
           gitCore: {
+            createWorktree,
             listBranches: () =>
               Effect.succeed({
                 branches: [
@@ -2418,14 +2427,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           client[WS_METHODS.workspacesCreate]({
             projectId,
             name: "Feature A",
-            type: "branch",
             branch: "feature/a",
+            baseBranch: "main",
             sectionId: section.id,
           }),
         ),
       );
 
+      assert.equal(createdWorkspace.type, "worktree");
       assert.equal(createdWorkspace.branch, "feature/a");
+      assert.equal(createdWorkspace.worktreePath, createdWorktreePath);
       assert.equal(createdWorkspace.sectionId, section.id);
       assert.equal(createdWorkspace.isActive, true);
 
@@ -2467,14 +2478,96 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(
         workspaceRows.map((row) => [row.id, row.tabOrder]),
         [
-          [createdWorkspace.id, 0],
-          [defaultWorkspaceId, 2],
+          [defaultWorkspaceId, 0],
+          [createdWorkspace.id, 1],
         ],
       );
       assert.deepEqual(
         sectionRows.map((row) => [row.id, row.tabOrder]),
-        [[section.id, 1]],
+        [[section.id, 2]],
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects importing an existing directory that is not a registered git worktree", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-create-existing-dir-",
+      });
+      const targetWorktreePath = path.join(
+        path.dirname(projectRoot),
+        `${path.basename(projectRoot)}-feature-a`,
+      );
+      yield* fs.makeDirectory(targetWorktreePath, { recursive: true });
+
+      const createWorktree = vi.fn(() => Effect.die("createWorktree should not be called"));
+      const execute = vi.fn(() =>
+        Effect.succeed({
+          code: 0,
+          stdout: [`worktree ${projectRoot}`, "branch refs/heads/main", ""].join("\n"),
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+      const listBranches = vi.fn(({ cwd }: { readonly cwd: string }) =>
+        Effect.succeed({
+          branches: [
+            {
+              name: cwd === projectRoot ? "main" : "feature/a",
+              current: true,
+              isDefault: true,
+              worktreePath: null,
+            },
+          ],
+          isRepo: true,
+          hasOriginRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            createWorktree,
+            execute,
+            listBranches,
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-create-existing-dir");
+      yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.flip(
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.workspacesCreate]({
+              projectId,
+              name: "Feature A",
+              branch: "feature/a",
+              baseBranch: "main",
+            }),
+          ),
+        ),
+      );
+
+      assert.equal(error._tag, "WorkspaceError");
+      assertInclude(
+        String(error),
+        "Existing path is not a registered git worktree for this project",
+      );
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(listBranches).toHaveBeenCalledTimes(1);
+      expect(listBranches).toHaveBeenCalledWith({ cwd: projectRoot });
+      expect(createWorktree).not.toHaveBeenCalled();
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2541,6 +2634,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(candidates.externalWorktrees.length, 1);
+      assert.equal("mainRepoBranch" in candidates, false);
       assert.deepEqual(candidates.externalWorktrees[0], {
         projectId,
         path: externalWorktreePath,
@@ -2618,7 +2712,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           client[WS_METHODS.workspacesCreate]({
             projectId,
             name: "Main Worktree",
-            type: "worktree",
             baseBranch: "main",
             branch: "main",
           }),

@@ -10,8 +10,13 @@ import {
   WorkspaceSectionId,
 } from "./baseSchemas";
 
-export const WorkspaceType = Schema.Literals(["branch", "worktree"]);
+export const WorkspaceType = Schema.Literals(["root", "worktree"]);
 export type WorkspaceType = typeof WorkspaceType.Type;
+
+export const WorkspaceProjectInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type WorkspaceProjectInput = typeof WorkspaceProjectInput.Type;
 
 export const WorkspaceSection = Schema.Struct({
   id: WorkspaceSectionId,
@@ -46,12 +51,10 @@ export type Workspace = typeof Workspace.Type;
 export const WorkspaceCreateInput = Schema.Struct({
   projectId: ProjectId,
   name: TrimmedNonEmptyString,
-  type: Schema.optional(WorkspaceType),
   baseBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   sectionId: Schema.optional(Schema.NullOr(WorkspaceSectionId)),
-});
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
 export type WorkspaceCreateInput = typeof WorkspaceCreateInput.Type;
 
 export const WorkspaceUpdateInput = Schema.Struct({
@@ -81,11 +84,6 @@ export const WorkspaceDeletePreview = Schema.Struct({
   branchToDelete: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type WorkspaceDeletePreview = typeof WorkspaceDeletePreview.Type;
-
-export const WorkspaceOpenMainRepoInput = Schema.Struct({
-  projectId: ProjectId,
-});
-export type WorkspaceOpenMainRepoInput = typeof WorkspaceOpenMainRepoInput.Type;
 
 export const WorkspaceOpenTrackedWorktreeInput = Schema.Struct({
   worktreeId: WorktreeId,
@@ -122,7 +120,6 @@ export type WorkspaceExternalWorktreeCandidate = typeof WorkspaceExternalWorktre
 
 export const WorkspaceOpenCandidates = Schema.Struct({
   projectId: ProjectId,
-  mainRepoBranch: TrimmedNonEmptyString,
   trackedWorktrees: Schema.Array(WorkspaceTrackedWorktreeCandidate),
   externalWorktrees: Schema.Array(WorkspaceExternalWorktreeCandidate),
 });

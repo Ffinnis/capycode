@@ -5,7 +5,6 @@ import {
   CloudIcon,
   FolderIcon,
   FolderGit2Icon,
-  GitBranchIcon,
   GitPullRequestIcon,
   GripVerticalIcon,
   PlusIcon,
@@ -127,6 +126,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { WorkspaceCreateDialog } from "./WorkspaceCreateDialog";
+import { RootBranchSwitchDialog } from "./RootBranchSwitchDialog";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -276,7 +276,7 @@ interface SidebarTextDialogState extends SidebarTextDialogRequest {
 }
 
 interface SidebarWorkspaceCreateDialogState {
-  mode: "branch" | "worktree";
+  mode: "worktree";
 }
 
 interface SidebarContextMenuState {
@@ -438,7 +438,20 @@ function buildSidebarProjectWorkspaceItems(
         tabOrder: workspace.tabOrder,
         workspace,
       })),
-  ].toSorted((left, right) => left.tabOrder - right.tabOrder || left.key.localeCompare(right.key));
+  ].toSorted((left, right) => {
+    const leftIsRootWorkspace =
+      left.kind === "workspace" &&
+      left.workspace.type === "root" &&
+      left.workspace.sectionId === null;
+    const rightIsRootWorkspace =
+      right.kind === "workspace" &&
+      right.workspace.type === "root" &&
+      right.workspace.sectionId === null;
+    if (leftIsRootWorkspace !== rightIsRootWorkspace) {
+      return leftIsRootWorkspace ? -1 : 1;
+    }
+    return left.tabOrder - right.tabOrder || left.key.localeCompare(right.key);
+  });
 }
 
 function buildSidebarWorkspaceThreadsByKey(input: {
@@ -477,11 +490,11 @@ function buildSidebarWorkspaceThreadsByKey(input: {
   );
 }
 
-function draftSessionMatchesWorkspace(
+export function draftSessionMatchesWorkspace(
   draftSession: DraftSessionState,
   workspace: Pick<
     Workspace,
-    "environmentId" | "projectId" | "branch" | "worktreePath" | "isDefault"
+    "environmentId" | "projectId" | "branch" | "worktreePath" | "isDefault" | "type"
   >,
 ): boolean {
   if (
@@ -499,11 +512,34 @@ function draftSessionMatchesWorkspace(
     return false;
   }
 
-  if (workspace.isDefault) {
-    return draftSession.branch === null || draftSession.branch === workspace.branch;
+  if (workspace.type === "root") {
+    return true;
   }
 
   return draftSession.branch === workspace.branch;
+}
+
+export function resolveWorkspaceThreadLaunchInput(
+  workspace: Pick<Workspace, "branch" | "worktreePath" | "type">,
+  rootBranch: string | null,
+): {
+  readonly branch: string | null;
+  readonly worktreePath: string | null;
+  readonly envMode: "local" | "worktree";
+} {
+  if (workspace.worktreePath !== null) {
+    return {
+      branch: workspace.branch,
+      worktreePath: workspace.worktreePath,
+      envMode: "worktree",
+    };
+  }
+
+  return {
+    branch: workspace.type === "root" ? rootBranch : workspace.branch,
+    worktreePath: null,
+    envMode: "local",
+  };
 }
 
 interface TerminalStatusIndicator {
@@ -1210,6 +1246,7 @@ interface WorkspaceRowProps extends Pick<
 > {
   workspace: SidebarWorkspaceSnapshot;
   project: SidebarProjectSnapshot;
+  rootBranch: string | null;
   workspaceExpanded: boolean;
   workspaceThreads: readonly SidebarThreadSummary[];
   orderedWorkspaceThreadKeys: readonly string[];
@@ -1226,6 +1263,7 @@ interface WorkspaceRowProps extends Pick<
   ) => Promise<void>;
   workspaceSections: readonly SidebarWorkspaceSectionSnapshot[];
   copyPathToClipboard: (value: string, context: { path: string }) => void;
+  openRootBranchSwitchDialog: (workspace: SidebarWorkspaceSnapshot) => void;
   dragHandleProps: SortableHandleProps | null;
   isDragging: boolean;
   showContextMenu: <T extends string>(
@@ -1238,6 +1276,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
   const {
     workspace,
     project,
+    rootBranch,
     workspaceExpanded,
     workspaceThreads,
     orderedWorkspaceThreadKeys,
@@ -1272,12 +1311,18 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     moveWorkspaceToSection,
     workspaceSections,
     copyPathToClipboard,
+    openRootBranchSwitchDialog,
     dragHandleProps,
     isDragging,
     showContextMenu,
   } = props;
 
-  const WorkspaceTypeIcon = workspace.type === "branch" ? GitBranchIcon : FolderGit2Icon;
+  const WorkspaceTypeIcon = workspace.type === "root" ? FolderIcon : FolderGit2Icon;
+  const workspaceDisplayName = workspace.type === "root" ? "Workspace" : workspace.name;
+  const workspaceBranchLabel =
+    workspace.type === "root" ? (rootBranch ?? workspace.branch ?? null) : null;
+  const canReorderWorkspace = workspace.type !== "root";
+  const canDeleteWorkspace = !workspace.isDefault && workspace.type !== "root";
 
   return (
     <div className={`group/workspace relative ${isDragging ? "opacity-80" : ""}`}>
@@ -1307,38 +1352,48 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
                 candidate.environmentId === workspace.environmentId,
             );
             const clicked = await showContextMenu(
-              [
-                { id: "new-thread", label: "New thread" },
-                { id: "rename", label: "Rename workspace" },
-                ...siblingSections
-                  .filter((candidate) => candidate.id !== workspace.sectionId)
-                  .map((candidate) => ({
-                    id: `move:${candidate.id}` as const,
-                    label: `Move to ${candidate.name}`,
-                    disabled: workspace.isDefault,
-                  })),
-                ...(workspace.sectionId !== null
-                  ? [
-                      {
-                        id: "move:top-level" as const,
-                        label: "Move to top level",
+              workspace.type === "root"
+                ? [
+                    { id: "new-thread", label: "New thread" },
+                    { id: "switch-branch", label: "Switch branch" },
+                    { id: "copy-path", label: "Copy Project Path" },
+                  ]
+                : [
+                    { id: "new-thread", label: "New thread" },
+                    { id: "rename", label: "Rename workspace" },
+                    ...siblingSections
+                      .filter((candidate) => candidate.id !== workspace.sectionId)
+                      .map((candidate) => ({
+                        id: `move:${candidate.id}` as const,
+                        label: `Move to ${candidate.name}`,
                         disabled: workspace.isDefault,
-                      },
-                    ]
-                  : []),
-                { id: "copy-path", label: "Copy Workspace Path" },
-                {
-                  id: "delete",
-                  label: "Delete workspace",
-                  destructive: true,
-                  disabled: workspace.isDefault,
-                },
-              ],
+                      })),
+                    ...(workspace.sectionId !== null
+                      ? [
+                          {
+                            id: "move:top-level" as const,
+                            label: "Move to top level",
+                            disabled: workspace.isDefault,
+                          },
+                        ]
+                      : []),
+                    { id: "copy-path", label: "Copy Workspace Path" },
+                    {
+                      id: "delete",
+                      label: "Delete workspace",
+                      destructive: true,
+                      disabled: workspace.isDefault,
+                    },
+                  ],
               { x: event.clientX, y: event.clientY },
             );
             try {
               if (clicked === "new-thread") {
                 await handleCreateThreadForWorkspace(workspace);
+                return;
+              }
+              if (clicked === "switch-branch") {
+                openRootBranchSwitchDialog(workspace);
                 return;
               }
               if (clicked === "rename") {
@@ -1377,40 +1432,49 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
           }`}
         />
         <WorkspaceTypeIcon className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-xs">{workspace.name}</span>
+        <span className="min-w-0 flex-1 text-xs">
+          <span className="block truncate">{workspaceDisplayName}</span>
+          {workspaceBranchLabel ? (
+            <span className="block truncate font-mono text-[10px] text-muted-foreground/60">
+              {workspaceBranchLabel}
+            </span>
+          ) : null}
+        </span>
         {workspace.environmentLabel ? (
           <span className="text-[10px] text-muted-foreground/60">{workspace.environmentLabel}</span>
         ) : null}
       </SidebarMenuSubButton>
       <div className="absolute top-1.5 right-3 flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                ref={dragHandleProps?.setActivatorNodeRef}
-                aria-label={`Reorder workspace ${workspace.name}`}
-                className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                {...(dragHandleProps?.attributes ?? {})}
-                {...(dragHandleProps?.listeners ?? {})}
-              />
-            }
-          >
-            <GripVerticalIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">Reorder workspace</TooltipPopup>
-        </Tooltip>
+        {canReorderWorkspace ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  ref={dragHandleProps?.setActivatorNodeRef}
+                  aria-label={`Reorder workspace ${workspaceDisplayName}`}
+                  className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  {...(dragHandleProps?.attributes ?? {})}
+                  {...(dragHandleProps?.listeners ?? {})}
+                />
+              }
+            >
+              <GripVerticalIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Reorder workspace</TooltipPopup>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
               <button
                 type="button"
                 data-testid={`new-thread-button-${workspace.id}`}
-                aria-label={`Create new thread in ${workspace.name}`}
+                aria-label={`Create new thread in ${workspaceDisplayName}`}
                 className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={(event) => {
                   event.preventDefault();
@@ -1430,13 +1494,13 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
           />
           <TooltipPopup side="top">New thread in workspace</TooltipPopup>
         </Tooltip>
-        {!workspace.isDefault ? (
+        {canDeleteWorkspace ? (
           <Tooltip>
             <TooltipTrigger
               render={
                 <button
                   type="button"
-                  aria-label={`Delete workspace ${workspace.name}`}
+                  aria-label={`Delete workspace ${workspaceDisplayName}`}
                   className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={(event) => {
                     event.preventDefault();
@@ -1748,6 +1812,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     useState<SidebarTextDialogState | null>(null);
   const [workspaceCreateDialogState, setWorkspaceCreateDialogState] =
     useState<SidebarWorkspaceCreateDialogState | null>(null);
+  const [rootBranchSwitchWorkspace, setRootBranchSwitchWorkspace] =
+    useState<SidebarWorkspaceSnapshot | null>(null);
   const sidebarTextDialogResolverRef = useRef<((value: string | null) => void) | null>(null);
   const sidebarTextInputRef = useRef<HTMLInputElement | null>(null);
   const sidebarTextDialogWasOpenRef = useRef(false);
@@ -2370,14 +2436,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     ],
   );
 
-  const openMainRepoWorkspace = useCallback(async () => {
-    const api = readEnvironmentApi(project.environmentId);
-    if (!api) {
-      throw new Error("Workspace API unavailable.");
-    }
-    await api.workspaces.openMainRepo({ projectId: project.id });
-    await refreshWorkspaceSnapshot(project.environmentId);
-  }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
+  const projectGitStatus = useGitStatus({
+    environmentId: project.environmentId,
+    cwd: project.cwd,
+  });
 
   const importAllWorkspaces = useCallback(async () => {
     const api = readEnvironmentApi(project.environmentId);
@@ -2388,8 +2450,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     await refreshWorkspaceSnapshot(project.environmentId);
   }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
 
-  const openWorkspaceCreateDialog = useCallback((mode: "branch" | "worktree") => {
+  const openWorkspaceCreateDialog = useCallback((mode: "worktree") => {
     setWorkspaceCreateDialogState({ mode });
+  }, []);
+  const openRootBranchSwitchDialog = useCallback((workspace: SidebarWorkspaceSnapshot) => {
+    setRootBranchSwitchWorkspace(workspace);
   }, []);
 
   const setWorkspaceActive = useCallback(
@@ -2407,13 +2472,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const handleCreateThreadForWorkspace = useCallback(
     async (workspace: SidebarWorkspaceSnapshot) => {
       await setWorkspaceActive(workspace);
+      const threadLaunchInput = resolveWorkspaceThreadLaunchInput(
+        workspace,
+        projectGitStatus.data?.branch ?? null,
+      );
       await handleNewThread(scopeProjectRef(workspace.environmentId, workspace.projectId), {
-        branch: workspace.branch,
-        worktreePath: workspace.worktreePath,
-        envMode: workspace.worktreePath ? "worktree" : "local",
+        branch: threadLaunchInput.branch,
+        worktreePath: threadLaunchInput.worktreePath,
+        envMode: threadLaunchInput.envMode,
       });
     },
-    [handleNewThread, setWorkspaceActive],
+    [handleNewThread, projectGitStatus.data?.branch, setWorkspaceActive],
   );
 
   const deleteWorkspace = useCallback(
@@ -2560,9 +2629,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         const clicked = await requestSidebarContextMenu(
           [
             { id: "new-worktree-workspace", label: "New worktree workspace" },
-            { id: "new-branch-workspace", label: "New branch workspace" },
             { id: "create-section", label: "Create section" },
-            { id: "open-main-repo", label: "Open main repo workspace" },
             ...trackedCandidateItems,
             ...externalCandidateItems,
             {
@@ -2592,18 +2659,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             toastManager.add({
               type: "error",
               title: "Failed to create section",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
-          return;
-        }
-        if (clicked === "open-main-repo") {
-          try {
-            await openMainRepoWorkspace();
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to open main repo workspace",
               description: error instanceof Error ? error.message : "An error occurred.",
             });
           }
@@ -2666,10 +2721,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           openWorkspaceCreateDialog("worktree");
           return;
         }
-        if (clicked === "new-branch-workspace") {
-          openWorkspaceCreateDialog("branch");
-          return;
-        }
         if (clicked !== "delete") return;
 
         if (logicalProjectThreadIds.length > 0) {
@@ -2725,7 +2776,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       getDraftThreadByProjectRef,
       importAllWorkspaces,
       openWorkspaceCreateDialog,
-      openMainRepoWorkspace,
       project.cwd,
       project.environmentId,
       project.id,
@@ -3062,6 +3112,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         key={workspace.workspaceKey}
         workspace={workspace}
         project={project}
+        rootBranch={projectGitStatus.data?.branch ?? null}
         workspaceExpanded={workspaceExpanded}
         workspaceThreads={workspaceThreads}
         orderedWorkspaceThreadKeys={orderedWorkspaceThreadKeys}
@@ -3096,6 +3147,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         moveWorkspaceToSection={moveWorkspaceToSection}
         workspaceSections={workspaceSections}
         copyPathToClipboard={copyPathToClipboard}
+        openRootBranchSwitchDialog={openRootBranchSwitchDialog}
         dragHandleProps={dragHandleProps}
         isDragging={isDragging}
         showContextMenu={requestSidebarContextMenu}
@@ -3408,7 +3460,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       <WorkspaceCreateDialog
         open={workspaceCreateDialogState !== null}
-        mode={workspaceCreateDialogState?.mode ?? "worktree"}
         activeWorkspaceBranch={activeProjectWorkspace?.branch ?? null}
         threadBranch={activeProjectThreadBranch}
         onCreated={() => refreshWorkspaceSnapshot(project.environmentId)}
@@ -3424,6 +3475,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           cwd: project.cwd,
         }}
         workspaceCount={projectWorkspaces.length}
+      />
+
+      <RootBranchSwitchDialog
+        open={rootBranchSwitchWorkspace !== null}
+        currentBranch={projectGitStatus.data?.branch ?? null}
+        onSwitched={async () => {
+          if (rootBranchSwitchWorkspace) {
+            await setWorkspaceActive(rootBranchSwitchWorkspace);
+          }
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRootBranchSwitchWorkspace(null);
+          }
+        }}
+        project={{
+          id: project.id,
+          environmentId: project.environmentId,
+          name: project.name,
+          cwd: project.cwd,
+        }}
       />
 
       <Dialog

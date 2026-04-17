@@ -75,32 +75,13 @@ describe("createInitialWorkspaceCreateDraft", () => {
   it("initializes worktree mode with a generated branch and default base branch", () => {
     expect(
       createInitialWorkspaceCreateDraft({
-        mode: "worktree",
         defaultBranch: "main",
         now: 1_234_567_890,
       }),
     ).toEqual({
-      mode: "worktree",
       workspaceName: "",
       branchName: "workspace-kf12oi",
       baseBranch: "main",
-      selectedBranch: null,
-    });
-  });
-
-  it("initializes branch mode with the resolved branch selection", () => {
-    expect(
-      createInitialWorkspaceCreateDraft({
-        mode: "branch",
-        defaultBranch: "release/2026",
-        now: 1_234_567_890,
-      }),
-    ).toEqual({
-      mode: "branch",
-      workspaceName: "",
-      branchName: "",
-      baseBranch: null,
-      selectedBranch: "release/2026",
     });
   });
 });
@@ -109,9 +90,7 @@ describe("deriveWorkspaceAutoName", () => {
   it("derives a clean workspace name from the branch slug", () => {
     expect(
       deriveWorkspaceAutoName({
-        mode: "worktree",
         branchName: "feature/refactor_workspace-flow",
-        projectName: "Capycode",
         workspaceCount: 2,
       }),
     ).toBe("Refactor workspace flow");
@@ -120,21 +99,10 @@ describe("deriveWorkspaceAutoName", () => {
   it("falls back to suffix-based names when the branch-derived name is unusable", () => {
     expect(
       deriveWorkspaceAutoName({
-        mode: "worktree",
         branchName: "///",
-        projectName: "Capycode",
         workspaceCount: 2,
       }),
     ).toBe("Workspace 3");
-
-    expect(
-      deriveWorkspaceAutoName({
-        mode: "branch",
-        branchName: "___",
-        projectName: "Capycode",
-        workspaceCount: 4,
-      }),
-    ).toBe("Capycode 5");
   });
 });
 
@@ -143,11 +111,9 @@ describe("buildWorkspaceCreateSubmission", () => {
     expect(
       buildWorkspaceCreateSubmission({
         draft: {
-          mode: "worktree",
           workspaceName: "  Experimental Workspace  ",
           branchName: "  feature/ai-modal  ",
           baseBranch: "  main  ",
-          selectedBranch: null,
         },
         projectId: "project-1",
         projectName: "Capycode",
@@ -157,35 +123,9 @@ describe("buildWorkspaceCreateSubmission", () => {
       ok: true,
       payload: {
         projectId: "project-1",
-        type: "worktree",
         name: "Experimental Workspace",
         branch: "feature/ai-modal",
         baseBranch: "main",
-      },
-    });
-  });
-
-  it("builds the expected payload for branch mode", () => {
-    expect(
-      buildWorkspaceCreateSubmission({
-        draft: {
-          mode: "branch",
-          workspaceName: "",
-          branchName: "",
-          baseBranch: null,
-          selectedBranch: "release/2026",
-        },
-        projectId: "project-1",
-        projectName: "Capycode",
-        workspaceCount: 4,
-      }),
-    ).toEqual({
-      ok: true,
-      payload: {
-        projectId: "project-1",
-        type: "branch",
-        name: "2026",
-        branch: "release/2026",
       },
     });
   });
@@ -194,11 +134,9 @@ describe("buildWorkspaceCreateSubmission", () => {
     expect(
       buildWorkspaceCreateSubmission({
         draft: {
-          mode: "worktree",
           workspaceName: "",
           branchName: "   ",
           baseBranch: null,
-          selectedBranch: null,
         },
         projectId: "project-1",
         projectName: "Capycode",
@@ -207,24 +145,6 @@ describe("buildWorkspaceCreateSubmission", () => {
     ).toEqual({
       ok: false,
       error: "Enter a branch name.",
-    });
-
-    expect(
-      buildWorkspaceCreateSubmission({
-        draft: {
-          mode: "branch",
-          workspaceName: "",
-          branchName: "",
-          baseBranch: null,
-          selectedBranch: "   ",
-        },
-        projectId: "project-1",
-        projectName: "Capycode",
-        workspaceCount: 1,
-      }),
-    ).toEqual({
-      ok: false,
-      error: "Select a branch.",
     });
   });
 });

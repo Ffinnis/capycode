@@ -29,7 +29,6 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
         await rpcClient.workspaces.delete(input);
       },
       listOpenCandidates: rpcClient.workspaces.listOpenCandidates,
-      openMainRepo: rpcClient.workspaces.openMainRepo,
       openTrackedWorktree: rpcClient.workspaces.openTrackedWorktree,
       openExternalWorktree: rpcClient.workspaces.openExternalWorktree,
       importAll: (input) =>

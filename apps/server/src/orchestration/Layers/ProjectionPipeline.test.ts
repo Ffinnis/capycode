@@ -2156,12 +2156,14 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
 
       const workspaceRows = yield* sql<{
+        readonly type: string;
         readonly branch: string | null;
         readonly name: string;
         readonly isDefault: number;
         readonly isActive: number;
       }>`
         SELECT
+          workspaces.type AS type,
           workspaces.branch AS branch,
           workspaces.name AS name,
           workspaces.is_default AS "isDefault",
@@ -2176,13 +2178,94 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       `;
       assert.deepEqual(workspaceRows, [
         {
+          type: "root",
           branch: "main",
-          name: "main",
+          name: "Workspace",
           isDefault: 1,
           isActive: 1,
         },
       ]);
     }),
+  );
+
+  it.effect(
+    "keeps non-worktree threads attached to the root workspace even when their branch differs",
+    () =>
+      Effect.gen(function* () {
+        const engine = yield* OrchestrationEngineService;
+        const sql = yield* SqlClient.SqlClient;
+        const createdAt = new Date().toISOString();
+
+        yield* engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("cmd-root-workspace-project"),
+          projectId: ProjectId.make("project-root-workspace"),
+          title: "Root Workspace Project",
+          workspaceRoot: "/tmp/project-root-workspace",
+          defaultModelSelection: null,
+          createdAt,
+        });
+
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-root-workspace-thread"),
+          threadId: ThreadId.make("thread-root-workspace"),
+          projectId: ProjectId.make("project-root-workspace"),
+          title: "Root Workspace Thread",
+          modelSelection: {
+            provider: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: "feature/root-only",
+          worktreePath: null,
+          createdAt,
+        });
+
+        const workspaceRows = yield* sql<{
+          readonly id: string;
+          readonly type: string;
+          readonly branch: string | null;
+          readonly name: string;
+        }>`
+        SELECT
+          id,
+          type,
+          branch,
+          name
+        FROM workspaces
+        WHERE project_id = 'project-root-workspace'
+        ORDER BY tab_order ASC, id ASC
+      `;
+
+        assert.deepEqual(workspaceRows, [
+          {
+            id: workspaceRows[0]!.id,
+            type: "root",
+            branch: "main",
+            name: "Workspace",
+          },
+        ]);
+
+        const threadRows = yield* sql<{
+          readonly workspaceId: string | null;
+          readonly branch: string | null;
+        }>`
+        SELECT
+          workspace_id AS "workspaceId",
+          branch
+        FROM projection_threads
+        WHERE thread_id = 'thread-root-workspace'
+      `;
+
+        assert.deepEqual(threadRows, [
+          {
+            workspaceId: workspaceRows[0]!.id,
+            branch: "feature/root-only",
+          },
+        ]);
+      }),
   );
 
   it.effect("project.delete removes workspace metadata for the deleted project", () =>

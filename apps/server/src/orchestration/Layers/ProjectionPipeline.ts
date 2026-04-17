@@ -40,6 +40,12 @@ import { ServerConfig } from "../../config.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
 import { GitCoreLive } from "../../git/Layers/GitCore.ts";
 import {
+  ROOT_WORKSPACE_NAME,
+  ROOT_WORKSPACE_TYPE,
+  isRootWorkspaceType,
+  shouldResolveThreadToRootWorkspace,
+} from "../../workspace/rootWorkspace.ts";
+import {
   OrchestrationProjectionPipeline,
   type OrchestrationProjectionPipelineShape,
 } from "../Services/ProjectionPipeline.ts";
@@ -409,11 +415,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         if (input.explicitWorkspaceId) {
           const explicitWorkspaceRows = yield* sql<{
             readonly workspaceId: string;
+            readonly type: string;
             readonly branch: string | null;
             readonly worktreePath: string | null;
           }>`
             SELECT
               workspaces.id AS "workspaceId",
+              workspaces.type AS type,
               COALESCE(workspaces.branch, worktrees.branch) AS branch,
               worktrees.path AS "worktreePath"
             FROM workspaces
@@ -454,7 +462,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 ),
               ),
             );
-            return explicitWorkspace;
+            return {
+              workspaceId: explicitWorkspace.workspaceId,
+              branch: isRootWorkspaceType(explicitWorkspace.type)
+                ? (input.branch ?? explicitWorkspace.branch)
+                : explicitWorkspace.branch,
+              worktreePath: isRootWorkspaceType(explicitWorkspace.type)
+                ? null
+                : explicitWorkspace.worktreePath,
+            };
           }
         }
 
@@ -462,20 +478,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         let resolvedBranch = input.branch;
         let resolvedWorktreePath = input.worktreePath;
 
-        const nextTabOrderRow = yield* sql<{ readonly nextTabOrder: number }>`
-          SELECT COALESCE(MAX(tab_order) + 1, 0) AS "nextTabOrder"
-          FROM workspaces
-          WHERE project_id = ${input.projectId}
-        `.pipe(
-          Effect.mapError(
-            toPersistenceSqlError(
-              "ProjectionPipeline.resolveWorkspaceContextForThread:nextTabOrder",
+        if (!shouldResolveThreadToRootWorkspace(input.worktreePath)) {
+          const nextTabOrderRow = yield* sql<{ readonly nextTabOrder: number }>`
+            SELECT COALESCE(MAX(tab_order) + 1, 0) AS "nextTabOrder"
+            FROM workspaces
+            WHERE project_id = ${input.projectId}
+          `.pipe(
+            Effect.mapError(
+              toPersistenceSqlError(
+                "ProjectionPipeline.resolveWorkspaceContextForThread:nextTabOrder",
+              ),
             ),
-          ),
-        );
-        const nextTabOrder = nextTabOrderRow[0]?.nextTabOrder ?? 0;
-
-        if (input.worktreePath !== null) {
+          );
+          const nextTabOrder = nextTabOrderRow[0]?.nextTabOrder ?? 0;
           const existingWorktreeRows = yield* sql<{
             readonly id: string;
             readonly branch: string;
@@ -611,58 +626,38 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             );
           }
         } else {
-          if (input.branch !== null) {
-            resolvedBranch = input.branch;
-          } else {
-            const project = yield* projectionProjectRepository.getById({
-              projectId: input.projectId as never,
-            });
-            resolvedBranch = Option.isSome(project)
-              ? yield* resolveProjectDefaultBranch(project.value.workspaceRoot)
-              : "main";
-          }
+          const project = yield* projectionProjectRepository.getById({
+            projectId: input.projectId as never,
+          });
+          const rootBranch = Option.isSome(project)
+            ? yield* resolveProjectDefaultBranch(project.value.workspaceRoot)
+            : "main";
           const existingWorkspaceRows = yield* sql<{
             readonly id: string;
+            readonly branch: string | null;
           }>`
-            SELECT id
+            SELECT
+              id,
+              branch
             FROM workspaces
             WHERE
               project_id = ${input.projectId}
-              AND type = 'branch'
-              AND branch = ${resolvedBranch}
+              AND type = ${ROOT_WORKSPACE_TYPE}
               AND deleting_at IS NULL
             ORDER BY is_default DESC, tab_order ASC, id ASC
             LIMIT 1
           `.pipe(
             Effect.mapError(
               toPersistenceSqlError(
-                "ProjectionPipeline.resolveWorkspaceContextForThread:findBranchWorkspace",
+                "ProjectionPipeline.resolveWorkspaceContextForThread:findRootWorkspace",
               ),
             ),
           );
 
           resolvedWorkspaceId = existingWorkspaceRows[0]?.id ?? null;
+          resolvedBranch = input.branch ?? existingWorkspaceRows[0]?.branch ?? rootBranch;
           if (resolvedWorkspaceId === null) {
             resolvedWorkspaceId = crypto.randomUUID();
-            const defaultWorkspaceRows = yield* sql<{
-              readonly existingDefaultId: string;
-            }>`
-              SELECT id AS "existingDefaultId"
-              FROM workspaces
-              WHERE
-                project_id = ${input.projectId}
-                AND type = 'branch'
-                AND is_default = 1
-                AND deleting_at IS NULL
-              LIMIT 1
-            `.pipe(
-              Effect.mapError(
-                toPersistenceSqlError(
-                  "ProjectionPipeline.resolveWorkspaceContextForThread:findDefaultBranchWorkspace",
-                ),
-              ),
-            );
-
             yield* sql`
               INSERT INTO workspaces (
                 id,
@@ -683,11 +678,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 ${resolvedWorkspaceId},
                 ${input.projectId},
                 NULL,
-                'branch',
-                ${resolvedBranch},
-                ${resolvedBranch},
-                ${nextTabOrder},
-                ${defaultWorkspaceRows.length === 0 ? 1 : 0},
+                ${ROOT_WORKSPACE_TYPE},
+                ${rootBranch},
+                ${ROOT_WORKSPACE_NAME},
+                0,
+                1,
                 ${input.createdAt},
                 ${input.updatedAt},
                 ${input.updatedAt},
@@ -697,7 +692,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             `.pipe(
               Effect.mapError(
                 toPersistenceSqlError(
-                  "ProjectionPipeline.resolveWorkspaceContextForThread:createBranchWorkspace",
+                  "ProjectionPipeline.resolveWorkspaceContextForThread:createRootWorkspace",
                 ),
               ),
             );
@@ -758,7 +753,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               FROM workspaces
               WHERE
                 project_id = ${event.payload.projectId}
-                AND type = 'branch'
+                AND type = ${ROOT_WORKSPACE_TYPE}
                 AND is_default = 1
                 AND deleting_at IS NULL
               LIMIT 1
@@ -795,9 +790,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                   ${defaultWorkspaceId},
                   ${event.payload.projectId},
                   NULL,
-                  'branch',
+                  ${ROOT_WORKSPACE_TYPE},
                   ${defaultBranch},
-                  ${defaultBranch},
+                  ${ROOT_WORKSPACE_NAME},
                   0,
                   1,
                   ${event.payload.createdAt},

@@ -27,6 +27,7 @@ import {
 import { GitManager } from "../Services/GitManager.ts";
 
 const GIT_STATUS_REFRESH_INTERVAL = Duration.seconds(30);
+const GIT_LOCAL_STATUS_REFRESH_INTERVAL = Duration.seconds(2);
 
 interface GitStatusChange {
   readonly cwd: string;
@@ -43,8 +44,9 @@ interface CachedGitStatus {
   readonly remote: CachedValue<GitStatusRemoteResult | null> | null;
 }
 
-interface ActiveRemotePoller {
-  readonly fiber: Fiber.Fiber<void, never>;
+interface ActiveStatusPoller {
+  readonly localFiber: Fiber.Fiber<void, never>;
+  readonly remoteFiber: Fiber.Fiber<void, never>;
   readonly subscriberCount: number;
 }
 
@@ -72,7 +74,7 @@ export const GitStatusBroadcasterLive = Layer.effect(
       Scope.close(scope, Exit.void),
     );
     const cacheRef = yield* Ref.make(new Map<string, CachedGitStatus>());
-    const pollersRef = yield* SynchronizedRef.make(new Map<string, ActiveRemotePoller>());
+    const pollersRef = yield* SynchronizedRef.make(new Map<string, ActiveStatusPoller>());
 
     const getCachedStatus = Effect.fn("getCachedStatus")(function* (cwd: string) {
       return yield* Ref.get(cacheRef).pipe(Effect.map((cache) => cache.get(cwd) ?? null));
@@ -224,7 +226,26 @@ export const GitStatusBroadcasterLive = Layer.effect(
       );
     };
 
-    const retainRemotePoller = Effect.fn("retainRemotePoller")(function* (cwd: string) {
+    const makeLocalRefreshLoop = (cwd: string) => {
+      const logRefreshFailure = (error: Error) =>
+        Effect.logWarning("git local status refresh failed", {
+          cwd,
+          detail: error.message,
+        });
+
+      return refreshLocalStatus(cwd).pipe(
+        Effect.catch(logRefreshFailure),
+        Effect.andThen(
+          Effect.forever(
+            Effect.sleep(GIT_LOCAL_STATUS_REFRESH_INTERVAL).pipe(
+              Effect.andThen(refreshLocalStatus(cwd).pipe(Effect.catch(logRefreshFailure))),
+            ),
+          ),
+        ),
+      );
+    };
+
+    const retainStatusPoller = Effect.fn("retainStatusPoller")(function* (cwd: string) {
       yield* SynchronizedRef.modifyEffect(pollersRef, (activePollers) => {
         const existing = activePollers.get(cwd);
         if (existing) {
@@ -236,12 +257,15 @@ export const GitStatusBroadcasterLive = Layer.effect(
           return Effect.succeed([undefined, nextPollers] as const);
         }
 
-        return makeRemoteRefreshLoop(cwd).pipe(
-          Effect.forkIn(broadcasterScope),
-          Effect.map((fiber) => {
+        return Effect.all([
+          makeLocalRefreshLoop(cwd).pipe(Effect.forkIn(broadcasterScope)),
+          makeRemoteRefreshLoop(cwd).pipe(Effect.forkIn(broadcasterScope)),
+        ]).pipe(
+          Effect.map(([localFiber, remoteFiber]) => {
             const nextPollers = new Map(activePollers);
             nextPollers.set(cwd, {
-              fiber,
+              localFiber,
+              remoteFiber,
               subscriberCount: 1,
             });
             return [undefined, nextPollers] as const;
@@ -250,7 +274,7 @@ export const GitStatusBroadcasterLive = Layer.effect(
       });
     });
 
-    const releaseRemotePoller = Effect.fn("releaseRemotePoller")(function* (cwd: string) {
+    const releaseStatusPoller = Effect.fn("releaseStatusPoller")(function* (cwd: string) {
       const pollerToInterrupt = yield* SynchronizedRef.modify(pollersRef, (activePollers) => {
         const existing = activePollers.get(cwd);
         if (!existing) {
@@ -268,11 +292,14 @@ export const GitStatusBroadcasterLive = Layer.effect(
 
         const nextPollers = new Map(activePollers);
         nextPollers.delete(cwd);
-        return [existing.fiber, nextPollers] as const;
+        return [existing, nextPollers] as const;
       });
 
       if (pollerToInterrupt) {
-        yield* Fiber.interrupt(pollerToInterrupt).pipe(Effect.ignore);
+        yield* Effect.all([
+          Fiber.interrupt(pollerToInterrupt.localFiber).pipe(Effect.ignore),
+          Fiber.interrupt(pollerToInterrupt.remoteFiber).pipe(Effect.ignore),
+        ]);
       }
     });
 
@@ -283,9 +310,9 @@ export const GitStatusBroadcasterLive = Layer.effect(
           const subscription = yield* PubSub.subscribe(changesPubSub);
           const initialLocal = yield* getOrLoadLocalStatus(normalizedCwd);
           const initialRemote = (yield* getCachedStatus(normalizedCwd))?.remote?.value ?? null;
-          yield* retainRemotePoller(normalizedCwd);
+          yield* retainStatusPoller(normalizedCwd);
 
-          const release = releaseRemotePoller(normalizedCwd).pipe(Effect.ignore, Effect.asVoid);
+          const release = releaseStatusPoller(normalizedCwd).pipe(Effect.ignore, Effect.asVoid);
 
           return Stream.concat(
             Stream.make({
