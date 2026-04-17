@@ -149,8 +149,10 @@ import {
   ensureWorkspaceThreadListOpen,
   getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
+  scopedWorkspaceKey,
   resolveAdjacentThreadId,
   resolveActiveProjectThreadBranch,
+  resolveProjectHighlightedWorkspaceKey,
   formatWorkspaceDeleteImpactMessage,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -313,10 +315,6 @@ type WorkspaceDragData =
       workspace: SidebarWorkspaceSnapshot;
       section: SidebarWorkspaceSectionSnapshot;
     };
-
-function scopedWorkspaceKey(environmentId: EnvironmentId, workspaceId: string): string {
-  return `${environmentId}:${workspaceId}`;
-}
 
 function workspaceSortableId(workspace: Pick<SidebarWorkspaceSnapshot, "workspaceKey">): string {
   return `workspace:${workspace.workspaceKey}`;
@@ -1216,7 +1214,7 @@ interface WorkspaceRowProps extends Pick<
   workspaceThreads: readonly SidebarThreadSummary[];
   orderedWorkspaceThreadKeys: readonly string[];
   renderedWorkspaceThreads: readonly SidebarThreadSummary[];
-  activeWorkspaceKey: string | null;
+  highlightedWorkspaceKey: string | null;
   toggleWorkspaceThreadList: (workspaceKey: string) => void;
   setWorkspaceActive: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
   handleCreateThreadForWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
@@ -1244,7 +1242,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     workspaceThreads,
     orderedWorkspaceThreadKeys,
     renderedWorkspaceThreads,
-    activeWorkspaceKey,
+    highlightedWorkspaceKey,
     activeRouteThreadKey,
     threadJumpLabelByKey,
     appSettingsConfirmThreadArchive,
@@ -1286,7 +1284,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
       <SidebarMenuSubButton
         size="sm"
         className={`mx-2 h-7 w-auto gap-2 px-2 pr-24 text-left ${
-          activeWorkspaceKey === workspace.workspaceKey
+          highlightedWorkspaceKey === workspace.workspaceKey
             ? "bg-accent text-foreground"
             : "text-muted-foreground/80 hover:bg-accent hover:text-foreground"
         }`}
@@ -1906,37 +1904,22 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     () => buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
     [workspaceSnapshots],
   );
-  const activeWorkspaceKey = useMemo(() => {
-    const routeThread = activeRouteThreadKey
-      ? (sidebarThreadByKey.get(activeRouteThreadKey) ?? null)
-      : null;
-    const routeWorkspaceId = routeThread?.workspaceId ?? null;
-    if (routeWorkspaceId) {
-      const routeWorkspace = workspaceByScopedId.get(
-        scopedWorkspaceKey(routeThread?.environmentId ?? project.environmentId, routeWorkspaceId),
-      );
-      if (routeWorkspace) {
-        return routeWorkspace.workspaceKey;
-      }
-    }
-    if (activeProjectWorkspace) {
-      return scopedWorkspaceKey(activeProjectWorkspace.environmentId, activeProjectWorkspace.id);
-    }
-    return workspaceSnapshots[0]?.workspaceKey ?? null;
-  }, [
-    activeProjectWorkspace,
-    activeRouteThreadKey,
-    project.environmentId,
-    sidebarThreadByKey,
-    workspaceByScopedId,
-    workspaceSnapshots,
-  ]);
+  const highlightedWorkspaceKey = useMemo(
+    () =>
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey,
+        sidebarThreadByKey,
+        workspaceByScopedId,
+        activeProjectWorkspace,
+      }),
+    [activeProjectWorkspace, activeRouteThreadKey, sidebarThreadByKey, workspaceByScopedId],
+  );
   useEffect(() => {
-    if (activeWorkspaceKey === null) {
+    if (highlightedWorkspaceKey === null) {
       return;
     }
-    openWorkspaceThreadList(activeWorkspaceKey);
-  }, [activeWorkspaceKey, openWorkspaceThreadList]);
+    openWorkspaceThreadList(highlightedWorkspaceKey);
+  }, [highlightedWorkspaceKey, openWorkspaceThreadList]);
   const workspaceThreadsByKey = useMemo(
     () =>
       buildSidebarWorkspaceThreadsByKey({
@@ -3063,7 +3046,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         workspaceThreads={workspaceThreads}
         orderedWorkspaceThreadKeys={orderedWorkspaceThreadKeys}
         renderedWorkspaceThreads={workspaceThreads}
-        activeWorkspaceKey={activeWorkspaceKey}
+        highlightedWorkspaceKey={highlightedWorkspaceKey}
         activeRouteThreadKey={activeRouteThreadKey}
         threadJumpLabelByKey={threadJumpLabelByKey}
         appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}

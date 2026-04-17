@@ -9,6 +9,7 @@ import {
   getVisibleWorkspacePanelThreadIds,
   resolveAdjacentThreadId,
   resolveActiveProjectThreadBranch,
+  resolveProjectHighlightedWorkspaceKey,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
@@ -25,7 +26,13 @@ import {
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
   toggleWorkspaceThreadListOpen,
 } from "./Sidebar.logic";
-import { EnvironmentId, OrchestrationLatestTurn, ProjectId, ThreadId } from "@capycode/contracts";
+import {
+  EnvironmentId,
+  OrchestrationLatestTurn,
+  ProjectId,
+  ThreadId,
+  WorkspaceId,
+} from "@capycode/contracts";
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
@@ -312,6 +319,73 @@ describe("resolveActiveProjectThreadBranch", () => {
         ],
       }),
     ).toBeNull();
+  });
+});
+
+describe("resolveProjectHighlightedWorkspaceKey", () => {
+  it("does not highlight a project's stored active workspace when the route belongs to another project", () => {
+    expect(
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey: null,
+        sidebarThreadByKey: new Map(),
+        workspaceByScopedId: new Map(),
+        activeProjectWorkspace: {
+          environmentId: localEnvironmentId,
+          id: "workspace-marking",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("highlights the routed workspace when the active thread is linked to one", () => {
+    expect(
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey: "thread-active",
+        sidebarThreadByKey: new Map([
+          [
+            "thread-active",
+            {
+              environmentId: localEnvironmentId,
+              workspaceId: WorkspaceId.make("workspace-capycode"),
+            },
+          ],
+        ]),
+        workspaceByScopedId: new Map([
+          [
+            `${localEnvironmentId}:workspace-capycode`,
+            {
+              workspaceKey: `${localEnvironmentId}:workspace-capycode`,
+            },
+          ],
+        ]),
+        activeProjectWorkspace: {
+          environmentId: localEnvironmentId,
+          id: "workspace-marking",
+        },
+      }),
+    ).toBe(`${localEnvironmentId}:workspace-capycode`);
+  });
+
+  it("falls back to the active project workspace when the active route thread has no workspace id", () => {
+    expect(
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey: "thread-active",
+        sidebarThreadByKey: new Map([
+          [
+            "thread-active",
+            {
+              environmentId: localEnvironmentId,
+              workspaceId: null,
+            },
+          ],
+        ]),
+        workspaceByScopedId: new Map(),
+        activeProjectWorkspace: {
+          environmentId: localEnvironmentId,
+          id: "workspace-main",
+        },
+      }),
+    ).toBe(`${localEnvironmentId}:workspace-main`);
   });
 });
 
