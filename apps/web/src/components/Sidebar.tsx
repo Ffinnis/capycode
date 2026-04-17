@@ -149,8 +149,10 @@ import {
   ensureWorkspaceThreadListOpen,
   getVisibleWorkspacePanelThreadIds,
   isWorkspaceThreadListOpen,
+  scopedWorkspaceKey,
   resolveAdjacentThreadId,
   resolveActiveProjectThreadBranch,
+  resolveProjectHighlightedWorkspaceKey,
   formatWorkspaceDeleteImpactMessage,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -313,10 +315,6 @@ type WorkspaceDragData =
       workspace: SidebarWorkspaceSnapshot;
       section: SidebarWorkspaceSectionSnapshot;
     };
-
-function scopedWorkspaceKey(environmentId: EnvironmentId, workspaceId: string): string {
-  return `${environmentId}:${workspaceId}`;
-}
 
 function workspaceSortableId(workspace: Pick<SidebarWorkspaceSnapshot, "workspaceKey">): string {
   return `workspace:${workspace.workspaceKey}`;
@@ -1216,7 +1214,7 @@ interface WorkspaceRowProps extends Pick<
   workspaceThreads: readonly SidebarThreadSummary[];
   orderedWorkspaceThreadKeys: readonly string[];
   renderedWorkspaceThreads: readonly SidebarThreadSummary[];
-  activeWorkspaceKey: string | null;
+  highlightedWorkspaceKey: string | null;
   toggleWorkspaceThreadList: (workspaceKey: string) => void;
   setWorkspaceActive: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
   handleCreateThreadForWorkspace: (workspace: SidebarWorkspaceSnapshot) => Promise<void>;
@@ -1244,7 +1242,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
     workspaceThreads,
     orderedWorkspaceThreadKeys,
     renderedWorkspaceThreads,
-    activeWorkspaceKey,
+    highlightedWorkspaceKey,
     activeRouteThreadKey,
     threadJumpLabelByKey,
     appSettingsConfirmThreadArchive,
@@ -1286,7 +1284,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
       <SidebarMenuSubButton
         size="sm"
         className={`mx-2 h-7 w-auto gap-2 px-2 pr-24 text-left ${
-          activeWorkspaceKey === workspace.workspaceKey
+          highlightedWorkspaceKey === workspace.workspaceKey
             ? "bg-accent text-foreground"
             : "text-muted-foreground/80 hover:bg-accent hover:text-foreground"
         }`}
@@ -1495,6 +1493,7 @@ const WorkspaceRow = memo(function WorkspaceRow(props: WorkspaceRowProps) {
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
   activeRouteThreadKey: string | null;
+  isActiveProject: boolean;
   openWorkspaceThreadLists: ReadonlySet<string>;
   handleNewThread: ReturnType<typeof useNewThreadHandler>["handleNewThread"];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
@@ -1514,6 +1513,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const {
     project,
     activeRouteThreadKey,
+    isActiveProject,
     openWorkspaceThreadLists,
     handleNewThread,
     archiveThread,
@@ -1906,37 +1906,40 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     () => buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
     [workspaceSnapshots],
   );
-  const activeWorkspaceKey = useMemo(() => {
-    const routeThread = activeRouteThreadKey
-      ? (sidebarThreadByKey.get(activeRouteThreadKey) ?? null)
-      : null;
-    const routeWorkspaceId = routeThread?.workspaceId ?? null;
-    if (routeWorkspaceId) {
-      const routeWorkspace = workspaceByScopedId.get(
-        scopedWorkspaceKey(routeThread?.environmentId ?? project.environmentId, routeWorkspaceId),
-      );
-      if (routeWorkspace) {
-        return routeWorkspace.workspaceKey;
-      }
+  const highlightedWorkspaceKey = useMemo(
+    () =>
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey,
+        isRouteProjectActive: isActiveProject,
+        sidebarThreadByKey,
+        workspaceByScopedId,
+        activeProjectWorkspace,
+      }),
+    [
+      activeProjectWorkspace,
+      activeRouteThreadKey,
+      isActiveProject,
+      sidebarThreadByKey,
+      workspaceByScopedId,
+    ],
+  );
+  const autoOpenWorkspaceKey = useMemo(() => {
+    if (highlightedWorkspaceKey !== null) {
+      return highlightedWorkspaceKey;
     }
-    if (activeProjectWorkspace) {
-      return scopedWorkspaceKey(activeProjectWorkspace.environmentId, activeProjectWorkspace.id);
+
+    if (projectThreads.length > 0) {
+      return null;
     }
+
     return workspaceSnapshots[0]?.workspaceKey ?? null;
-  }, [
-    activeProjectWorkspace,
-    activeRouteThreadKey,
-    project.environmentId,
-    sidebarThreadByKey,
-    workspaceByScopedId,
-    workspaceSnapshots,
-  ]);
+  }, [highlightedWorkspaceKey, projectThreads.length, workspaceSnapshots]);
   useEffect(() => {
-    if (activeWorkspaceKey === null) {
+    if (autoOpenWorkspaceKey === null) {
       return;
     }
-    openWorkspaceThreadList(activeWorkspaceKey);
-  }, [activeWorkspaceKey, openWorkspaceThreadList]);
+    openWorkspaceThreadList(autoOpenWorkspaceKey);
+  }, [autoOpenWorkspaceKey, openWorkspaceThreadList]);
   const workspaceThreadsByKey = useMemo(
     () =>
       buildSidebarWorkspaceThreadsByKey({
@@ -3063,7 +3066,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         workspaceThreads={workspaceThreads}
         orderedWorkspaceThreadKeys={orderedWorkspaceThreadKeys}
         renderedWorkspaceThreads={workspaceThreads}
-        activeWorkspaceKey={activeWorkspaceKey}
+        highlightedWorkspaceKey={highlightedWorkspaceKey}
         activeRouteThreadKey={activeRouteThreadKey}
         threadJumpLabelByKey={threadJumpLabelByKey}
         appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
@@ -4026,6 +4029,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                   {(dragHandleProps) => (
                     <SidebarProjectItem
                       project={project}
+                      isActiveProject={activeRouteProjectKey === project.projectKey}
                       activeRouteThreadKey={
                         activeRouteProjectKey === project.projectKey ? routeThreadKey : null
                       }
@@ -4081,6 +4085,10 @@ export default function Sidebar() {
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
+  const routeTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
   const keybindings = useServerKeybindings();
   const [addingProject, setAddingProject] = useState(false);
@@ -4107,6 +4115,9 @@ export default function Sidebar() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const savedEnvironmentRegistry = useSavedEnvironmentRegistryStore((s) => s.byId);
   const savedEnvironmentRuntimeById = useSavedEnvironmentRuntimeStore((s) => s.byId);
+  const activeDraftRouteSession = useComposerDraftStore((store) =>
+    routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
+  );
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
       items: projects,
@@ -4214,16 +4225,30 @@ export default function Sidebar() {
   // Resolve the active route's project key to a logical key so it matches the
   // sidebar's grouped project entries.
   const activeRouteProjectKey = useMemo(() => {
-    if (!routeThreadKey) {
+    const activeProjectRef =
+      routeTarget?.kind === "draft" && activeDraftRouteSession
+        ? scopeProjectRef(activeDraftRouteSession.environmentId, activeDraftRouteSession.projectId)
+        : routeThreadKey
+          ? (() => {
+              const activeThread = sidebarThreadByKey.get(routeThreadKey);
+              if (!activeThread) {
+                return null;
+              }
+              return scopeProjectRef(activeThread.environmentId, activeThread.projectId);
+            })()
+          : null;
+    if (!activeProjectRef) {
       return null;
     }
-    const activeThread = sidebarThreadByKey.get(routeThreadKey);
-    if (!activeThread) return null;
-    const physicalKey = scopedProjectKey(
-      scopeProjectRef(activeThread.environmentId, activeThread.projectId),
-    );
+    const physicalKey = scopedProjectKey(activeProjectRef);
     return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
-  }, [routeThreadKey, sidebarThreadByKey, physicalToLogicalKey]);
+  }, [
+    activeDraftRouteSession,
+    physicalToLogicalKey,
+    routeTarget,
+    routeThreadKey,
+    sidebarThreadByKey,
+  ]);
 
   // Group threads by logical project key so all threads from grouped projects
   // are displayed together.

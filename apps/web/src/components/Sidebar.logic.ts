@@ -8,6 +8,11 @@ import { isLatestTurnSettled } from "../session-logic";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
+
+export function scopedWorkspaceKey(environmentId: string, workspaceId: string): string {
+  return `${environmentId}:${workspaceId}`;
+}
+
 type SidebarProject = {
   id: string;
   name: string;
@@ -205,6 +210,54 @@ export function resolveActiveProjectThreadBranch(input: {
     ) ?? null;
 
   return activeThread?.branch ?? null;
+}
+
+export function resolveProjectHighlightedWorkspaceKey(input: {
+  activeRouteThreadKey: string | null;
+  isRouteProjectActive: boolean;
+  sidebarThreadByKey: ReadonlyMap<
+    string,
+    Pick<SidebarThreadSummary, "environmentId" | "workspaceId">
+  >;
+  workspaceByScopedId: ReadonlyMap<string, { workspaceKey: string }>;
+  activeProjectWorkspace:
+    | {
+        environmentId: string;
+        id: string;
+      }
+    | null
+    | undefined;
+}): string | null {
+  if (input.activeRouteThreadKey === null) {
+    if (!input.isRouteProjectActive || !input.activeProjectWorkspace) {
+      return null;
+    }
+
+    return scopedWorkspaceKey(
+      input.activeProjectWorkspace.environmentId,
+      input.activeProjectWorkspace.id,
+    );
+  }
+
+  const routeThread = input.sidebarThreadByKey.get(input.activeRouteThreadKey) ?? null;
+  const routeWorkspaceId = routeThread?.workspaceId ?? null;
+  if (routeThread && routeWorkspaceId) {
+    const routeWorkspace = input.workspaceByScopedId.get(
+      scopedWorkspaceKey(routeThread.environmentId, routeWorkspaceId),
+    );
+    if (routeWorkspace) {
+      return routeWorkspace.workspaceKey;
+    }
+  }
+
+  if (input.isRouteProjectActive && input.activeProjectWorkspace) {
+    return scopedWorkspaceKey(
+      input.activeProjectWorkspace.environmentId,
+      input.activeProjectWorkspace.id,
+    );
+  }
+
+  return null;
 }
 
 export function formatWorkspaceDeleteImpactMessage(
