@@ -143,7 +143,6 @@ describe("WorkspaceCreateDialog", () => {
     const mounted = await render(
       <WorkspaceCreateDialog
         open
-        mode="worktree"
         activeWorkspaceBranch={null}
         threadBranch={null}
         onCreated={onCreatedSpy}
@@ -169,43 +168,11 @@ describe("WorkspaceCreateDialog", () => {
     }
   });
 
-  it("renders branch mode with only the existing branch picker", async () => {
-    const { WorkspaceCreateDialog } = await import("./WorkspaceCreateDialog");
-    const mounted = await render(
-      <WorkspaceCreateDialog
-        open
-        mode="branch"
-        activeWorkspaceBranch={null}
-        threadBranch={null}
-        onCreated={onCreatedSpy}
-        onOpenChange={onOpenChangeSpy}
-        project={{
-          id: "project-1" as never,
-          environmentId: "environment-local" as never,
-          name: "Capycode",
-          cwd: "/repo/capycode",
-        }}
-        workspaceCount={2}
-      />,
-    );
-
-    try {
-      await expect.element(page.getByText("Switch branch")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Workspace name")).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Branch", { exact: true })).toBeInTheDocument();
-      await expect.element(page.getByLabelText("Branch name")).not.toBeInTheDocument();
-      await expect.element(page.getByLabelText("From branch")).not.toBeInTheDocument();
-    } finally {
-      await mounted.unmount();
-    }
-  });
-
   it("submits a worktree payload and auto-generates the workspace name when blank", async () => {
     const { WorkspaceCreateDialog } = await import("./WorkspaceCreateDialog");
     const mounted = await render(
       <WorkspaceCreateDialog
         open
-        mode="worktree"
         activeWorkspaceBranch={null}
         threadBranch={null}
         onCreated={onCreatedSpy}
@@ -238,7 +205,6 @@ describe("WorkspaceCreateDialog", () => {
       await vi.waitFor(() => {
         expect(createWorkspaceSpy).toHaveBeenCalledWith({
           projectId: "project-1",
-          type: "worktree",
           name: "Release shell",
           branch: "feature/release-shell",
           baseBranch: "main",
@@ -258,7 +224,6 @@ describe("WorkspaceCreateDialog", () => {
     const mounted = await render(
       <WorkspaceCreateDialog
         open
-        mode="branch"
         activeWorkspaceBranch={null}
         threadBranch={null}
         onCreated={onCreatedSpy}
@@ -274,7 +239,7 @@ describe("WorkspaceCreateDialog", () => {
     );
 
     try {
-      const branchCombobox = page.getByRole("combobox", { name: "Branch" });
+      const branchCombobox = page.getByRole("combobox", { name: "From branch" });
       await branchCombobox.click();
 
       const featureOption = findOptionByText("feature/release-shell");
@@ -282,6 +247,8 @@ describe("WorkspaceCreateDialog", () => {
       featureOption!.click();
 
       await expect.element(branchCombobox).toHaveAttribute("aria-expanded", "false");
+
+      await page.getByLabelText("Branch name").fill("feature/release-shell");
 
       const createButton = findButtonByText("Create workspace");
       expect(createButton, 'Button "Create workspace" not found').toBeTruthy();

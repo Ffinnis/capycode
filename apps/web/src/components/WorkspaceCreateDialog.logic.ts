@@ -1,13 +1,9 @@
 import type { WorkspaceCreateInput } from "@capycode/contracts";
 
-export type WorkspaceCreateDialogMode = "branch" | "worktree";
-
 export interface WorkspaceCreateDraft {
-  readonly mode: WorkspaceCreateDialogMode;
   readonly workspaceName: string;
   readonly branchName: string;
   readonly baseBranch: string | null;
-  readonly selectedBranch: string | null;
 }
 
 export interface WorkspaceCreateResolvedDefaults {
@@ -43,38 +39,22 @@ export function resolveWorkspaceCreateDefaultBranch(input: {
 }
 
 export function createInitialWorkspaceCreateDraft(input: {
-  mode: WorkspaceCreateDialogMode;
   defaultBranch: string;
   now?: number;
 }): WorkspaceCreateDraft {
-  return input.mode === "worktree"
-    ? {
-        mode: "worktree",
-        workspaceName: "",
-        branchName: `workspace-${(input.now ?? Date.now()).toString(36)}`,
-        baseBranch: input.defaultBranch,
-        selectedBranch: null,
-      }
-    : {
-        mode: "branch",
-        workspaceName: "",
-        branchName: "",
-        baseBranch: null,
-        selectedBranch: input.defaultBranch,
-      };
+  return {
+    workspaceName: "",
+    branchName: `workspace-${(input.now ?? Date.now()).toString(36)}`,
+    baseBranch: input.defaultBranch,
+  };
 }
 
 export function deriveWorkspaceAutoName(input: {
-  mode: WorkspaceCreateDialogMode;
   branchName: string;
-  projectName: string;
   workspaceCount: number;
 }): string {
   const fallbackIndex = input.workspaceCount + 1;
-  const fallbackName =
-    input.mode === "worktree"
-      ? `Workspace ${fallbackIndex}`
-      : `${input.projectName} ${fallbackIndex}`;
+  const fallbackName = `Workspace ${fallbackIndex}`;
   const normalizedBranchName = normalizeOptionalString(input.branchName);
   if (!normalizedBranchName) {
     return fallbackName;
@@ -96,54 +76,27 @@ export function buildWorkspaceCreateSubmission(input: {
   workspaceCount: number;
 }): WorkspaceCreateValidationResult {
   const workspaceName = normalizeOptionalString(input.draft.workspaceName);
-
-  if (input.draft.mode === "worktree") {
-    const branch = normalizeOptionalString(input.draft.branchName);
-    if (!branch) {
-      return { ok: false, error: "Enter a branch name." };
-    }
-
-    const baseBranch = normalizeOptionalString(input.draft.baseBranch);
-    if (!baseBranch) {
-      return { ok: false, error: "Select a base branch." };
-    }
-
-    return {
-      ok: true,
-      payload: {
-        projectId: input.projectId as WorkspaceCreateInput["projectId"],
-        type: "worktree",
-        name: resolveWorkspaceName({
-          explicitName: workspaceName,
-          branchName: branch,
-          mode: "worktree",
-          projectName: input.projectName,
-          workspaceCount: input.workspaceCount,
-        }),
-        branch,
-        baseBranch,
-      },
-    };
+  const branch = normalizeOptionalString(input.draft.branchName);
+  if (!branch) {
+    return { ok: false, error: "Enter a branch name." };
   }
 
-  const branch = normalizeOptionalString(input.draft.selectedBranch);
-  if (!branch) {
-    return { ok: false, error: "Select a branch." };
+  const baseBranch = normalizeOptionalString(input.draft.baseBranch);
+  if (!baseBranch) {
+    return { ok: false, error: "Select a base branch." };
   }
 
   return {
     ok: true,
     payload: {
       projectId: input.projectId as WorkspaceCreateInput["projectId"],
-      type: "branch",
       name: resolveWorkspaceName({
         explicitName: workspaceName,
         branchName: branch,
-        mode: "branch",
-        projectName: input.projectName,
         workspaceCount: input.workspaceCount,
       }),
       branch,
+      baseBranch,
     },
   };
 }
@@ -151,16 +104,12 @@ export function buildWorkspaceCreateSubmission(input: {
 function resolveWorkspaceName(input: {
   explicitName: string | null;
   branchName: string;
-  mode: WorkspaceCreateDialogMode;
-  projectName: string;
   workspaceCount: number;
 }): string {
   return (
     input.explicitName ??
     deriveWorkspaceAutoName({
-      mode: input.mode,
       branchName: input.branchName,
-      projectName: input.projectName,
       workspaceCount: input.workspaceCount,
     })
   );

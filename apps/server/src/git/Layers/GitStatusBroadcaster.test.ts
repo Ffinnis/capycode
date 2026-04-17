@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import { Deferred, Effect, Exit, Layer, Option, Scope, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import type {
   GitStatusLocalResult,
   GitStatusRemoteResult,
@@ -218,6 +219,50 @@ describe("GitStatusBroadcasterLive", () => {
       } satisfies GitStatusStreamEvent);
     }).pipe(Effect.provide(makeTestLayer(state)));
   });
+
+  it.effect(
+    "publishes local branch changes for active subscribers without an explicit refresh call",
+    () => {
+      const state = {
+        currentLocalStatus: baseLocalStatus,
+        currentRemoteStatus: baseRemoteStatus,
+        localStatusCalls: 0,
+        remoteStatusCalls: 0,
+        localInvalidationCalls: 0,
+        remoteInvalidationCalls: 0,
+      };
+
+      return Effect.gen(function* () {
+        const broadcaster = yield* GitStatusBroadcaster;
+        const snapshotDeferred = yield* Deferred.make<GitStatusStreamEvent>();
+        const localUpdatedDeferred = yield* Deferred.make<GitStatusStreamEvent>();
+        yield* Stream.runForEach(broadcaster.streamStatus({ cwd: "/repo" }), (event) => {
+          if (event._tag === "snapshot") {
+            return Deferred.succeed(snapshotDeferred, event).pipe(Effect.ignore);
+          }
+          if (event._tag === "localUpdated") {
+            return Deferred.succeed(localUpdatedDeferred, event).pipe(Effect.ignore);
+          }
+          return Effect.void;
+        }).pipe(Effect.forkScoped);
+
+        yield* Deferred.await(snapshotDeferred);
+        state.currentLocalStatus = {
+          ...baseLocalStatus,
+          branch: "feature/external-checkout",
+        };
+
+        yield* TestClock.adjust("2 seconds");
+        yield* Effect.sleep("0 millis");
+        const localUpdated = yield* Deferred.await(localUpdatedDeferred);
+
+        assert.deepStrictEqual(localUpdated, {
+          _tag: "localUpdated",
+          local: state.currentLocalStatus,
+        } satisfies GitStatusStreamEvent);
+      }).pipe(Effect.provide(Layer.merge(makeTestLayer(state), TestClock.layer())));
+    },
+  );
 
   it.effect("stops the remote poller after the last stream subscriber disconnects", () => {
     const state = {

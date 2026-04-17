@@ -45,7 +45,7 @@ import type {
   WorkspaceDeletePreview,
   WorkspaceOpenCandidates,
   WorkspaceOpenExternalWorktreeInput,
-  WorkspaceOpenMainRepoInput,
+  WorkspaceProjectInput,
   WorkspaceOpenTrackedWorktreeInput,
   WorkspaceSection,
   WorkspaceSectionColorInput,
@@ -305,8 +305,7 @@ export interface EnvironmentApi {
     setActive: (input: WorkspaceSetActiveInput) => Promise<WorkspaceRecord>;
     getDeletePreview: (input: WorkspaceDeleteInput) => Promise<WorkspaceDeletePreview>;
     delete: (input: WorkspaceDeleteInput) => Promise<void>;
-    listOpenCandidates: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceOpenCandidates>;
-    openMainRepo: (input: WorkspaceOpenMainRepoInput) => Promise<WorkspaceRecord>;
+    listOpenCandidates: (input: WorkspaceProjectInput) => Promise<WorkspaceOpenCandidates>;
     openTrackedWorktree: (input: WorkspaceOpenTrackedWorktreeInput) => Promise<WorkspaceRecord>;
     openExternalWorktree: (input: WorkspaceOpenExternalWorktreeInput) => Promise<WorkspaceRecord>;
     importAll: (input: WorkspaceImportAllInput) => Promise<WorkspaceRecord[]>;

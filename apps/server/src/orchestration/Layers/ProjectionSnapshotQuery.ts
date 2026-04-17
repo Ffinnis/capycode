@@ -43,6 +43,7 @@ import { ProjectionThreadProposedPlan } from "../../persistence/Services/Project
 import { ProjectionThreadSession } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionThread } from "../../persistence/Services/ProjectionThreads.ts";
 import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
+import { ROOT_WORKSPACE_NAME, ROOT_WORKSPACE_TYPE } from "../../workspace/rootWorkspace.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
   ProjectionSnapshotQuery,
@@ -547,9 +548,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         lower(hex(randomblob(16))),
         projects.project_id,
         NULL,
-        'branch',
+        ${ROOT_WORKSPACE_TYPE},
         'main',
-        'main',
+        ${ROOT_WORKSPACE_NAME},
         0,
         1,
         projects.created_at,

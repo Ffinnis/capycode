@@ -79,7 +79,7 @@ import {
   WorkspaceMoveToSectionInput,
   WorkspaceOpenCandidates,
   WorkspaceOpenExternalWorktreeInput,
-  WorkspaceOpenMainRepoInput,
+  WorkspaceProjectInput,
   WorkspaceOpenTrackedWorktreeInput,
   WorkspaceReorderProjectChildrenInput,
   WorkspaceReorderSectionWorkspacesInput,
@@ -136,7 +136,6 @@ export const WS_METHODS = {
   workspacesGetDeletePreview: "workspaces.getDeletePreview",
   workspacesDelete: "workspaces.delete",
   workspacesListOpenCandidates: "workspaces.listOpenCandidates",
-  workspacesOpenMainRepo: "workspaces.openMainRepo",
   workspacesOpenTrackedWorktree: "workspaces.openTrackedWorktree",
   workspacesOpenExternalWorktree: "workspaces.openExternalWorktree",
   workspacesImportAll: "workspaces.importAll",
@@ -293,14 +292,8 @@ export const WsWorkspacesDeleteRpc = Rpc.make(WS_METHODS.workspacesDelete, {
 });
 
 export const WsWorkspacesListOpenCandidatesRpc = Rpc.make(WS_METHODS.workspacesListOpenCandidates, {
-  payload: WorkspaceOpenMainRepoInput,
+  payload: WorkspaceProjectInput,
   success: WorkspaceOpenCandidates,
-  error: WorkspaceError,
-});
-
-export const WsWorkspacesOpenMainRepoRpc = Rpc.make(WS_METHODS.workspacesOpenMainRepo, {
-  payload: WorkspaceOpenMainRepoInput,
-  success: Workspace,
   error: WorkspaceError,
 });
 
@@ -618,7 +611,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkspacesGetDeletePreviewRpc,
   WsWorkspacesDeleteRpc,
   WsWorkspacesListOpenCandidatesRpc,
-  WsWorkspacesOpenMainRepoRpc,
   WsWorkspacesOpenTrackedWorktreeRpc,
   WsWorkspacesOpenExternalWorktreeRpc,
   WsWorkspacesImportAllRpc,
