@@ -30,7 +30,6 @@ export default Effect.gen(function* () {
       FROM workspaces AS branch_workspaces
       WHERE branch_workspaces.type = 'branch'
         AND branch_workspaces.is_default = 0
-        AND branch_workspaces.deleting_at IS NULL
     )
   `;
 
@@ -52,7 +51,6 @@ export default Effect.gen(function* () {
       WHERE branch_workspaces.project_id = workspace_project_state.project_id
         AND branch_workspaces.type = 'branch'
         AND branch_workspaces.is_default = 0
-        AND branch_workspaces.deleting_at IS NULL
     )
   `;
 
@@ -60,7 +58,6 @@ export default Effect.gen(function* () {
     DELETE FROM workspaces
     WHERE type = 'branch'
       AND is_default = 0
-      AND deleting_at IS NULL
   `;
 
   yield* sql`

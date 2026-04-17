@@ -98,6 +98,21 @@ layer("025_RootWorkspaceOnly", (it) => {
             '2026-04-17T00:00:00.000Z',
             NULL,
             NULL
+          ),
+          (
+            'workspace-feature-deleted',
+            'project-1',
+            NULL,
+            'branch',
+            'feature/deleted',
+            'Feature Deleted',
+            3,
+            0,
+            '2026-04-17T00:00:00.000Z',
+            '2026-04-17T00:00:00.000Z',
+            '2026-04-17T00:00:00.000Z',
+            '2026-04-17T01:00:00.000Z',
+            NULL
           )
       `;
 
@@ -109,7 +124,7 @@ layer("025_RootWorkspaceOnly", (it) => {
         )
         VALUES (
           'project-1',
-          'workspace-feature-a',
+          'workspace-feature-deleted',
           '2026-04-17T00:00:00.000Z'
         )
       `;
@@ -179,6 +194,22 @@ layer("025_RootWorkspaceOnly", (it) => {
             '2026-04-17T00:00:00.000Z',
             NULL,
             NULL
+          ),
+          (
+            'thread-feature-deleted',
+            'project-1',
+            'workspace-feature-deleted',
+            'Feature thread deleted',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            'feature/deleted',
+            NULL,
+            NULL,
+            '2026-04-17T00:00:00.000Z',
+            '2026-04-17T00:00:00.000Z',
+            NULL,
+            NULL
           )
       `;
 
@@ -219,6 +250,7 @@ layer("025_RootWorkspaceOnly", (it) => {
       assert.deepStrictEqual(threadRows, [
         { threadId: "thread-feature-a", workspaceId: "workspace-root" },
         { threadId: "thread-feature-b", workspaceId: "workspace-root" },
+        { threadId: "thread-feature-deleted", workspaceId: "workspace-root" },
         { threadId: "thread-root", workspaceId: "workspace-root" },
       ]);
 

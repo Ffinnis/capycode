@@ -77,7 +77,7 @@ describe("WorkspaceCreateInput", () => {
         type: "branch",
         branch: "release/2026",
       }),
-    ).toThrow();
+    ).toThrowError(/Unexpected key with value "branch"\s+at \["type"\]/);
   });
 });
 

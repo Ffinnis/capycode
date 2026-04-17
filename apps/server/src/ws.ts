@@ -1011,6 +1011,16 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           let worktreeId: string;
 
           if (pathAlreadyExists) {
+            const listedGitWorktrees = yield* loadGitListedWorktrees(projectRoot);
+            const listedGitWorktree = listedGitWorktrees.find(
+              (worktree) => worktree.path === targetWorktreePath,
+            );
+            if (!listedGitWorktree || listedGitWorktree.isBare || listedGitWorktree.isDetached) {
+              return yield* makeWorkspaceError(
+                "Existing path is not a registered git worktree for this project",
+              );
+            }
+
             const existingWorktreeRows = yield* sql<WorktreeDbRow>`
               SELECT
                 id,

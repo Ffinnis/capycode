@@ -2489,6 +2489,88 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("rejects importing an existing directory that is not a registered git worktree", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-workspace-create-existing-dir-",
+      });
+      const targetWorktreePath = path.join(
+        path.dirname(projectRoot),
+        `${path.basename(projectRoot)}-feature-a`,
+      );
+      yield* fs.makeDirectory(targetWorktreePath, { recursive: true });
+
+      const createWorktree = vi.fn(() => Effect.die("createWorktree should not be called"));
+      const execute = vi.fn(() =>
+        Effect.succeed({
+          code: 0,
+          stdout: [`worktree ${projectRoot}`, "branch refs/heads/main", ""].join("\n"),
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+      const listBranches = vi.fn(({ cwd }: { readonly cwd: string }) =>
+        Effect.succeed({
+          branches: [
+            {
+              name: cwd === projectRoot ? "main" : "feature/a",
+              current: true,
+              isDefault: true,
+              worktreePath: null,
+            },
+          ],
+          isRepo: true,
+          hasOriginRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      const { services } = yield* buildAppUnderTestWithServices({
+        layers: {
+          gitCore: {
+            createWorktree,
+            execute,
+            listBranches,
+          },
+        },
+      });
+      const sql = Context.get(services, SqlClient.SqlClient);
+      const projectId = ProjectId.make("project-workspace-create-existing-dir");
+      yield* seedWorkspaceProject({
+        sql,
+        projectId,
+        workspaceRoot: projectRoot,
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.flip(
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.workspacesCreate]({
+              projectId,
+              name: "Feature A",
+              branch: "feature/a",
+              baseBranch: "main",
+            }),
+          ),
+        ),
+      );
+
+      assert.equal(error._tag, "WorkspaceError");
+      assertInclude(
+        String(error),
+        "Existing path is not a registered git worktree for this project",
+      );
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(listBranches).toHaveBeenCalledTimes(1);
+      expect(listBranches).toHaveBeenCalledWith({ cwd: projectRoot });
+      expect(createWorktree).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc workspace open-candidate and external worktree methods", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
