@@ -214,6 +214,7 @@ export function resolveActiveProjectThreadBranch(input: {
 
 export function resolveProjectHighlightedWorkspaceKey(input: {
   activeRouteThreadKey: string | null;
+  isRouteProjectActive: boolean;
   sidebarThreadByKey: ReadonlyMap<
     string,
     Pick<SidebarThreadSummary, "environmentId" | "workspaceId">
@@ -228,7 +229,14 @@ export function resolveProjectHighlightedWorkspaceKey(input: {
     | undefined;
 }): string | null {
   if (input.activeRouteThreadKey === null) {
-    return null;
+    if (!input.isRouteProjectActive || !input.activeProjectWorkspace) {
+      return null;
+    }
+
+    return scopedWorkspaceKey(
+      input.activeProjectWorkspace.environmentId,
+      input.activeProjectWorkspace.id,
+    );
   }
 
   const routeThread = input.sidebarThreadByKey.get(input.activeRouteThreadKey) ?? null;
@@ -242,7 +250,7 @@ export function resolveProjectHighlightedWorkspaceKey(input: {
     }
   }
 
-  if (input.activeProjectWorkspace) {
+  if (input.isRouteProjectActive && input.activeProjectWorkspace) {
     return scopedWorkspaceKey(
       input.activeProjectWorkspace.environmentId,
       input.activeProjectWorkspace.id,

@@ -327,6 +327,7 @@ describe("resolveProjectHighlightedWorkspaceKey", () => {
     expect(
       resolveProjectHighlightedWorkspaceKey({
         activeRouteThreadKey: null,
+        isRouteProjectActive: false,
         sidebarThreadByKey: new Map(),
         workspaceByScopedId: new Map(),
         activeProjectWorkspace: {
@@ -341,6 +342,7 @@ describe("resolveProjectHighlightedWorkspaceKey", () => {
     expect(
       resolveProjectHighlightedWorkspaceKey({
         activeRouteThreadKey: "thread-active",
+        isRouteProjectActive: true,
         sidebarThreadByKey: new Map([
           [
             "thread-active",
@@ -370,6 +372,7 @@ describe("resolveProjectHighlightedWorkspaceKey", () => {
     expect(
       resolveProjectHighlightedWorkspaceKey({
         activeRouteThreadKey: "thread-active",
+        isRouteProjectActive: true,
         sidebarThreadByKey: new Map([
           [
             "thread-active",
@@ -386,6 +389,21 @@ describe("resolveProjectHighlightedWorkspaceKey", () => {
         },
       }),
     ).toBe(`${localEnvironmentId}:workspace-main`);
+  });
+
+  it("falls back to the project's active workspace for an active draft route", () => {
+    expect(
+      resolveProjectHighlightedWorkspaceKey({
+        activeRouteThreadKey: null,
+        isRouteProjectActive: true,
+        sidebarThreadByKey: new Map(),
+        workspaceByScopedId: new Map(),
+        activeProjectWorkspace: {
+          environmentId: localEnvironmentId,
+          id: "workspace-draft",
+        },
+      }),
+    ).toBe(`${localEnvironmentId}:workspace-draft`);
   });
 });
 
