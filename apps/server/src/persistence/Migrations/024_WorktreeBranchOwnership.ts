@@ -6,7 +6,17 @@ export default Effect.gen(function* () {
   const worktreeColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(worktrees)
   `;
+  const hasCreatedByCapycodeColumn = worktreeColumns.some(
+    (column) => column.name === "created_by_capycode",
+  );
   const hasOwnsBranchColumn = worktreeColumns.some((column) => column.name === "owns_branch");
+
+  if (!hasCreatedByCapycodeColumn) {
+    yield* sql`
+      ALTER TABLE worktrees
+      ADD COLUMN created_by_capycode INTEGER NOT NULL DEFAULT 1
+    `;
+  }
 
   if (!hasOwnsBranchColumn) {
     yield* sql`

@@ -51,6 +51,9 @@ describe("normalizeModelSlug", () => {
     expect(normalizeModelSlug("gpt-5-codex")).toBe("gpt-5.4");
     expect(normalizeModelSlug("5.3")).toBe("gpt-5.3-codex");
     expect(normalizeModelSlug("sonnet", "claudeAgent")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelSlug("opus", "claudeAgent")).toBe("claude-opus-4-7");
+    expect(normalizeModelSlug("opus-4.7", "claudeAgent")).toBe("claude-opus-4-7");
+    expect(normalizeModelSlug("claude-opus-4.7", "claudeAgent")).toBe("claude-opus-4-7");
     expect(normalizeModelSlug("opus-4.5", "claudeAgent")).toBe("claude-opus-4-5");
     expect(normalizeModelSlug("claude-opus-4-5-20251101", "claudeAgent")).toBe("claude-opus-4-5");
   });
@@ -225,6 +228,12 @@ describe("resolveApiModelId", () => {
     expect(
       resolveApiModelId({ provider: "claudeAgent", model: "claude-opus-4-6", options: {} }),
     ).toBe("claude-opus-4-6");
+  });
+
+  it("passes through Claude Opus 4.7 as the effective Claude Code model id", () => {
+    expect(resolveApiModelId({ provider: "claudeAgent", model: "claude-opus-4-7" })).toBe(
+      "claude-opus-4-7",
+    );
   });
 
   it("uses the dated Claude Code model id for Claude Opus 4.5", () => {

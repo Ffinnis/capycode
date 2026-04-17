@@ -893,6 +893,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           assert.strictEqual(status.installed, true);
           assert.strictEqual(status.auth.status, "authenticated");
           assert.strictEqual(
+            status.models.some((model) => model.slug === "claude-opus-4-7"),
+            true,
+          );
+          assert.strictEqual(
             status.models.some((model) => model.slug === "claude-opus-4-5"),
             true,
           );
