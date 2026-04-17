@@ -173,10 +173,15 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly close: () => void;
 }
 
+type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]> | "xhigh";
+type ClaudeQueryOptionsWithXHigh = Omit<ClaudeQueryOptions, "effort"> & {
+  readonly effort?: ClaudeSdkEffort;
+};
+
 export interface ClaudeAdapterLiveOptions {
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
-    readonly options: ClaudeQueryOptions;
+    readonly options: ClaudeQueryOptionsWithXHigh;
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
@@ -926,8 +931,12 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     options?.createQuery ??
     ((input: {
       readonly prompt: AsyncIterable<SDKUserMessage>;
-      readonly options: ClaudeQueryOptions;
-    }) => query({ prompt: input.prompt, options: input.options }) as ClaudeQueryRuntime);
+      readonly options: ClaudeQueryOptionsWithXHigh;
+    }) =>
+      query({
+        prompt: input.prompt,
+        options: input.options as ClaudeQueryOptions,
+      }) as ClaudeQueryRuntime);
 
   const sessions = new Map<ThreadId, ClaudeSessionContext>();
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -2703,7 +2712,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
       };
 
-      const queryOptions: ClaudeQueryOptions = {
+      const queryOptions: ClaudeQueryOptionsWithXHigh = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,

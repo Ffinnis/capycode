@@ -113,4 +113,25 @@ describe("ProviderSendTurnInput", () => {
     expect(parsed.modelSelection.options?.effort).toBe("ultrathink");
     expect(parsed.modelSelection.options?.fastMode).toBe(true);
   });
+
+  it("accepts claude modelSelection including xhigh for Opus 4.7", () => {
+    const parsed = decodeProviderSendTurnInput({
+      threadId: "thread-1",
+      modelSelection: {
+        provider: "claudeAgent",
+        model: "claude-opus-4-7",
+        options: {
+          effort: "xhigh",
+          fastMode: true,
+        },
+      },
+    });
+
+    expect(parsed.modelSelection?.provider).toBe("claudeAgent");
+    if (parsed.modelSelection?.provider !== "claudeAgent") {
+      throw new Error("Expected claude modelSelection");
+    }
+    expect(parsed.modelSelection.options?.effort).toBe("xhigh");
+    expect(parsed.modelSelection.options?.fastMode).toBe(true);
+  });
 });

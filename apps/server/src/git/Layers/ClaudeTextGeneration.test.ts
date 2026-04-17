@@ -249,6 +249,41 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGenerationLive", (it) => {
     ),
   );
 
+  it.effect("forwards Claude xhigh effort for Opus 4.7", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            title: "Improve orchestration flow",
+            body: "Body",
+          },
+        }),
+        argsMustContain: "--effort xhigh",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generatePrContent({
+          cwd: process.cwd(),
+          baseBranch: "main",
+          headBranch: "feature/claude-effect",
+          commitSummary: "Improve orchestration",
+          diffSummary: "1 file changed",
+          diffPatch: "diff --git a/README.md b/README.md",
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-opus-4-7",
+            options: {
+              effort: "xhigh",
+            },
+          },
+        });
+
+        expect(generated.title).toBe("Improve orchestration flow");
+      }),
+    ),
+  );
+
   it.effect("generates thread titles through the Claude provider", () =>
     withFakeClaudeEnv(
       {
