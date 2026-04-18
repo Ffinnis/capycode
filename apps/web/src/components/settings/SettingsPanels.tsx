@@ -892,6 +892,32 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="File editor auto-save"
+          description="Save text file edits automatically after you stop typing."
+          resetAction={
+            settings.fileEditorAutoSave !== DEFAULT_UNIFIED_SETTINGS.fileEditorAutoSave ? (
+              <SettingResetButton
+                label="file editor auto-save"
+                onClick={() =>
+                  updateSettings({
+                    fileEditorAutoSave: DEFAULT_UNIFIED_SETTINGS.fileEditorAutoSave,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.fileEditorAutoSave}
+              onCheckedChange={(checked) =>
+                updateSettings({ fileEditorAutoSave: Boolean(checked) })
+              }
+              aria-label="Automatically save file editor changes"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Extended trace mode"
           description="Show full tool lifecycle and reasoning traces in chat history when providers emit them."
           control={

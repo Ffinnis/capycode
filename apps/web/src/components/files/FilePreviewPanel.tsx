@@ -2,29 +2,37 @@ import { type EnvironmentId } from "@capycode/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { FileEditorPanel } from "./FileEditorPanel";
 import { FilePreviewToolbar } from "./FilePreviewToolbar";
 import { FilePreviewUnsupported } from "./FilePreviewUnsupported";
+import { FILE_PREVIEW_MAX_BYTES } from "~/lib/filePreview";
 import { projectReadFileQueryOptions } from "~/lib/projectReactQuery";
 import { readLocalApi } from "~/localApi";
 import { openInPreferredEditor } from "~/editorPreferences";
 import { resolvePathLinkTarget } from "~/terminal-links";
-
-const PREVIEW_MAX_BYTES = 256 * 1024;
+import { getWorkspaceEditorBuffer, useWorkspaceEditorStore } from "~/workspaceEditorStore";
 
 export function FilePreviewPanel(props: {
   environmentId: EnvironmentId | null;
   cwd: string | null;
+  scopeKey: string | null;
   relativePath: string;
   onBack?: () => void;
   variant?: "main" | "sidebar";
 }) {
   const [wrap, setWrap] = useState(false);
+  const buffer = useWorkspaceEditorStore(
+    useMemo(
+      () => (state) => getWorkspaceEditorBuffer(state, props.scopeKey, props.relativePath),
+      [props.relativePath, props.scopeKey],
+    ),
+  );
   const previewQuery = useQuery(
     projectReadFileQueryOptions({
       environmentId: props.environmentId,
       cwd: props.cwd,
       relativePath: props.relativePath,
-      maxBytes: PREVIEW_MAX_BYTES,
+      maxBytes: FILE_PREVIEW_MAX_BYTES,
       enabled: Boolean(props.environmentId && props.cwd),
     }),
   );
@@ -40,6 +48,31 @@ export function FilePreviewPanel(props: {
   const result = previewQuery.data;
   const unsupportedKind = result && result.kind !== "text" ? result.kind : null;
   const variant = props.variant ?? "sidebar";
+  const editorReadResult = useMemo(() => {
+    if (buffer) {
+      const lastModifiedMs = Date.parse(buffer.lastSavedAt ?? buffer.lastLoadedAt ?? "");
+      return {
+        kind: "text" as const,
+        contents: buffer.contents,
+        ...(buffer.versionToken ? { versionToken: buffer.versionToken } : {}),
+        lineEnding: buffer.lineEnding,
+        lastModifiedMs: Number.isFinite(lastModifiedMs) ? lastModifiedMs : 0,
+      };
+    }
+
+    if (result?.kind === "text" && result.contents !== undefined) {
+      return {
+        kind: "text" as const,
+        contents: result.contents,
+        ...(result.versionToken ? { versionToken: result.versionToken } : {}),
+        ...(result.lineEnding ? { lineEnding: result.lineEnding } : {}),
+        lastModifiedMs: result.lastModifiedMs,
+      };
+    }
+
+    return null;
+  }, [buffer, result]);
+  const shouldRenderEditor = editorReadResult !== null;
   const previewLines = useMemo(() => {
     if (!result?.contents) {
       return [];
@@ -65,36 +98,50 @@ export function FilePreviewPanel(props: {
           : "flex h-full min-h-0 flex-1 flex-col border-l border-border bg-card"
       }
     >
-      <FilePreviewToolbar
-        filePath={props.relativePath}
-        wrap={wrap}
-        onToggleWrap={() => setWrap((current) => !current)}
-        onOpenInEditor={() => void openInEditor()}
-        {...(props.onBack ? { onBack: props.onBack } : {})}
-      />
-      {previewQuery.isLoading || !result ? (
-        <div className="px-4 py-4 text-sm text-muted-foreground">Loading file preview...</div>
-      ) : unsupportedKind || result.contents === undefined ? (
-        <FilePreviewUnsupported
-          kind={unsupportedKind ?? "too_large"}
-          sizeBytes={result.sizeBytes}
-          onOpenInEditor={() => void openInEditor()}
+      {shouldRenderEditor ? (
+        <FileEditorPanel
+          environmentId={props.environmentId}
+          cwd={props.cwd}
+          scopeKey={props.scopeKey}
+          relativePath={props.relativePath}
+          readResult={editorReadResult!}
+          {...(props.onBack ? { onBack: props.onBack } : {})}
+          variant={variant}
         />
       ) : (
-        <div className="h-0 min-h-0 flex-1 overflow-auto overscroll-contain">
-          <div className="min-w-max font-mono text-[12px] leading-5">
-            {previewLines.map(({ key, line, lineNumber }) => (
-              <div key={key} className="grid grid-cols-[auto_1fr] gap-4 px-4 py-0.5">
-                <span className="select-none text-right text-muted-foreground/60 tabular-nums">
-                  {lineNumber}
-                </span>
-                <pre className={wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"}>
-                  {line.length > 0 ? line : " "}
-                </pre>
+        <>
+          <FilePreviewToolbar
+            filePath={props.relativePath}
+            wrap={wrap}
+            onToggleWrap={() => setWrap((current) => !current)}
+            onOpenInEditor={() => void openInEditor()}
+            {...(props.onBack ? { onBack: props.onBack } : {})}
+          />
+          {previewQuery.isLoading || !result ? (
+            <div className="px-4 py-4 text-sm text-muted-foreground">Loading file preview...</div>
+          ) : unsupportedKind || result.contents === undefined ? (
+            <FilePreviewUnsupported
+              kind={unsupportedKind ?? "too_large"}
+              sizeBytes={result.sizeBytes}
+              onOpenInEditor={() => void openInEditor()}
+            />
+          ) : (
+            <div className="h-0 min-h-0 flex-1 overflow-auto overscroll-contain">
+              <div className="min-w-max font-mono text-[12px] leading-5">
+                {previewLines.map(({ key, line, lineNumber }) => (
+                  <div key={key} className="grid grid-cols-[auto_1fr] gap-4 px-4 py-0.5">
+                    <span className="select-none text-right text-muted-foreground/60 tabular-nums">
+                      {lineNumber}
+                    </span>
+                    <pre className={wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"}>
+                      {line.length > 0 ? line : " "}
+                    </pre>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

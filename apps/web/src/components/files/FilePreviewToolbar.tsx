@@ -1,4 +1,10 @@
-import { ArrowLeftIcon, ExternalLinkIcon, WrapTextIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ExternalLinkIcon,
+  LoaderCircleIcon,
+  SaveIcon,
+  WrapTextIcon,
+} from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -6,6 +12,9 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 export function FilePreviewToolbar(props: {
   filePath: string;
   wrap: boolean;
+  isDirty?: boolean;
+  isSaving?: boolean;
+  onSave?: () => void;
   onToggleWrap: () => void;
   onOpenInEditor: () => void;
   onBack?: () => void;
@@ -30,6 +39,21 @@ export function FilePreviewToolbar(props: {
         </button>
       </div>
       <div className="flex items-center gap-1">
+        {props.onSave ? (
+          <Button
+            variant={props.isDirty ? "default" : "outline"}
+            size="xs"
+            onClick={props.onSave}
+            disabled={props.isSaving || !props.isDirty}
+          >
+            {props.isSaving ? (
+              <LoaderCircleIcon className="size-3.5 animate-spin" />
+            ) : (
+              <SaveIcon className="size-3.5" />
+            )}
+            Save
+          </Button>
+        ) : null}
         <Button
           variant={props.wrap ? "secondary" : "outline"}
           size="xs"

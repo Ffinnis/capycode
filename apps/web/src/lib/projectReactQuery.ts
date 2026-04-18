@@ -1,11 +1,32 @@
 import type { EnvironmentId, ProjectSearchEntriesResult } from "@capycode/contracts";
-import { queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { ensureEnvironmentApi } from "~/environmentApi";
 
 export const projectQueryKeys = {
   all: ["projects"] as const,
+  createDirectory: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    relativePath: string,
+  ) => ["projects", "create-directory", environmentId ?? null, cwd, relativePath] as const,
+  deleteEntry: (environmentId: EnvironmentId | null, cwd: string | null, relativePath: string) =>
+    ["projects", "delete-entry", environmentId ?? null, cwd, relativePath] as const,
   listDirectory: (environmentId: EnvironmentId | null, cwd: string | null, relativePath?: string) =>
     ["projects", "list-directory", environmentId ?? null, cwd, relativePath ?? null] as const,
+  moveEntry: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    sourceRelativePath: string,
+    destinationRelativePath: string,
+  ) =>
+    [
+      "projects",
+      "move-entry",
+      environmentId ?? null,
+      cwd,
+      sourceRelativePath,
+      destinationRelativePath,
+    ] as const,
   readFile: (
     environmentId: EnvironmentId | null,
     cwd: string | null,
@@ -50,6 +71,7 @@ export function projectListDirectoryQueryOptions(input: {
     },
     enabled: (input.enabled ?? true) && input.environmentId !== null && input.cwd !== null,
     staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
+    placeholderData: (previous) => previous,
     retry: false,
   });
 }
@@ -120,5 +142,52 @@ export function projectSearchEntriesQueryOptions(input: {
     staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
     placeholderData: (previous) => previous ?? EMPTY_SEARCH_ENTRIES_RESULT,
     retry: false,
+  });
+}
+
+export function invalidateProjectSearchEntries(
+  queryClient: QueryClient,
+  environmentId: EnvironmentId | null,
+  cwd: string | null,
+) {
+  return queryClient.invalidateQueries({
+    predicate: (query) =>
+      Array.isArray(query.queryKey) &&
+      query.queryKey[0] === "projects" &&
+      query.queryKey[1] === "search-entries" &&
+      query.queryKey[2] === (environmentId ?? null) &&
+      query.queryKey[3] === cwd,
+  });
+}
+
+export function invalidateProjectReadFile(
+  queryClient: QueryClient,
+  input: {
+    environmentId: EnvironmentId | null;
+    cwd: string | null;
+    relativePath: string | null;
+  },
+) {
+  return queryClient.invalidateQueries({
+    predicate: (query) =>
+      Array.isArray(query.queryKey) &&
+      query.queryKey[0] === "projects" &&
+      query.queryKey[1] === "read-file" &&
+      query.queryKey[2] === (input.environmentId ?? null) &&
+      query.queryKey[3] === input.cwd &&
+      query.queryKey[4] === input.relativePath,
+  });
+}
+
+export function invalidateProjectListDirectory(
+  queryClient: QueryClient,
+  input: {
+    environmentId: EnvironmentId | null;
+    cwd: string | null;
+    relativePath?: string;
+  },
+) {
+  return queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.listDirectory(input.environmentId, input.cwd, input.relativePath),
   });
 }

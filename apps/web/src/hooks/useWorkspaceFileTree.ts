@@ -14,6 +14,59 @@ export interface WorkspaceFileTreeNode {
   children: WorkspaceFileTreeNode[];
 }
 
+function replacePathPrefix(
+  candidatePath: string,
+  fromRelativePath: string,
+  toRelativePath: string,
+): string {
+  if (candidatePath === fromRelativePath) {
+    return toRelativePath;
+  }
+  if (!candidatePath.startsWith(`${fromRelativePath}/`)) {
+    return candidatePath;
+  }
+  return `${toRelativePath}${candidatePath.slice(fromRelativePath.length)}`;
+}
+
+function matchesPathPrefix(candidatePath: string, relativePathPrefix: string): boolean {
+  return candidatePath === relativePathPrefix || candidatePath.startsWith(`${relativePathPrefix}/`);
+}
+
+export function renameDirectoryEntriesCache(
+  cache: Record<string, ReadonlyArray<{ path: string; name: string; kind: "file" | "directory" }>>,
+  fromRelativePath: string,
+  toRelativePath: string,
+) {
+  return Object.fromEntries(
+    Object.entries(cache).map(([path, entries]) => [
+      replacePathPrefix(path, fromRelativePath, toRelativePath),
+      entries.map((entry) => ({
+        ...entry,
+        path: replacePathPrefix(entry.path, fromRelativePath, toRelativePath),
+      })),
+    ]),
+  );
+}
+
+export function removeDirectoryEntriesCache(
+  cache: Record<string, ReadonlyArray<{ path: string; name: string; kind: "file" | "directory" }>>,
+  relativePathPrefix: string,
+) {
+  return Object.fromEntries(
+    Object.entries(cache).filter(([path]) => !matchesPathPrefix(path, relativePathPrefix)),
+  );
+}
+
+export function isBlockingWorkspaceFileTreeRootLoad(input: {
+  isLoading: boolean;
+  rootData: ReadonlyArray<{ path: string; name: string; kind: "file" | "directory" }> | undefined;
+  cachedRootData:
+    | ReadonlyArray<{ path: string; name: string; kind: "file" | "directory" }>
+    | undefined;
+}) {
+  return input.isLoading && input.rootData === undefined && input.cachedRootData === undefined;
+}
+
 export function useWorkspaceFileTree(input: {
   environmentId: EnvironmentId | null;
   cwd: string | null;
@@ -57,12 +110,12 @@ export function useWorkspaceFileTree(input: {
   }, [rootDirectoryQuery.data]);
 
   const fetchDirectory = useCallback(
-    async (relativePath?: string) => {
+    async (relativePath?: string, options?: { force?: boolean }) => {
       if (!input.environmentId || !input.cwd) {
         return [];
       }
       const key = relativePath ?? "";
-      if (directoryEntriesByPath[key]) {
+      if (!options?.force && directoryEntriesByPath[key]) {
         return directoryEntriesByPath[key]!;
       }
 
@@ -147,13 +200,27 @@ export function useWorkspaceFileTree(input: {
 
     return buildNodes(directoryEntriesByPath[""] ?? []);
   }, [directoryEntriesByPath, expandedDirectories, loadingDirectories]);
+  const cachedRootData = directoryEntriesByPath[""];
 
   return {
-    isLoadingRoot: rootDirectoryQuery.isLoading || rootDirectoryQuery.isFetching,
+    isLoadingRoot: isBlockingWorkspaceFileTreeRootLoad({
+      isLoading: rootDirectoryQuery.isLoading,
+      rootData: rootDirectoryQuery.data?.entries,
+      cachedRootData,
+    }),
     rootError: rootDirectoryQuery.error,
     revealedFilePath: input.revealedFilePath,
     rootNodes: treeNodes,
     revealPath,
+    renameCachedPath: (fromRelativePath: string, toRelativePath: string) =>
+      setDirectoryEntriesByPath((current) =>
+        renameDirectoryEntriesCache(current, fromRelativePath, toRelativePath),
+      ),
+    removeCachedPath: (relativePathPrefix: string) =>
+      setDirectoryEntriesByPath((current) =>
+        removeDirectoryEntriesCache(current, relativePathPrefix),
+      ),
+    refreshDirectory: (relativePath?: string) => fetchDirectory(relativePath, { force: true }),
     toggleDirectory,
   };
 }

@@ -56,9 +56,18 @@ import {
   OrchestrationRpcSchemas,
 } from "./orchestration";
 import {
+  ProjectCreateDirectoryError,
+  ProjectCreateDirectoryInput,
+  ProjectCreateDirectoryResult,
+  ProjectDeleteEntryError,
+  ProjectDeleteEntryInput,
+  ProjectDeleteEntryResult,
   ProjectListDirectoryError,
   ProjectListDirectoryInput,
   ProjectListDirectoryResult,
+  ProjectMoveEntryError,
+  ProjectMoveEntryInput,
+  ProjectMoveEntryResult,
   ProjectReadFileError,
   ProjectReadFileInput,
   ProjectReadFileResult,
@@ -124,7 +133,10 @@ export const WS_METHODS = {
   projectsList: "projects.list",
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
+  projectsCreateDirectory: "projects.createDirectory",
+  projectsDeleteEntry: "projects.deleteEntry",
   projectsListDirectory: "projects.listDirectory",
+  projectsMoveEntry: "projects.moveEntry",
   projectsReadFile: "projects.readFile",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
@@ -249,10 +261,28 @@ export const WsProjectsListDirectoryRpc = Rpc.make(WS_METHODS.projectsListDirect
   error: ProjectListDirectoryError,
 });
 
+export const WsProjectsCreateDirectoryRpc = Rpc.make(WS_METHODS.projectsCreateDirectory, {
+  payload: ProjectCreateDirectoryInput,
+  success: ProjectCreateDirectoryResult,
+  error: ProjectCreateDirectoryError,
+});
+
+export const WsProjectsDeleteEntryRpc = Rpc.make(WS_METHODS.projectsDeleteEntry, {
+  payload: ProjectDeleteEntryInput,
+  success: ProjectDeleteEntryResult,
+  error: ProjectDeleteEntryError,
+});
+
 export const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   payload: ProjectReadFileInput,
   success: ProjectReadFileResult,
   error: ProjectReadFileError,
+});
+
+export const WsProjectsMoveEntryRpc = Rpc.make(WS_METHODS.projectsMoveEntry, {
+  payload: ProjectMoveEntryInput,
+  success: ProjectMoveEntryResult,
+  error: ProjectMoveEntryError,
 });
 
 export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
@@ -602,6 +632,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsUsageGetDashboardRpc,
   WsUsageRefreshDashboardRpc,
   WsProjectsListDirectoryRpc,
+  WsProjectsCreateDirectoryRpc,
+  WsProjectsDeleteEntryRpc,
+  WsProjectsMoveEntryRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,

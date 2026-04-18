@@ -1,4 +1,4 @@
-import { MessageSquareTextIcon, TerminalSquareIcon, XIcon } from "lucide-react";
+import { LoaderCircleIcon, MessageSquareTextIcon, TerminalSquareIcon, XIcon } from "lucide-react";
 
 import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { cn } from "~/lib/utils";
@@ -7,11 +7,14 @@ import { WORKSPACE_TERMINAL_TAB_ID } from "~/workspaceDockStore";
 export function OpenSurfaceTabs(props: {
   openFileTabs: readonly string[];
   activeTab: "chat" | string;
+  dirtyFileTabs?: readonly string[];
+  savingFileTabs?: readonly string[];
   resolvedTheme: "light" | "dark";
   showTerminalTab: boolean;
   onSelectChat: () => void;
   onSelectTerminal: () => void;
   onSelectFile: (relativePath: string) => void;
+  onPrefetchFile?: (relativePath: string) => void;
   onCloseFile: (relativePath: string) => void;
 }) {
   const tabClassName = (isActive: boolean) =>
@@ -49,12 +52,16 @@ export function OpenSurfaceTabs(props: {
         ) : null}
         {props.openFileTabs.map((relativePath) => {
           const isActive = props.activeTab === relativePath;
+          const isDirty = props.dirtyFileTabs?.includes(relativePath) ?? false;
+          const isSaving = props.savingFileTabs?.includes(relativePath) ?? false;
           return (
             <div key={relativePath} className={tabClassName(isActive)}>
               <button
                 type="button"
                 className="flex min-w-0 items-center gap-1.5 px-2.5 py-1 text-xs font-medium"
                 onClick={() => props.onSelectFile(relativePath)}
+                onMouseEnter={() => props.onPrefetchFile?.(relativePath)}
+                onFocus={() => props.onPrefetchFile?.(relativePath)}
               >
                 <VscodeEntryIcon
                   pathValue={relativePath}
@@ -62,6 +69,14 @@ export function OpenSurfaceTabs(props: {
                   theme={props.resolvedTheme}
                   className="size-3"
                 />
+                {isSaving ? (
+                  <LoaderCircleIcon className="size-3 animate-spin text-muted-foreground" />
+                ) : isDirty ? (
+                  <span
+                    className="size-1.5 rounded-full bg-warning"
+                    aria-label={`${relativePath} has unsaved changes`}
+                  />
+                ) : null}
                 <span className="max-w-36 truncate">{relativePath.split("/").at(-1)}</span>
               </button>
               <button

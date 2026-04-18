@@ -15,7 +15,10 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       onEvent: (callback) => rpcClient.terminal.onEvent(callback),
     },
     projects: {
+      createDirectory: rpcClient.projects.createDirectory,
+      deleteEntry: rpcClient.projects.deleteEntry,
       listDirectory: rpcClient.projects.listDirectory,
+      moveEntry: rpcClient.projects.moveEntry,
       readFile: rpcClient.projects.readFile,
       searchEntries: rpcClient.projects.searchEntries,
       writeFile: rpcClient.projects.writeFile,

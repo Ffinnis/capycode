@@ -51,6 +51,17 @@ describe("workspaceDockStore", () => {
     expect(scope.activeTab).toBe("src/app.ts");
   });
 
+  it("renames open file tabs and preserves active selection", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.openFile(SCOPE, "src/app.ts");
+    store.renameFileTab(SCOPE, "src/app.ts", "src/renamed.ts");
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.openFileTabs).toEqual(["src/renamed.ts"]);
+    expect(scope.activeTab).toBe("src/renamed.ts");
+    expect(scope.revealedFilePath).toBe("src/renamed.ts");
+  });
+
   it("keeps scopes isolated by cwd", () => {
     const otherScope = getWorkspaceDockScopeKey({
       environmentId: "env-1",

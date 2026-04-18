@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Path } from "effect";
+import fsPromises from "node:fs/promises";
+import { vi } from "vitest";
 
 import { ServerConfig } from "../../config.ts";
 import { GitCoreLive } from "../../git/Layers/GitCore.ts";
@@ -92,20 +94,22 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem;
         const cwd = yield* makeTempDir;
-        yield* writeTextFile(cwd, "src/preview.ts", "export const preview = true;\n");
+        yield* writeTextFile(cwd, "src/preview.ts", "export const preview = true;\r\n");
 
         const result = yield* workspaceFileSystem.readFile({
           cwd,
           relativePath: "src/preview.ts",
         });
 
-        expect(result).toEqual({
-          relativePath: "src/preview.ts",
-          kind: "text",
-          contents: "export const preview = true;\n",
-          sizeBytes: 29,
-          truncated: false,
-        });
+        expect(result.kind).toBe("text");
+        expect(result.relativePath).toBe("src/preview.ts");
+        expect(result.contents).toBe("export const preview = true;\r\n");
+        expect(result.encoding).toBe("utf8");
+        expect(result.lineEnding).toBe("crlf");
+        expect(result.versionToken).toMatch(/^sha256:/);
+        expect(result.sizeBytes).toBe(30);
+        expect(result.lastModifiedMs).toBeGreaterThan(0);
+        expect(result.truncated).toBe(false);
       }),
     );
 
@@ -131,6 +135,7 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
           relativePath: "assets/logo.bin",
           kind: "binary",
           sizeBytes: 3,
+          lastModifiedMs: expect.any(Number),
           truncated: false,
         });
       }),
@@ -152,8 +157,35 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
           relativePath: "logs/big.log",
           kind: "too_large",
           sizeBytes: 10,
+          lastModifiedMs: expect.any(Number),
           truncated: true,
         });
+      }),
+    );
+
+    it.effect("reuses cached preview results for repeated reads of unchanged files", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/cached.ts", "export const cached = true;\n");
+        const readFileSpy = vi.spyOn(fsPromises, "readFile");
+
+        try {
+          const first = yield* workspaceFileSystem.readFile({
+            cwd,
+            relativePath: "src/cached.ts",
+          });
+          const second = yield* workspaceFileSystem.readFile({
+            cwd,
+            relativePath: "src/cached.ts",
+          });
+
+          expect(first.kind).toBe("text");
+          expect(second.kind).toBe("text");
+          expect(readFileSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          readFileSpy.mockRestore();
+        }
       }),
     );
   });
@@ -174,8 +206,68 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
           .readFileString(path.join(cwd, "plans/effect-rpc.md"))
           .pipe(Effect.orDie);
 
-        expect(result).toEqual({ relativePath: "plans/effect-rpc.md" });
+        expect(result.relativePath).toBe("plans/effect-rpc.md");
+        expect(result.versionToken).toMatch(/^sha256:/);
+        expect(result.lastModifiedMs).toBeGreaterThan(0);
+        expect(result.created).toBe(true);
         expect(saved).toBe("# Plan\n");
+      }),
+    );
+
+    it.effect("supports binary uploads with base64 encoding", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+
+        const result = yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "assets/logo.bin",
+          contents: Buffer.from([0, 1, 255, 10]).toString("base64"),
+          encoding: "base64",
+        });
+
+        const saved = yield* fileSystem
+          .readFile(path.join(cwd, "assets/logo.bin"))
+          .pipe(Effect.orDie);
+
+        expect(result.created).toBe(true);
+        expect(Array.from(saved)).toEqual([0, 1, 255, 10]);
+      }),
+    );
+
+    it.effect("rejects stale version writes", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/plan.md", "one\n");
+
+        const initial = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "src/plan.md",
+        });
+        if (initial.kind !== "text" || !initial.versionToken) {
+          throw new Error("Expected text file with version token.");
+        }
+
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "src/plan.md",
+          contents: "two\n",
+          expectedVersionToken: initial.versionToken,
+        });
+
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "src/plan.md",
+            contents: "three\n",
+            expectedVersionToken: initial.versionToken,
+          })
+          .pipe(Effect.flip);
+
+        expect("detail" in error ? error.detail : error.message).toContain("stale_version");
       }),
     );
 
@@ -238,6 +330,132 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
           .stat(escapedPath)
           .pipe(Effect.catch(() => Effect.succeed(null)));
         expect(escapedStat).toBeNull();
+      }),
+    );
+  });
+
+  describe("createDirectory", () => {
+    it.effect("creates directories relative to the workspace root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+
+        const result = yield* workspaceFileSystem.createDirectory({
+          cwd,
+          relativePath: "src/components",
+        });
+        const stat = yield* fileSystem.stat(path.join(cwd, "src", "components")).pipe(Effect.orDie);
+
+        expect(result).toEqual({ relativePath: "src/components", created: true });
+        expect(stat.type).toBe("Directory");
+      }),
+    );
+  });
+
+  describe("moveEntry", () => {
+    it.effect("moves files within the workspace", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "export const oldValue = true;\n");
+
+        const result = yield* workspaceFileSystem.moveEntry({
+          cwd,
+          sourceRelativePath: "src/old.ts",
+          destinationRelativePath: "src/new.ts",
+        });
+
+        const saved = yield* fileSystem
+          .readFileString(path.join(cwd, "src", "new.ts"))
+          .pipe(Effect.orDie);
+        const sourceStat = yield* fileSystem
+          .stat(path.join(cwd, "src", "old.ts"))
+          .pipe(Effect.catch(() => Effect.succeed(null)));
+
+        expect(result).toEqual({
+          sourceRelativePath: "src/old.ts",
+          destinationRelativePath: "src/new.ts",
+        });
+        expect(saved).toContain("oldValue");
+        expect(sourceStat).toBeNull();
+      }),
+    );
+
+    it.effect("rejects moving a directory into its own descendant", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/nested/file.ts", "export {};\n");
+
+        const error = yield* workspaceFileSystem
+          .moveEntry({
+            cwd,
+            sourceRelativePath: "src",
+            destinationRelativePath: "src/nested/src",
+          })
+          .pipe(Effect.flip);
+
+        expect("detail" in error ? error.detail : error.message).toContain("invalid_move");
+      }),
+    );
+
+    it.effect("does not remove the destination when a move collides", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.ts", "export const source = true;\n");
+        yield* writeTextFile(cwd, "src/destination.ts", "export const destination = true;\n");
+
+        const error = yield* workspaceFileSystem
+          .moveEntry({
+            cwd,
+            sourceRelativePath: "src/source.ts",
+            destinationRelativePath: "src/destination.ts",
+            overwrite: true,
+          })
+          .pipe(Effect.flip);
+
+        const sourceContents = yield* fileSystem
+          .readFileString(path.join(cwd, "src", "source.ts"))
+          .pipe(Effect.orDie);
+        const destinationContents = yield* fileSystem
+          .readFileString(path.join(cwd, "src", "destination.ts"))
+          .pipe(Effect.orDie);
+
+        expect("detail" in error ? error.detail : error.message).toContain("already exists");
+        expect(sourceContents).toContain("source");
+        expect(destinationContents).toContain("destination");
+      }),
+    );
+  });
+
+  describe("deleteEntry", () => {
+    it.effect("deletes directories recursively", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/nested/file.ts", "export {};\n");
+
+        const result = yield* workspaceFileSystem.deleteEntry({
+          cwd,
+          relativePath: "src",
+          recursive: true,
+          expectedKind: "directory",
+        });
+        const stat = yield* fileSystem
+          .stat(path.join(cwd, "src"))
+          .pipe(Effect.catch(() => Effect.succeed(null)));
+
+        expect(result).toEqual({ relativePath: "src" });
+        expect(stat).toBeNull();
       }),
     );
   });
