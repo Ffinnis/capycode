@@ -40,16 +40,42 @@ export function deriveLatestContextWindowSnapshot(
       continue;
     }
 
-    const maxTokens = asFiniteNumber(payload?.maxTokens);
+    const rawMaxTokens = asFiniteNumber(payload?.maxTokens);
+    const lastUsedTokens = asFiniteNumber(payload?.lastUsedTokens);
+    const contextUsedTokens =
+      rawMaxTokens !== null &&
+      rawMaxTokens > 0 &&
+      usedTokens > rawMaxTokens &&
+      lastUsedTokens !== null &&
+      lastUsedTokens > 0 &&
+      lastUsedTokens <= rawMaxTokens
+        ? lastUsedTokens
+        : usedTokens;
+    const maxTokens =
+      rawMaxTokens !== null && rawMaxTokens > 0 && contextUsedTokens <= rawMaxTokens
+        ? rawMaxTokens
+        : null;
+    const totalProcessedTokens = (() => {
+      const rawTotalProcessedTokens = asFiniteNumber(payload?.totalProcessedTokens);
+      if (rawTotalProcessedTokens !== null) {
+        return Math.max(rawTotalProcessedTokens, usedTokens);
+      }
+      if (rawMaxTokens !== null && rawMaxTokens > 0 && usedTokens > rawMaxTokens) {
+        return usedTokens;
+      }
+      return asFiniteNumber(payload?.totalProcessedTokens);
+    })();
     const usedPercentage =
-      maxTokens !== null && maxTokens > 0 ? Math.min(100, (usedTokens / maxTokens) * 100) : null;
+      maxTokens !== null && maxTokens > 0
+        ? Math.min(100, (contextUsedTokens / maxTokens) * 100)
+        : null;
     const remainingTokens =
-      maxTokens !== null ? Math.max(0, Math.round(maxTokens - usedTokens)) : null;
+      maxTokens !== null ? Math.max(0, Math.round(maxTokens - contextUsedTokens)) : null;
     const remainingPercentage = usedPercentage !== null ? Math.max(0, 100 - usedPercentage) : null;
 
     return {
-      usedTokens,
-      totalProcessedTokens: asFiniteNumber(payload?.totalProcessedTokens),
+      usedTokens: contextUsedTokens,
+      totalProcessedTokens,
       maxTokens,
       remainingTokens,
       usedPercentage,
@@ -58,7 +84,7 @@ export function deriveLatestContextWindowSnapshot(
       cachedInputTokens: asFiniteNumber(payload?.cachedInputTokens),
       outputTokens: asFiniteNumber(payload?.outputTokens),
       reasoningOutputTokens: asFiniteNumber(payload?.reasoningOutputTokens),
-      lastUsedTokens: asFiniteNumber(payload?.lastUsedTokens),
+      lastUsedTokens,
       lastInputTokens: asFiniteNumber(payload?.lastInputTokens),
       lastCachedInputTokens: asFiniteNumber(payload?.lastCachedInputTokens),
       lastOutputTokens: asFiniteNumber(payload?.lastOutputTokens),

@@ -15,6 +15,11 @@ function formatPercentage(value: number | null): string | null {
 export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
   const { usage } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
+  const hasContextRatio = usage.maxTokens !== null && usedPercentage !== null;
+  const isProcessedOnlySnapshot =
+    !hasContextRatio &&
+    (usage.totalProcessedTokens ?? null) !== null &&
+    (usage.totalProcessedTokens ?? null) === usage.usedTokens;
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
@@ -31,9 +36,11 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
             type="button"
             className="group inline-flex size-8 items-center justify-center rounded-full transition-opacity hover:opacity-85 sm:size-7"
             aria-label={
-              usage.maxTokens !== null && usedPercentage
+              hasContextRatio
                 ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
+                : isProcessedOnlySnapshot
+                  ? `Processed ${formatContextWindowTokens(usage.usedTokens)} tokens so far`
+                  : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
             }
           >
             <span className="relative flex h-6 w-6 items-center justify-center">
@@ -82,13 +89,17 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
           <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             Context window
           </div>
-          {usage.maxTokens !== null && usedPercentage ? (
+          {hasContextRatio ? (
             <div className="whitespace-nowrap text-xs font-medium text-foreground">
               <span>{usedPercentage}</span>
               <span className="mx-1">⋅</span>
               <span>{formatContextWindowTokens(usage.usedTokens)}</span>
               <span>/</span>
               <span>{formatContextWindowTokens(usage.maxTokens ?? null)} context used</span>
+            </div>
+          ) : isProcessedOnlySnapshot ? (
+            <div className="text-sm text-foreground">
+              Processed {formatContextWindowTokens(usage.usedTokens)} tokens so far
             </div>
           ) : (
             <div className="text-sm text-foreground">
