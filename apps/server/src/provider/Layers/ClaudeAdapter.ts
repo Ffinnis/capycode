@@ -353,6 +353,34 @@ function normalizeClaudeTokenUsage(
   };
 }
 
+function sanitizeAccumulatedClaudeCompletionUsage(
+  snapshot: ThreadTokenUsageSnapshot | undefined,
+): ThreadTokenUsageSnapshot | undefined {
+  if (!snapshot) {
+    return undefined;
+  }
+
+  if (
+    typeof snapshot.maxTokens !== "number" ||
+    !Number.isFinite(snapshot.maxTokens) ||
+    snapshot.maxTokens <= 0 ||
+    snapshot.usedTokens <= snapshot.maxTokens
+  ) {
+    return snapshot;
+  }
+
+  const {
+    maxTokens: _ignoredMaxTokens,
+    lastUsedTokens: _ignoredLastUsedTokens,
+    ...rest
+  } = snapshot;
+
+  return {
+    ...rest,
+    totalProcessedTokens: Math.max(snapshot.totalProcessedTokens ?? 0, snapshot.usedTokens),
+  };
+}
+
 function asCanonicalTurnId(value: TurnId): TurnId {
   return value;
 }
@@ -1353,19 +1381,25 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       resultUsage,
       resultContextWindow ?? context.lastKnownContextWindow,
     );
+    const accumulatedCompletionUsage =
+      sanitizeAccumulatedClaudeCompletionUsage(accumulatedSnapshot);
     const lastGoodUsage = context.lastKnownTokenUsage;
     const maxTokens = resultContextWindow ?? context.lastKnownContextWindow;
+    const accumulatedProcessedTokens =
+      accumulatedCompletionUsage?.totalProcessedTokens ?? accumulatedSnapshot?.usedTokens;
     const usageSnapshot: ThreadTokenUsageSnapshot | undefined = lastGoodUsage
       ? {
           ...lastGoodUsage,
           ...(typeof maxTokens === "number" && Number.isFinite(maxTokens) && maxTokens > 0
             ? { maxTokens }
             : {}),
-          ...(accumulatedSnapshot && accumulatedSnapshot.usedTokens > lastGoodUsage.usedTokens
-            ? { totalProcessedTokens: accumulatedSnapshot.usedTokens }
+          ...(typeof accumulatedProcessedTokens === "number" &&
+          Number.isFinite(accumulatedProcessedTokens) &&
+          accumulatedProcessedTokens > lastGoodUsage.usedTokens
+            ? { totalProcessedTokens: accumulatedProcessedTokens }
             : {}),
         }
-      : accumulatedSnapshot;
+      : accumulatedCompletionUsage;
 
     const turnState = context.turnState;
     if (!turnState) {

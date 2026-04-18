@@ -64,4 +64,20 @@ describe("contextWindow", () => {
     expect(snapshot?.usedTokens).toBe(81_659);
     expect(snapshot?.totalProcessedTokens).toBe(748_126);
   });
+
+  it("drops impossible context limits when used tokens exceed the advertised max", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 3_000_000,
+        totalProcessedTokens: 3_000_000,
+        maxTokens: 1_000_000,
+      }),
+    ]);
+
+    expect(snapshot?.usedTokens).toBe(3_000_000);
+    expect(snapshot?.totalProcessedTokens).toBe(3_000_000);
+    expect(snapshot?.maxTokens).toBeNull();
+    expect(snapshot?.usedPercentage).toBeNull();
+    expect(snapshot?.remainingTokens).toBeNull();
+  });
 });
