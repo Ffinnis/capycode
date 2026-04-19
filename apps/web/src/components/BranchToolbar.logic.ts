@@ -33,7 +33,3 @@ export function resolveEnvironmentOptionLabel(input: {
 
   return runtimeLabel ?? savedLabel ?? input.environmentId;
 }
-
-export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
-  return activeWorktreePath ? "Current worktree" : "Current checkout";
-}

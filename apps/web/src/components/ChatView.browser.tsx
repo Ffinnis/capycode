@@ -2216,7 +2216,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("shows the current worktree badge in the header instead of the composer toolbar", async () => {
+  it("does not show a current worktree badge in the header", async () => {
     const baseSnapshot = createSnapshotForTargetUser({
       targetMessageId: "msg-user-worktree-header" as MessageId,
       targetText: "header worktree target",
@@ -2241,19 +2241,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll("span")).find(
-            (element) => element.textContent?.trim() === "Current worktree",
-          ) as HTMLSpanElement | null,
-        'Unable to find "Current worktree" header badge.',
-      );
-
       expect(
-        Array.from(document.querySelectorAll("button")).find(
-          (button) => button.textContent?.trim() === "Current worktree",
+        Array.from(document.querySelectorAll("span")).some(
+          (element) => element.textContent?.trim() === "Current worktree",
         ),
-      ).toBeUndefined();
+      ).toBe(false);
     } finally {
       await mounted.cleanup();
     }
