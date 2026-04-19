@@ -76,6 +76,25 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
     skills: [],
     models: [
       {
+        slug: "claude-opus-4-7",
+        name: "Claude Opus 4.7",
+        isCustom: false,
+        capabilities: {
+          reasoningEffortLevels: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          supportsFastMode: true,
+          supportsThinkingToggle: false,
+          contextWindowOptions: [{ value: "1m", label: "1M", isDefault: true }],
+          promptInjectedEffortLevels: ["ultrathink"],
+        },
+      },
+      {
         slug: "claude-opus-4-6",
         name: "Claude Opus 4.6",
         isCustom: false,
@@ -258,6 +277,27 @@ describe("TraitsPicker (Claude)", () => {
       expect(text).toContain("Fast Mode");
       expect(text).toContain("off");
       expect(text).toContain("on");
+    });
+  });
+
+  it("hides context window controls for Opus 4.7 when 1M is the only option", async () => {
+    await using _ = await mountClaudePicker({
+      model: "claude-opus-4-7",
+      options: { contextWindow: "1m" },
+    });
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent ?? "").toContain("High");
+      expect(document.body.textContent ?? "").not.toContain("1M");
+    });
+
+    await page.getByRole("button").click();
+
+    await vi.waitFor(() => {
+      const text = document.body.textContent ?? "";
+      expect(text).not.toContain("Context Window");
+      expect(text).not.toContain("1M");
+      expect(text).toContain("Fast Mode");
     });
   });
 
