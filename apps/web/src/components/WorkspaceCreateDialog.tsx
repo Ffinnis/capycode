@@ -2,7 +2,7 @@
 
 import type { EnvironmentId, ProjectId } from "@capycode/contracts";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircleIcon, Loader2Icon, PlusIcon } from "lucide-react";
+import { AlertCircleIcon, GitBranchIcon, Loader2Icon } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { readEnvironmentApi } from "~/environmentApi";
@@ -97,6 +97,7 @@ export function WorkspaceCreateDialog({
     [activeWorkspaceBranch, branches, currentGitBranch, threadBranch],
   );
   const previousDefaultBranchRef = useRef(defaultBranch);
+  const resetSignatureRef = useRef<string | null>(null);
 
   const derivedAutoName = useMemo(
     () =>
@@ -107,7 +108,6 @@ export function WorkspaceCreateDialog({
     [draft.branchName, workspaceCount],
   );
 
-  const resetSignatureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!open) {
       resetSignatureRef.current = null;
@@ -267,6 +267,14 @@ export function WorkspaceCreateDialog({
               }}
             />
 
+            <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <GitBranchIcon className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Current branch:{" "}
+                <span className="font-mono text-foreground">{currentGitBranch ?? "Unknown"}</span>
+              </span>
+            </div>
+
             {submitError ? (
               <div className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
                 <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -291,7 +299,7 @@ export function WorkspaceCreateDialog({
                 </>
               ) : (
                 <>
-                  <PlusIcon className="size-4" />
+                  <GitBranchIcon className="size-4" />
                   Create workspace
                 </>
               )}
