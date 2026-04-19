@@ -125,7 +125,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
-import { WorkspaceCreateDialog } from "./WorkspaceCreateDialog";
 import { RootBranchSwitchDialog } from "./RootBranchSwitchDialog";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -151,7 +150,6 @@ import {
   isWorkspaceThreadListOpen,
   scopedWorkspaceKey,
   resolveAdjacentThreadId,
-  resolveActiveProjectThreadBranch,
   resolveProjectHighlightedWorkspaceKey,
   formatWorkspaceDeleteImpactMessage,
   isContextMenuPointerDown,
@@ -273,10 +271,6 @@ interface SidebarTextDialogRequest {
 
 interface SidebarTextDialogState extends SidebarTextDialogRequest {
   value: string;
-}
-
-interface SidebarWorkspaceCreateDialogState {
-  mode: "worktree";
 }
 
 interface SidebarContextMenuState {
@@ -1810,8 +1804,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const confirmArchiveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const [sidebarTextDialogState, setSidebarTextDialogState] =
     useState<SidebarTextDialogState | null>(null);
-  const [workspaceCreateDialogState, setWorkspaceCreateDialogState] =
-    useState<SidebarWorkspaceCreateDialogState | null>(null);
   const [rootBranchSwitchWorkspace, setRootBranchSwitchWorkspace] =
     useState<SidebarWorkspaceSnapshot | null>(null);
   const sidebarTextDialogResolverRef = useRef<((value: string | null) => void) | null>(null);
@@ -1948,14 +1940,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
-  const activeProjectThreadBranch = useMemo(
-    () =>
-      resolveActiveProjectThreadBranch({
-        activeThreadKey: activeRouteThreadKey,
-        projectThreads,
-      }),
-    [activeRouteThreadKey, projectThreads],
-  );
   const workspaceSnapshots = useMemo(
     () => buildSidebarWorkspaceSnapshots(project, projectWorkspaces),
     [project, projectWorkspaces],
@@ -2450,9 +2434,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     await refreshWorkspaceSnapshot(project.environmentId);
   }, [project.environmentId, project.id, refreshWorkspaceSnapshot]);
 
-  const openWorkspaceCreateDialog = useCallback((mode: "worktree") => {
-    setWorkspaceCreateDialogState({ mode });
-  }, []);
   const openRootBranchSwitchDialog = useCallback((workspace: SidebarWorkspaceSnapshot) => {
     setRootBranchSwitchWorkspace(workspace);
   }, []);
@@ -2628,7 +2609,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const clicked = await requestSidebarContextMenu(
           [
-            { id: "new-worktree-workspace", label: "New worktree workspace" },
             { id: "create-section", label: "Create section" },
             ...trackedCandidateItems,
             ...externalCandidateItems,
@@ -2717,10 +2697,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           }
           return;
         }
-        if (clicked === "new-worktree-workspace") {
-          openWorkspaceCreateDialog("worktree");
-          return;
-        }
         if (clicked !== "delete") return;
 
         if (logicalProjectThreadIds.length > 0) {
@@ -2775,7 +2751,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       createSectionForProject,
       getDraftThreadByProjectRef,
       importAllWorkspaces,
-      openWorkspaceCreateDialog,
       project.cwd,
       project.environmentId,
       project.id,
@@ -3217,46 +3192,25 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             </TooltipPopup>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <div className="pointer-events-none absolute top-1 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
-                <button
-                  type="button"
-                  ref={dragHandleProps?.setActivatorNodeRef}
-                  aria-label={`Reorder project ${project.name}`}
-                  title={
-                    isManualProjectSorting
-                      ? "Reorder project"
-                      : "Drag to switch to manual project order"
-                  }
-                  className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  {...(dragHandleProps?.attributes ?? {})}
-                  {...(dragHandleProps?.listeners ?? {})}
-                >
-                  <GripVerticalIcon className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Create new workspace in ${project.name}`}
-                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openWorkspaceCreateDialog("worktree");
-                  }}
-                >
-                  <PlusIcon className="size-3.5" />
-                </button>
-              </div>
+        <div className="pointer-events-none absolute top-1 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+          <button
+            type="button"
+            ref={dragHandleProps?.setActivatorNodeRef}
+            aria-label={`Reorder project ${project.name}`}
+            title={
+              isManualProjectSorting ? "Reorder project" : "Drag to switch to manual project order"
             }
-          />
-          <TooltipPopup side="top">New workspace</TooltipPopup>
-        </Tooltip>
+            className="inline-flex size-5 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground active:cursor-grabbing focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            {...(dragHandleProps?.attributes ?? {})}
+            {...(dragHandleProps?.listeners ?? {})}
+          >
+            <GripVerticalIcon className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       {projectExpanded && workspaceSnapshots.length === 0 ? (
@@ -3457,25 +3411,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </SortableContext>
         </DndContext>
       ) : null}
-
-      <WorkspaceCreateDialog
-        open={workspaceCreateDialogState !== null}
-        activeWorkspaceBranch={activeProjectWorkspace?.branch ?? null}
-        threadBranch={activeProjectThreadBranch}
-        onCreated={() => refreshWorkspaceSnapshot(project.environmentId)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setWorkspaceCreateDialogState(null);
-          }
-        }}
-        project={{
-          id: project.id,
-          environmentId: project.environmentId,
-          name: project.name,
-          cwd: project.cwd,
-        }}
-        workspaceCount={projectWorkspaces.length}
-      />
 
       <RootBranchSwitchDialog
         open={rootBranchSwitchWorkspace !== null}

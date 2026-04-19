@@ -46,7 +46,6 @@ import type {
 } from "./project";
 import type {
   Workspace as WorkspaceRecord,
-  WorkspaceCreateInput,
   WorkspaceDeleteInput,
   WorkspaceDeletePreview,
   WorkspaceOpenCandidates,
@@ -309,7 +308,6 @@ export interface EnvironmentApi {
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
   };
   workspaces: {
-    create: (input: WorkspaceCreateInput) => Promise<WorkspaceRecord>;
     update: (input: WorkspaceUpdateInput) => Promise<WorkspaceRecord>;
     setActive: (input: WorkspaceSetActiveInput) => Promise<WorkspaceRecord>;
     getDeletePreview: (input: WorkspaceDeleteInput) => Promise<WorkspaceDeletePreview>;

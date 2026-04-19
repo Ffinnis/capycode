@@ -24,7 +24,6 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       writeFile: rpcClient.projects.writeFile,
     },
     workspaces: {
-      create: rpcClient.workspaces.create,
       update: rpcClient.workspaces.update,
       setActive: rpcClient.workspaces.setActive,
       getDeletePreview: rpcClient.workspaces.getDeletePreview,

@@ -80,7 +80,6 @@ import {
 } from "./project";
 import {
   Workspace,
-  WorkspaceCreateInput,
   WorkspaceDeleteInput,
   WorkspaceDeletePreview,
   WorkspaceError,
@@ -142,7 +141,6 @@ export const WS_METHODS = {
   projectsWriteFile: "projects.writeFile",
 
   // Workspace methods
-  workspacesCreate: "workspaces.create",
   workspacesUpdate: "workspaces.update",
   workspacesSetActive: "workspaces.setActive",
   workspacesGetDeletePreview: "workspaces.getDeletePreview",
@@ -289,12 +287,6 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
   error: ProjectWriteFileError,
-});
-
-export const WsWorkspacesCreateRpc = Rpc.make(WS_METHODS.workspacesCreate, {
-  payload: WorkspaceCreateInput,
-  success: Workspace,
-  error: WorkspaceError,
 });
 
 export const WsWorkspacesUpdateRpc = Rpc.make(WS_METHODS.workspacesUpdate, {
@@ -638,7 +630,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
-  WsWorkspacesCreateRpc,
   WsWorkspacesUpdateRpc,
   WsWorkspacesSetActiveRpc,
   WsWorkspacesGetDeletePreviewRpc,

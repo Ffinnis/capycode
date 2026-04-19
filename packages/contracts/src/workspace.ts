@@ -48,15 +48,6 @@ export const Workspace = Schema.Struct({
 });
 export type Workspace = typeof Workspace.Type;
 
-export const WorkspaceCreateInput = Schema.Struct({
-  projectId: ProjectId,
-  name: TrimmedNonEmptyString,
-  baseBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  sectionId: Schema.optional(Schema.NullOr(WorkspaceSectionId)),
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
-export type WorkspaceCreateInput = typeof WorkspaceCreateInput.Type;
-
 export const WorkspaceUpdateInput = Schema.Struct({
   workspaceId: WorkspaceId,
   name: TrimmedNonEmptyString,
