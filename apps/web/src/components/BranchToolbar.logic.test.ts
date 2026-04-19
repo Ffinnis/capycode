@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@capycode/contracts";
 import { describe, expect, it } from "vitest";
 
-import { resolveCurrentWorkspaceLabel, resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
+import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 const remoteEnvironmentId = EnvironmentId.make("environment-remote");
@@ -38,15 +38,5 @@ describe("resolveEnvironmentOptionLabel", () => {
         savedLabel: "Build box",
       }),
     ).toBe("Build box");
-  });
-});
-
-describe("resolveCurrentWorkspaceLabel", () => {
-  it("describes the main repo checkout when no worktree path is active", () => {
-    expect(resolveCurrentWorkspaceLabel(null)).toBe("Current checkout");
-  });
-
-  it("describes the active checkout as a worktree when one is attached", () => {
-    expect(resolveCurrentWorkspaceLabel("/repo/.t3/worktrees/feature-a")).toBe("Current worktree");
   });
 });

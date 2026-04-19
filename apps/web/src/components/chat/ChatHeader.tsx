@@ -7,7 +7,6 @@ import {
 } from "@capycode/contracts";
 import { scopeThreadRef } from "@capycode/client-runtime";
 import { memo } from "react";
-import { FolderGitIcon } from "lucide-react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { DiffIcon, FolderTreeIcon, TerminalSquareIcon } from "lucide-react";
@@ -17,14 +16,12 @@ import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScr
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
-import { resolveCurrentWorkspaceLabel } from "../BranchToolbar.logic";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   draftId?: DraftId;
   activeThreadTitle: string;
-  activeWorktreePath: string | null;
   activeProjectName: string | undefined;
   isGitRepo: boolean;
   openInCwd: string | null;
@@ -54,7 +51,6 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   draftId,
   activeThreadTitle,
-  activeWorktreePath,
   activeProjectName,
   isGitRepo,
   openInCwd,
@@ -88,12 +84,6 @@ export const ChatHeader = memo(function ChatHeader({
         >
           {activeThreadTitle}
         </h2>
-        {activeWorktreePath && (
-          <Badge variant="outline" className="min-w-0 shrink-0 gap-1.5" title={activeWorktreePath}>
-            <FolderGitIcon className="size-3" />
-            <span>{resolveCurrentWorkspaceLabel(activeWorktreePath)}</span>
-          </Badge>
-        )}
         {activeProjectName && (
           <Badge variant="outline" className="min-w-0 shrink overflow-hidden">
             <span className="min-w-0 truncate">{activeProjectName}</span>
