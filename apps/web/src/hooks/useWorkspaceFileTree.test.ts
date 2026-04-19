@@ -18,7 +18,7 @@ describe("useWorkspaceFileTree cache helpers", () => {
     };
 
     expect(renameDirectoryEntriesCache(cache, "src", "renamed")).toEqual({
-      "": [{ path: "renamed", name: "src", kind: "directory" }],
+      "": [{ path: "renamed", name: "renamed", kind: "directory" }],
       renamed: [
         { path: "renamed/app.ts", name: "app.ts", kind: "file" },
         { path: "renamed/nested", name: "nested", kind: "directory" },
@@ -38,10 +38,7 @@ describe("useWorkspaceFileTree cache helpers", () => {
     };
 
     expect(removeDirectoryEntriesCache(cache, "src")).toEqual({
-      "": [
-        { path: "src", name: "src", kind: "directory" },
-        { path: "docs", name: "docs", kind: "directory" },
-      ],
+      "": [{ path: "docs", name: "docs", kind: "directory" }],
       docs: [{ path: "docs/readme.md", name: "readme.md", kind: "file" }],
     });
   });

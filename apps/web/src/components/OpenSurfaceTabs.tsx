@@ -72,12 +72,12 @@ export function OpenSurfaceTabs(props: {
                 {isSaving ? (
                   <LoaderCircleIcon className="size-3 animate-spin text-muted-foreground" />
                 ) : isDirty ? (
-                  <span
-                    className="size-1.5 rounded-full bg-warning"
-                    aria-label={`${relativePath} has unsaved changes`}
-                  />
+                  <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" />
                 ) : null}
                 <span className="max-w-36 truncate">{relativePath.split("/").at(-1)}</span>
+                {isDirty ? (
+                  <span className="sr-only">{`${relativePath} has unsaved changes`}</span>
+                ) : null}
               </button>
               <button
                 type="button"

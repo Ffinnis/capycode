@@ -60,4 +60,20 @@ describe("FilePreviewPanel", () => {
     await expect.element(page.getByText("Save")).toBeInTheDocument();
     await expect.element(page.getByText("Loading file preview...")).not.toBeInTheDocument();
   });
+
+  it("shows an unavailable state instead of a loader when the preview query is disabled", async () => {
+    await render(
+      <QueryClientProvider client={queryClient}>
+        <FilePreviewPanel
+          environmentId={null}
+          cwd={null}
+          scopeKey="scope"
+          relativePath="src/app.ts"
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(page.getByText("File preview unavailable.")).toBeInTheDocument();
+    await expect.element(page.getByText("Loading file preview...")).not.toBeInTheDocument();
+  });
 });

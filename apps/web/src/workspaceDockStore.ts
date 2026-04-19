@@ -270,16 +270,17 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
           const hasMatchingTab = current.openFileTabs.some((path) =>
             matchesPathPrefix(path, fromRelativePath),
           );
-          if (
-            !hasMatchingTab &&
-            !matchesPathPrefix(current.revealedFilePath ?? "", fromRelativePath)
-          ) {
-            return current;
-          }
+          const revealedMatch = matchesPathPrefix(current.revealedFilePath ?? "", fromRelativePath);
           const nextOpenTabs = current.openFileTabs.map((path) =>
             replacePathPrefix(path, fromRelativePath, toRelativePath),
           );
-          const hadExactTab = current.openFileTabs.includes(fromRelativePath);
+          const nextOpenTabsDeduped = [...new Set(nextOpenTabs)];
+          const hasMatchingExpandedDirectory = Object.keys(current.expandedDirectories).some(
+            (path) => matchesPathPrefix(path, fromRelativePath),
+          );
+          if (!hasMatchingTab && !revealedMatch && !hasMatchingExpandedDirectory) {
+            return current;
+          }
           const nextExpandedDirectories = Object.fromEntries(
             Object.entries(current.expandedDirectories).map(([path, expanded]) => [
               replacePathPrefix(path, fromRelativePath, toRelativePath),
@@ -288,9 +289,7 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
           );
           return {
             ...current,
-            openFileTabs: hadExactTab
-              ? [...new Set(nextUniqueTabs(nextOpenTabs, toRelativePath))]
-              : nextOpenTabs,
+            openFileTabs: nextOpenTabsDeduped,
             activeTab:
               current.activeTab === "chat" || current.activeTab === WORKSPACE_TERMINAL_TAB_ID
                 ? current.activeTab

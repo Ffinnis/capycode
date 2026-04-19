@@ -37,13 +37,21 @@ export function renameDirectoryEntriesCache(
   fromRelativePath: string,
   toRelativePath: string,
 ) {
+  const nextDirectoryName = toRelativePath.split("/").at(-1) ?? toRelativePath;
   return Object.fromEntries(
     Object.entries(cache).map(([path, entries]) => [
       replacePathPrefix(path, fromRelativePath, toRelativePath),
-      entries.map((entry) => ({
-        ...entry,
-        path: replacePathPrefix(entry.path, fromRelativePath, toRelativePath),
-      })),
+      entries.map((entry) => {
+        const nextPath = replacePathPrefix(entry.path, fromRelativePath, toRelativePath);
+        return {
+          ...entry,
+          path: nextPath,
+          name:
+            entry.kind === "directory" && nextPath === toRelativePath
+              ? nextDirectoryName
+              : entry.name,
+        };
+      }),
     ]),
   );
 }
@@ -53,7 +61,12 @@ export function removeDirectoryEntriesCache(
   relativePathPrefix: string,
 ) {
   return Object.fromEntries(
-    Object.entries(cache).filter(([path]) => !matchesPathPrefix(path, relativePathPrefix)),
+    Object.entries(cache)
+      .filter(([path]) => !matchesPathPrefix(path, relativePathPrefix))
+      .map(([path, entries]) => [
+        path,
+        entries.filter((entry) => !matchesPathPrefix(entry.path, relativePathPrefix)),
+      ]),
   );
 }
 

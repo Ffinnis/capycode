@@ -108,6 +108,7 @@ export async function readDroppedWorkspaceFiles(dataTransfer: DataTransfer): Pro
 export function useWorkspaceDropTarget(input: {
   onDropFiles: (files: DroppedWorkspaceFile[]) => Promise<void> | void;
 }) {
+  const { onDropFiles } = input;
   const dragDepthRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -143,9 +144,9 @@ export function useWorkspaceDropTarget(input: {
       dragDepthRef.current = 0;
       setIsDragOver(false);
       const result = await readDroppedWorkspaceFiles(event.dataTransfer);
-      await input.onDropFiles(result.files);
+      await onDropFiles(result.files);
     },
-    [input],
+    [onDropFiles],
   );
 
   return {

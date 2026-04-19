@@ -10,7 +10,60 @@ import { projectReadFileQueryOptions } from "~/lib/projectReactQuery";
 import { readLocalApi } from "~/localApi";
 import { openInPreferredEditor } from "~/editorPreferences";
 import { resolvePathLinkTarget } from "~/terminal-links";
-import { getWorkspaceEditorBuffer, useWorkspaceEditorStore } from "~/workspaceEditorStore";
+import {
+  getWorkspaceEditorBuffer,
+  type WorkspaceEditorBufferState,
+  useWorkspaceEditorStore,
+} from "~/workspaceEditorStore";
+
+interface FilePreviewTextReadResult {
+  kind: "text";
+  contents: string;
+  versionToken?: string;
+  lineEnding?: "lf" | "crlf";
+  lastModifiedMs: number;
+}
+
+interface FilePreviewReadResult {
+  kind: string;
+  contents?: string | undefined;
+  versionToken?: string | undefined;
+  lineEnding?: "lf" | "crlf" | undefined;
+  lastModifiedMs: number;
+}
+
+export function canUseBufferForEditorPreview(buffer: WorkspaceEditorBufferState | undefined) {
+  return Boolean(buffer && !buffer.isSaving && !buffer.pendingExternalConflict);
+}
+
+export function getEditorReadResultFromPreviewState(
+  buffer: WorkspaceEditorBufferState | undefined,
+  result: FilePreviewReadResult | null | undefined,
+): FilePreviewTextReadResult | null {
+  const stableBuffer = canUseBufferForEditorPreview(buffer) ? buffer : undefined;
+  if (stableBuffer) {
+    const lastModifiedMs = Date.parse(stableBuffer.lastSavedAt ?? stableBuffer.lastLoadedAt ?? "");
+    return {
+      kind: "text",
+      contents: stableBuffer.contents,
+      ...(stableBuffer.versionToken ? { versionToken: stableBuffer.versionToken } : {}),
+      lineEnding: stableBuffer.lineEnding,
+      lastModifiedMs: Number.isFinite(lastModifiedMs) ? lastModifiedMs : 0,
+    };
+  }
+
+  if (result?.kind === "text" && result.contents !== undefined) {
+    return {
+      kind: "text",
+      contents: result.contents,
+      ...(result.versionToken ? { versionToken: result.versionToken } : {}),
+      ...(result.lineEnding ? { lineEnding: result.lineEnding } : {}),
+      lastModifiedMs: result.lastModifiedMs,
+    };
+  }
+
+  return null;
+}
 
 export function FilePreviewPanel(props: {
   environmentId: EnvironmentId | null;
@@ -48,31 +101,15 @@ export function FilePreviewPanel(props: {
   const result = previewQuery.data;
   const unsupportedKind = result && result.kind !== "text" ? result.kind : null;
   const variant = props.variant ?? "sidebar";
-  const editorReadResult = useMemo(() => {
-    if (buffer) {
-      const lastModifiedMs = Date.parse(buffer.lastSavedAt ?? buffer.lastLoadedAt ?? "");
-      return {
-        kind: "text" as const,
-        contents: buffer.contents,
-        ...(buffer.versionToken ? { versionToken: buffer.versionToken } : {}),
-        lineEnding: buffer.lineEnding,
-        lastModifiedMs: Number.isFinite(lastModifiedMs) ? lastModifiedMs : 0,
-      };
-    }
-
-    if (result?.kind === "text" && result.contents !== undefined) {
-      return {
-        kind: "text" as const,
-        contents: result.contents,
-        ...(result.versionToken ? { versionToken: result.versionToken } : {}),
-        ...(result.lineEnding ? { lineEnding: result.lineEnding } : {}),
-        lastModifiedMs: result.lastModifiedMs,
-      };
-    }
-
-    return null;
-  }, [buffer, result]);
+  const isPreviewQueryEnabled = Boolean(props.environmentId && props.cwd);
+  const editorReadResult = useMemo(
+    () => getEditorReadResultFromPreviewState(buffer, result),
+    [buffer, result],
+  );
   const shouldRenderEditor = editorReadResult !== null;
+  const shouldShowPreviewLoading =
+    isPreviewQueryEnabled && (previewQuery.isLoading || previewQuery.isFetching);
+  const shouldShowPreviewUnavailable = !isPreviewQueryEnabled && !buffer && !result;
   const previewLines = useMemo(() => {
     if (!result?.contents) {
       return [];
@@ -117,8 +154,12 @@ export function FilePreviewPanel(props: {
             onOpenInEditor={() => void openInEditor()}
             {...(props.onBack ? { onBack: props.onBack } : {})}
           />
-          {previewQuery.isLoading || !result ? (
+          {shouldShowPreviewLoading ? (
             <div className="px-4 py-4 text-sm text-muted-foreground">Loading file preview...</div>
+          ) : shouldShowPreviewUnavailable ? (
+            <div className="px-4 py-4 text-sm text-muted-foreground">File preview unavailable.</div>
+          ) : !result ? (
+            <div className="px-4 py-4 text-sm text-muted-foreground">File preview unavailable.</div>
           ) : unsupportedKind || result.contents === undefined ? (
             <FilePreviewUnsupported
               kind={unsupportedKind ?? "too_large"}
