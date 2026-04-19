@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
@@ -49,9 +49,7 @@ export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSearchEntriesError>()(
   "ProjectSearchEntriesError",
   {
-    code: ProjectMutationErrorCode.pipe(
-      Schema.withDecodingDefault(Effect.succeed("not_found" satisfies ProjectMutationErrorCode)),
-    ),
+    code: ProjectMutationErrorCode,
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
   },

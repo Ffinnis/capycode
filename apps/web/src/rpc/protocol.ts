@@ -30,6 +30,52 @@ export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;
 export type WsRpcProtocolSocketUrlProvider = string | (() => Promise<string>);
 
+const LEGACY_PROJECT_SEARCH_ENTRIES_ERROR_CODE = "not_found";
+
+export function normalizeLegacyProjectRpcPayload(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeLegacyProjectRpcPayload(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  let mutated = false;
+  const nextRecord: Record<string, unknown> = { ...record };
+
+  if (
+    record._tag === "ProjectSearchEntriesError" &&
+    typeof record.code !== "string" &&
+    !("code" in record)
+  ) {
+    nextRecord.code = LEGACY_PROJECT_SEARCH_ENTRIES_ERROR_CODE;
+    mutated = true;
+  }
+
+  for (const [key, child] of Object.entries(record)) {
+    const normalizedChild = normalizeLegacyProjectRpcPayload(child);
+    if (normalizedChild !== child) {
+      nextRecord[key] = normalizedChild;
+      mutated = true;
+    }
+  }
+
+  return mutated ? nextRecord : value;
+}
+
+const projectRpcCompatibilitySerialization = RpcSerialization.RpcSerialization.of({
+  contentType: RpcSerialization.json.contentType,
+  includesFraming: RpcSerialization.json.includesFraming,
+  makeUnsafe: () => {
+    const parser = RpcSerialization.json.makeUnsafe();
+    return {
+      decode: (data) => parser.decode(data).map((value) => normalizeLegacyProjectRpcPayload(value)),
+      encode: parser.encode,
+    };
+  },
+});
+
 function formatSocketErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -173,5 +219,12 @@ export function createWsRpcProtocolLayer(
     ),
   );
 
-  return protocolLayer.pipe(Layer.provide(Layer.mergeAll(socketLayer, RpcSerialization.layerJson)));
+  return protocolLayer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        socketLayer,
+        Layer.succeed(RpcSerialization.RpcSerialization, projectRpcCompatibilitySerialization),
+      ),
+    ),
+  );
 }
