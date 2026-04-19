@@ -29,8 +29,14 @@ import type {
   GitStatusResult,
 } from "./git";
 import type {
+  ProjectCreateDirectoryInput,
+  ProjectCreateDirectoryResult,
+  ProjectDeleteEntryInput,
+  ProjectDeleteEntryResult,
   ProjectListDirectoryInput,
   ProjectListDirectoryResult,
+  ProjectMoveEntryInput,
+  ProjectMoveEntryResult,
   ProjectReadFileInput,
   ProjectReadFileResult,
   ProjectSearchEntriesInput,
@@ -294,7 +300,10 @@ export interface EnvironmentApi {
     onEvent: (callback: (event: TerminalEvent) => void) => () => void;
   };
   projects: {
+    createDirectory: (input: ProjectCreateDirectoryInput) => Promise<ProjectCreateDirectoryResult>;
+    deleteEntry: (input: ProjectDeleteEntryInput) => Promise<ProjectDeleteEntryResult>;
     listDirectory: (input: ProjectListDirectoryInput) => Promise<ProjectListDirectoryResult>;
+    moveEntry: (input: ProjectMoveEntryInput) => Promise<ProjectMoveEntryResult>;
     readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;

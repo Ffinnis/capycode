@@ -38,10 +38,12 @@ interface WorkspaceDockState {
   setFilesOpen: (scopeKey: string, open: boolean) => void;
   setTerminalTabOpen: (scopeKey: string, open: boolean) => void;
   openFile: (scopeKey: string, relativePath: string) => void;
+  renameFileTab: (scopeKey: string, fromRelativePath: string, toRelativePath: string) => void;
   selectChatTab: (scopeKey: string) => void;
   selectTerminalTab: (scopeKey: string) => void;
   selectFileTab: (scopeKey: string, relativePath: string) => void;
   closeFileTab: (scopeKey: string, relativePath: string) => void;
+  closeFileTabsByPrefix: (scopeKey: string, relativePathPrefix: string) => void;
   showDiffContext: (scopeKey: string) => void;
   setDirectoryExpanded: (scopeKey: string, relativePath: string, expanded: boolean) => void;
   setRevealedFilePath: (scopeKey: string, relativePath: string | undefined) => void;
@@ -150,6 +152,24 @@ function nextUniqueTabs(openFileTabs: string[], relativePath: string): string[] 
   return openFileTabs.includes(relativePath) ? openFileTabs : [...openFileTabs, relativePath];
 }
 
+function matchesPathPrefix(candidatePath: string, relativePathPrefix: string): boolean {
+  return candidatePath === relativePathPrefix || candidatePath.startsWith(`${relativePathPrefix}/`);
+}
+
+function replacePathPrefix(
+  candidatePath: string,
+  fromRelativePath: string,
+  toRelativePath: string,
+): string {
+  if (candidatePath === fromRelativePath) {
+    return toRelativePath;
+  }
+  if (!candidatePath.startsWith(`${fromRelativePath}/`)) {
+    return candidatePath;
+  }
+  return `${toRelativePath}${candidatePath.slice(fromRelativePath.length)}`;
+}
+
 const persistedState = readPersistedState();
 
 export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
@@ -242,6 +262,48 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
       persistState(nextState);
       return nextState;
     }),
+  renameFileTab: (scopeKey, fromRelativePath, toRelativePath) =>
+    set((state) => {
+      const nextState = {
+        ...state,
+        ...withScope(state, scopeKey, (current) => {
+          const hasMatchingTab = current.openFileTabs.some((path) =>
+            matchesPathPrefix(path, fromRelativePath),
+          );
+          const revealedMatch = matchesPathPrefix(current.revealedFilePath ?? "", fromRelativePath);
+          const nextOpenTabs = current.openFileTabs.map((path) =>
+            replacePathPrefix(path, fromRelativePath, toRelativePath),
+          );
+          const nextOpenTabsDeduped = [...new Set(nextOpenTabs)];
+          const hasMatchingExpandedDirectory = Object.keys(current.expandedDirectories).some(
+            (path) => matchesPathPrefix(path, fromRelativePath),
+          );
+          if (!hasMatchingTab && !revealedMatch && !hasMatchingExpandedDirectory) {
+            return current;
+          }
+          const nextExpandedDirectories = Object.fromEntries(
+            Object.entries(current.expandedDirectories).map(([path, expanded]) => [
+              replacePathPrefix(path, fromRelativePath, toRelativePath),
+              expanded,
+            ]),
+          );
+          return {
+            ...current,
+            openFileTabs: nextOpenTabsDeduped,
+            activeTab:
+              current.activeTab === "chat" || current.activeTab === WORKSPACE_TERMINAL_TAB_ID
+                ? current.activeTab
+                : replacePathPrefix(current.activeTab, fromRelativePath, toRelativePath),
+            revealedFilePath: current.revealedFilePath
+              ? replacePathPrefix(current.revealedFilePath, fromRelativePath, toRelativePath)
+              : current.revealedFilePath,
+            expandedDirectories: nextExpandedDirectories,
+          };
+        }),
+      };
+      persistState(nextState);
+      return nextState;
+    }),
   selectChatTab: (scopeKey) =>
     set((state) => {
       const nextState = {
@@ -299,6 +361,35 @@ export const useWorkspaceDockStore = create<WorkspaceDockState>((set) => ({
             revealedFilePath:
               current.revealedFilePath === relativePath ? undefined : current.revealedFilePath,
             activeContext: nextActiveTab === "chat" ? current.activeContext : "file",
+          };
+        }),
+      };
+      persistState(nextState);
+      return nextState;
+    }),
+  closeFileTabsByPrefix: (scopeKey, relativePathPrefix) =>
+    set((state) => {
+      const nextState = {
+        ...state,
+        ...withScope(state, scopeKey, (current) => {
+          const nextOpenTabs = current.openFileTabs.filter(
+            (path) => !matchesPathPrefix(path, relativePathPrefix),
+          );
+          const nextActiveTab =
+            current.activeTab === "chat" || current.activeTab === WORKSPACE_TERMINAL_TAB_ID
+              ? current.activeTab
+              : matchesPathPrefix(current.activeTab, relativePathPrefix)
+                ? (nextOpenTabs.at(-1) ?? "chat")
+                : current.activeTab;
+          return {
+            ...current,
+            openFileTabs: nextOpenTabs,
+            activeTab: nextActiveTab,
+            revealedFilePath:
+              current.revealedFilePath &&
+              matchesPathPrefix(current.revealedFilePath, relativePathPrefix)
+                ? undefined
+                : current.revealedFilePath,
           };
         }),
       };

@@ -21,4 +21,11 @@ describe("ClientSettingsSchema", () => {
     expect(parsed.selectedNotificationSoundId).toBe("arcade");
     expect(parsed.customNotificationSound).toBeNull();
   });
+
+  it("defaults file editor auto-save to false", () => {
+    const parsed = decodeClientSettings({});
+
+    expect(parsed.fileEditorAutoSave).toBe(false);
+    expect(DEFAULT_CLIENT_SETTINGS.fileEditorAutoSave).toBe(false);
+  });
 });

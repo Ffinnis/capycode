@@ -18,7 +18,7 @@ import {
   type ServerProviderModel,
 } from "@capycode/contracts";
 import { scopeThreadRef } from "@capycode/client-runtime";
-import { DEFAULT_UNIFIED_SETTINGS } from "@capycode/contracts/settings";
+import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@capycode/contracts/settings";
 import { normalizeModelSlug } from "@capycode/shared/model";
 import { Equal } from "effect";
 import { APP_VERSION } from "../../branding";
@@ -379,58 +379,14 @@ export function useSettingsRestore(onRestored?: () => void) {
   });
 
   const changedSettingLabels = useMemo(
-    () => [
-      ...(theme !== "system" ? ["Theme"] : []),
-      ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
-        ? ["Time format"]
-        : []),
-      ...(settings.diffPanelMode !== DEFAULT_UNIFIED_SETTINGS.diffPanelMode
-        ? ["Diff panel mode"]
-        : []),
-      ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
-        ? ["Diff line wrapping"]
-        : []),
-      ...(settings.extendedTraceMode !== DEFAULT_UNIFIED_SETTINGS.extendedTraceMode
-        ? ["Extended trace mode"]
-        : []),
-      ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
-        ? ["Assistant output"]
-        : []),
-      ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
-        ? ["Archive confirmation"]
-        : []),
-      ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
-        ? ["Delete confirmation"]
-        : []),
-      ...(settings.notificationSoundsMuted !== DEFAULT_UNIFIED_SETTINGS.notificationSoundsMuted ||
-      settings.notificationVolume !== DEFAULT_UNIFIED_SETTINGS.notificationVolume ||
-      settings.selectedNotificationSoundId !==
-        DEFAULT_UNIFIED_SETTINGS.selectedNotificationSoundId ||
-      !Equal.equals(
-        settings.customNotificationSound,
-        DEFAULT_UNIFIED_SETTINGS.customNotificationSound,
-      )
-        ? ["Notifications"]
-        : []),
-      ...(isGitWritingModelDirty ? ["Git writing model"] : []),
-      ...(areProviderSettingsDirty ? ["Providers"] : []),
-    ],
-    [
-      areProviderSettingsDirty,
-      isGitWritingModelDirty,
-      settings.confirmThreadArchive,
-      settings.confirmThreadDelete,
-      settings.diffPanelMode,
-      settings.diffWordWrap,
-      settings.extendedTraceMode,
-      settings.enableAssistantStreaming,
-      settings.customNotificationSound,
-      settings.notificationSoundsMuted,
-      settings.notificationVolume,
-      settings.selectedNotificationSoundId,
-      settings.timestampFormat,
-      theme,
-    ],
+    () =>
+      getChangedSettingsRestoreLabels({
+        theme,
+        settings,
+        isGitWritingModelDirty,
+        areProviderSettingsDirty,
+      }),
+    [areProviderSettingsDirty, isGitWritingModelDirty, settings, theme],
   );
 
   const restoreDefaults = useCallback(async () => {
@@ -452,6 +408,53 @@ export function useSettingsRestore(onRestored?: () => void) {
     changedSettingLabels,
     restoreDefaults,
   };
+}
+
+export function getChangedSettingsRestoreLabels(input: {
+  theme: "system" | "light" | "dark";
+  settings: UnifiedSettings;
+  isGitWritingModelDirty: boolean;
+  areProviderSettingsDirty: boolean;
+}) {
+  const { settings } = input;
+  return [
+    ...(input.theme !== "system" ? ["Theme"] : []),
+    ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
+      ? ["Time format"]
+      : []),
+    ...(settings.diffPanelMode !== DEFAULT_UNIFIED_SETTINGS.diffPanelMode
+      ? ["Diff panel mode"]
+      : []),
+    ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
+      ? ["Diff line wrapping"]
+      : []),
+    ...(settings.fileEditorAutoSave !== DEFAULT_UNIFIED_SETTINGS.fileEditorAutoSave
+      ? ["File editor auto-save"]
+      : []),
+    ...(settings.extendedTraceMode !== DEFAULT_UNIFIED_SETTINGS.extendedTraceMode
+      ? ["Extended trace mode"]
+      : []),
+    ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
+      ? ["Assistant output"]
+      : []),
+    ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
+      ? ["Archive confirmation"]
+      : []),
+    ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
+      ? ["Delete confirmation"]
+      : []),
+    ...(settings.notificationSoundsMuted !== DEFAULT_UNIFIED_SETTINGS.notificationSoundsMuted ||
+    settings.notificationVolume !== DEFAULT_UNIFIED_SETTINGS.notificationVolume ||
+    settings.selectedNotificationSoundId !== DEFAULT_UNIFIED_SETTINGS.selectedNotificationSoundId ||
+    !Equal.equals(
+      settings.customNotificationSound,
+      DEFAULT_UNIFIED_SETTINGS.customNotificationSound,
+    )
+      ? ["Notifications"]
+      : []),
+    ...(input.isGitWritingModelDirty ? ["Git writing model"] : []),
+    ...(input.areProviderSettingsDirty ? ["Providers"] : []),
+  ];
 }
 
 export function GeneralSettingsPanel() {
@@ -887,6 +890,32 @@ export function GeneralSettingsPanel() {
               checked={settings.diffWordWrap}
               onCheckedChange={(checked) => updateSettings({ diffWordWrap: Boolean(checked) })}
               aria-label="Wrap diff lines by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="File editor auto-save"
+          description="Save text file edits automatically after you stop typing."
+          resetAction={
+            settings.fileEditorAutoSave !== DEFAULT_UNIFIED_SETTINGS.fileEditorAutoSave ? (
+              <SettingResetButton
+                label="file editor auto-save"
+                onClick={() =>
+                  updateSettings({
+                    fileEditorAutoSave: DEFAULT_UNIFIED_SETTINGS.fileEditorAutoSave,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.fileEditorAutoSave}
+              onCheckedChange={(checked) =>
+                updateSettings({ fileEditorAutoSave: Boolean(checked) })
+              }
+              aria-label="Automatically save file editor changes"
             />
           }
         />

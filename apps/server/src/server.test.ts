@@ -2339,8 +2339,61 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(response.relativePath, "nested/created.txt");
+      assert.match(response.versionToken, /^sha256:/);
+      assert.equal(response.created, true);
       const persisted = yield* fs.readFileString(path.join(workspaceDir, "nested", "created.txt"));
       assert.equal(persisted, "written-by-rpc");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc projects.writeFile stale version errors", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-write-stale-",
+      });
+      yield* fs.makeDirectory(path.join(workspaceDir, "src"), { recursive: true });
+      yield* fs.writeFileString(path.join(workspaceDir, "src", "plan.md"), "one\n");
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const initial = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsReadFile]({
+            cwd: workspaceDir,
+            relativePath: "src/plan.md",
+          }),
+        ),
+      );
+      assert.equal(initial.kind, "text");
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsWriteFile]({
+            cwd: workspaceDir,
+            relativePath: "src/plan.md",
+            contents: "two\n",
+            ...(initial.versionToken ? { expectedVersionToken: initial.versionToken } : {}),
+          }),
+        ),
+      );
+
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsWriteFile]({
+            cwd: workspaceDir,
+            relativePath: "src/plan.md",
+            contents: "three\n",
+            ...(initial.versionToken ? { expectedVersionToken: initial.versionToken } : {}),
+          }),
+        ).pipe(Effect.result),
+      );
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "ProjectWriteFileError");
+      assert.equal(result.failure.code, "stale_version");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2368,6 +2421,79 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         result.failure.message,
         "Workspace file path must stay within the project root.",
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc projects.createDirectory", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-create-directory-",
+      });
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsCreateDirectory]({
+            cwd: workspaceDir,
+            relativePath: "src/components",
+          }),
+        ),
+      );
+      const stat = yield* fs.stat(path.join(workspaceDir, "src", "components"));
+
+      assert.deepEqual(response, {
+        relativePath: "src/components",
+        created: true,
+      });
+      assert.equal(stat.type, "Directory");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc projects.moveEntry and projects.deleteEntry", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-move-delete-",
+      });
+      yield* fs.makeDirectory(path.join(workspaceDir, "src"), { recursive: true });
+      yield* fs.writeFileString(path.join(workspaceDir, "src", "before.ts"), "export {};\n");
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const moveResponse = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsMoveEntry]({
+            cwd: workspaceDir,
+            sourceRelativePath: "src/before.ts",
+            destinationRelativePath: "src/after.ts",
+          }),
+        ),
+      );
+      const deleteResponse = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsDeleteEntry]({
+            cwd: workspaceDir,
+            relativePath: "src/after.ts",
+            expectedKind: "file",
+          }),
+        ),
+      );
+      const finalStat = yield* fs
+        .stat(path.join(workspaceDir, "src", "after.ts"))
+        .pipe(Effect.catch(() => Effect.succeed(null)));
+
+      assert.deepEqual(moveResponse, {
+        sourceRelativePath: "src/before.ts",
+        destinationRelativePath: "src/after.ts",
+      });
+      assert.deepEqual(deleteResponse, { relativePath: "src/after.ts" });
+      assert.equal(finalStat, null);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -51,6 +51,42 @@ describe("workspaceDockStore", () => {
     expect(scope.activeTab).toBe("src/app.ts");
   });
 
+  it("renames open file tabs and preserves active selection", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.openFile(SCOPE, "src/app.ts");
+    store.renameFileTab(SCOPE, "src/app.ts", "src/renamed.ts");
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.openFileTabs).toEqual(["src/renamed.ts"]);
+    expect(scope.activeTab).toBe("src/renamed.ts");
+    expect(scope.revealedFilePath).toBe("src/renamed.ts");
+  });
+
+  it("renames expanded directory keys even when only the file tree state matches", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.setDirectoryExpanded(SCOPE, "src", true);
+    store.setDirectoryExpanded(SCOPE, "src/nested", true);
+
+    store.renameFileTab(SCOPE, "src", "renamed");
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.expandedDirectories).toEqual({
+      renamed: true,
+      "renamed/nested": true,
+    });
+  });
+
+  it("deduplicates open tabs after prefix renames", () => {
+    const store = useWorkspaceDockStore.getState();
+    store.openFile(SCOPE, "src/app.ts");
+    store.openFile(SCOPE, "renamed/app.ts");
+
+    store.renameFileTab(SCOPE, "src", "renamed");
+
+    const scope = getWorkspaceDockScopeState(useWorkspaceDockStore.getState(), SCOPE);
+    expect(scope.openFileTabs).toEqual(["renamed/app.ts"]);
+  });
+
   it("keeps scopes isolated by cwd", () => {
     const otherScope = getWorkspaceDockScopeKey({
       environmentId: "env-1",

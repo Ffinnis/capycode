@@ -37,6 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -44,7 +45,7 @@ import { resolveEffectiveGitContext } from "~/lib/gitContext";
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
-import { readLocalApi } from "../localApi";
+import { ensureLocalApi, readLocalApi } from "../localApi";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import {
   collapseExpandedComposerCursor,
@@ -107,6 +108,9 @@ import { BranchToolbar } from "./BranchToolbar";
 import { ChevronDownIcon } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
 import { toastManager } from "./ui/toast";
+import { FILE_PREVIEW_MAX_BYTES } from "~/lib/filePreview";
+import { serializeFileContents } from "~/lib/fileLineEndings";
+import { projectReadFileQueryOptions } from "~/lib/projectReactQuery";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
@@ -117,6 +121,7 @@ import {
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
+import { useWorkspaceFileMutations } from "../hooks/useWorkspaceFileMutations";
 import { resolveAppModelSelection } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { deriveLogicalProjectKey } from "../logicalProject";
@@ -183,6 +188,11 @@ import {
   WORKSPACE_TERMINAL_TAB_ID,
   useWorkspaceDockStore,
 } from "~/workspaceDockStore";
+import {
+  createWorkspaceOpenFileTabStatusSelector,
+  getWorkspaceEditorBuffer,
+  useWorkspaceEditorStore,
+} from "~/workspaceEditorStore";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -450,6 +460,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const extendedTraceMode = settings.extendedTraceMode;
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -1243,7 +1254,28 @@ export default function ChatView(props: ChatViewProps) {
   const selectWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.selectFileTab);
   const closeWorkspaceDockFileTab = useWorkspaceDockStore((state) => state.closeFileTab);
   const showWorkspaceDockDiffContext = useWorkspaceDockStore((state) => state.showDiffContext);
+  const markWorkspaceBufferSaving = useWorkspaceEditorStore((state) => state.markSaving);
+  const markWorkspaceBufferSaveSucceeded = useWorkspaceEditorStore(
+    (state) => state.markSaveSucceeded,
+  );
+  const markWorkspaceBufferSaveFailed = useWorkspaceEditorStore((state) => state.markSaveFailed);
+  const removeWorkspaceBuffer = useWorkspaceEditorStore((state) => state.removeBuffer);
+  const workspaceOpenFileTabStatus = useWorkspaceEditorStore(
+    useMemo(
+      () =>
+        createWorkspaceOpenFileTabStatusSelector(
+          workspaceDockScopeKey,
+          workspaceDockState.openFileTabs,
+        ),
+      [workspaceDockScopeKey, workspaceDockState.openFileTabs],
+    ),
+  );
   const filesAvailable = activeWorkspaceRoot !== undefined;
+  const { writeFile: writeWorkspaceFile } = useWorkspaceFileMutations({
+    environmentId,
+    cwd: activeWorkspaceRoot ?? null,
+    scopeKey: workspaceDockScopeKey,
+  });
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -3222,20 +3254,96 @@ export default function ChatView(props: ChatViewProps) {
     selectWorkspaceDockTerminalTab(workspaceDockScopeKey);
     navigateWithinActiveThreadRoute({ terminal: "1" });
   }, [navigateWithinActiveThreadRoute, selectWorkspaceDockTerminalTab, workspaceDockScopeKey]);
+  const prefetchWorkspaceFilePreview = useCallback(
+    (relativePath: string) => {
+      if (!environmentId || !activeWorkspaceRoot) {
+        return;
+      }
+      void queryClient.prefetchQuery(
+        projectReadFileQueryOptions({
+          environmentId,
+          cwd: activeWorkspaceRoot,
+          relativePath,
+          maxBytes: FILE_PREVIEW_MAX_BYTES,
+        }),
+      );
+    },
+    [activeWorkspaceRoot, environmentId, queryClient],
+  );
   const onSelectWorkspaceFileTab = useCallback(
     (relativePath: string) => {
       if (!workspaceDockScopeKey) {
         return;
       }
+      prefetchWorkspaceFilePreview(relativePath);
       selectWorkspaceDockFileTab(workspaceDockScopeKey, relativePath);
       navigateWithinActiveThreadRoute({ files: "1", file: relativePath });
     },
-    [navigateWithinActiveThreadRoute, selectWorkspaceDockFileTab, workspaceDockScopeKey],
+    [
+      navigateWithinActiveThreadRoute,
+      prefetchWorkspaceFilePreview,
+      selectWorkspaceDockFileTab,
+      workspaceDockScopeKey,
+    ],
   );
+  const dirtyWorkspaceFileTabs = workspaceOpenFileTabStatus.dirtyFileTabs;
+  const savingWorkspaceFileTabs = workspaceOpenFileTabStatus.savingFileTabs;
   const onCloseWorkspaceFileTab = useCallback(
-    (relativePath: string) => {
+    async (relativePath: string) => {
       if (!workspaceDockScopeKey) {
         return;
+      }
+      const buffer = getWorkspaceEditorBuffer(
+        useWorkspaceEditorStore.getState(),
+        workspaceDockScopeKey,
+        relativePath,
+      );
+      if (buffer?.isDirty) {
+        const action = await ensureLocalApi().contextMenu.show(
+          [
+            { id: "save", label: "Save" },
+            { id: "discard", label: "Discard" },
+            { id: "cancel", label: "Cancel" },
+          ],
+          {
+            x: Math.max(16, Math.round(window.innerWidth / 2 - 120)),
+            y: Math.max(16, Math.round(window.innerHeight / 2 - 56)),
+          },
+        );
+        if (action === "cancel" || action === null) {
+          return;
+        }
+        if (action === "save") {
+          markWorkspaceBufferSaving(workspaceDockScopeKey, relativePath, true);
+          try {
+            const result = await writeWorkspaceFile({
+              relativePath,
+              contents: serializeFileContents(buffer.contents, buffer.lineEnding),
+              ...(buffer.versionToken ? { expectedVersionToken: buffer.versionToken } : {}),
+            });
+            markWorkspaceBufferSaveSucceeded(workspaceDockScopeKey, relativePath, {
+              contents: buffer.contents,
+              versionToken: result.versionToken,
+              lastSavedAt: new Date(result.lastModifiedMs).toISOString(),
+            });
+          } catch (error) {
+            markWorkspaceBufferSaveFailed(
+              workspaceDockScopeKey,
+              relativePath,
+              error instanceof Error ? error.message : "Unable to save file.",
+            );
+            toastManager.add({
+              type: "error",
+              title: "Save failed",
+              description:
+                error instanceof Error ? error.message : "Unable to save file before closing.",
+            });
+            return;
+          }
+        }
+        if (action === "discard") {
+          removeWorkspaceBuffer(workspaceDockScopeKey, relativePath);
+        }
       }
       const remainingTabs = workspaceDockState.openFileTabs.filter((path) => path !== relativePath);
       const nextRestoredFilePath =
@@ -3265,6 +3373,11 @@ export default function ChatView(props: ChatViewProps) {
       workspaceDockScopeKey,
       workspaceDockState.activeTab,
       workspaceDockState.openFileTabs,
+      markWorkspaceBufferSaveFailed,
+      markWorkspaceBufferSaveSucceeded,
+      markWorkspaceBufferSaving,
+      removeWorkspaceBuffer,
+      writeWorkspaceFile,
     ],
   );
   const onRevertUserMessage = useCallback(
@@ -3381,11 +3494,14 @@ export default function ChatView(props: ChatViewProps) {
         <OpenSurfaceTabs
           openFileTabs={workspaceDockState.openFileTabs}
           activeTab={workspaceDockState.activeTab}
+          dirtyFileTabs={dirtyWorkspaceFileTabs}
+          savingFileTabs={savingWorkspaceFileTabs}
           resolvedTheme={resolvedTheme}
           showTerminalTab={workspaceDockState.terminalTabOpen}
           onSelectChat={onSelectChatSurfaceTab}
           onSelectTerminal={onSelectTerminalSurfaceTab}
           onSelectFile={onSelectWorkspaceFileTab}
+          onPrefetchFile={prefetchWorkspaceFilePreview}
           onCloseFile={onCloseWorkspaceFileTab}
         />
       ) : null}

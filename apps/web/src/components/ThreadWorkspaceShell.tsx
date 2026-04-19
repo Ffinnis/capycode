@@ -1,12 +1,15 @@
 import { type EnvironmentId, type ThreadId } from "@capycode/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { retainSearchParams, useNavigate } from "@tanstack/react-router";
 import {
   Suspense,
   lazy,
   startTransition,
   type ReactNode,
+  useEffect,
   useCallback,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -30,6 +33,8 @@ import {
   stripDiffSearchParams,
 } from "~/diffRouteSearch";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
+import { FILE_PREVIEW_MAX_BYTES } from "~/lib/filePreview";
+import { projectReadFileQueryOptions } from "~/lib/projectReactQuery";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRoutes";
@@ -38,10 +43,31 @@ import {
   getWorkspaceDockScopeState,
   useWorkspaceDockStore,
 } from "~/workspaceDockStore";
+import { hasDirtyWorkspaceBuffersForScope, useWorkspaceEditorStore } from "~/workspaceEditorStore";
 import { SidebarInset } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const WORKSPACE_SHEET_MEDIA_QUERY = "(max-width: 1180px)";
+function mapRelativePathPrefix(
+  relativePath: string | null,
+  fromRelativePath: string,
+  toRelativePath: string,
+): string | null {
+  if (!relativePath) {
+    return null;
+  }
+  if (relativePath === fromRelativePath) {
+    return toRelativePath;
+  }
+  if (!relativePath.startsWith(`${fromRelativePath}/`)) {
+    return relativePath;
+  }
+  return `${toRelativePath}${relativePath.slice(fromRelativePath.length)}`;
+}
+
+function isPathWithinPrefix(relativePath: string | null, prefix: string): boolean {
+  return relativePath === prefix || Boolean(relativePath?.startsWith(`${prefix}/`));
+}
 
 const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
   return (
@@ -71,6 +97,7 @@ export function ThreadWorkspaceShell(props: {
   search: DiffRouteSearch;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const shouldUseSheet = useMediaQuery(WORKSPACE_SHEET_MEDIA_QUERY);
   const { resolvedTheme } = useTheme();
   const workspaceDockScopeKey = useMemo(
@@ -96,6 +123,9 @@ export function ThreadWorkspaceShell(props: {
   const filesOpen = props.search.files === "1";
   const terminalOpen = props.search.terminal === "1";
   const activeFilePath = props.search.file ?? null;
+  const hasDirtyWorkspaceBuffersRef = useRef(
+    hasDirtyWorkspaceBuffersForScope(useWorkspaceEditorStore.getState(), workspaceDockScopeKey),
+  );
   const currentThreadKey = `${props.environmentId}:${props.threadId}`;
   const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
     threadKey: currentThreadKey,
@@ -218,11 +248,29 @@ export function ThreadWorkspaceShell(props: {
     });
   }, [navigateWithinThreadRoute]);
 
+  const prefetchWorkspaceFilePreview = useCallback(
+    (relativePath: string) => {
+      if (!props.environmentId || !props.activeWorkspaceRoot) {
+        return;
+      }
+      void queryClient.prefetchQuery(
+        projectReadFileQueryOptions({
+          environmentId: props.environmentId,
+          cwd: props.activeWorkspaceRoot,
+          relativePath,
+          maxBytes: FILE_PREVIEW_MAX_BYTES,
+        }),
+      );
+    },
+    [props.activeWorkspaceRoot, props.environmentId, queryClient],
+  );
+
   const openWorkspaceFile = useCallback(
     (relativePath: string) => {
       if (!workspaceDockScopeKey) {
         return;
       }
+      prefetchWorkspaceFilePreview(relativePath);
       openWorkspaceDockFile(workspaceDockScopeKey, relativePath);
       navigateWithinThreadRoute({
         files: "1",
@@ -230,7 +278,12 @@ export function ThreadWorkspaceShell(props: {
         file: relativePath,
       });
     },
-    [navigateWithinThreadRoute, openWorkspaceDockFile, workspaceDockScopeKey],
+    [
+      navigateWithinThreadRoute,
+      openWorkspaceDockFile,
+      prefetchWorkspaceFilePreview,
+      workspaceDockScopeKey,
+    ],
   );
 
   const closeFilePreview = useCallback(() => {
@@ -240,6 +293,58 @@ export function ThreadWorkspaceShell(props: {
       file: undefined,
     });
   }, [filesOpen, navigateWithinThreadRoute]);
+
+  const handleMovedPath = useCallback(
+    (fromRelativePath: string, toRelativePath: string) => {
+      const nextFilePath = mapRelativePathPrefix(activeFilePath, fromRelativePath, toRelativePath);
+      if (nextFilePath === activeFilePath) {
+        return;
+      }
+      navigateWithinThreadRoute({
+        files: "1",
+        file: nextFilePath ?? undefined,
+      });
+    },
+    [activeFilePath, navigateWithinThreadRoute],
+  );
+
+  const handleDeletedPath = useCallback(
+    (relativePath: string) => {
+      if (!isPathWithinPrefix(activeFilePath, relativePath)) {
+        return;
+      }
+      navigateWithinThreadRoute({
+        file: undefined,
+      });
+    },
+    [activeFilePath, navigateWithinThreadRoute],
+  );
+
+  useEffect(() => {
+    hasDirtyWorkspaceBuffersRef.current = hasDirtyWorkspaceBuffersForScope(
+      useWorkspaceEditorStore.getState(),
+      workspaceDockScopeKey,
+    );
+
+    return useWorkspaceEditorStore.subscribe((state) => {
+      hasDirtyWorkspaceBuffersRef.current = hasDirtyWorkspaceBuffersForScope(
+        state,
+        workspaceDockScopeKey,
+      );
+    });
+  }, [workspaceDockScopeKey]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasDirtyWorkspaceBuffersRef.current) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
   const previewFilePath = activeFilePath;
@@ -256,6 +361,7 @@ export function ThreadWorkspaceShell(props: {
       <FilePreviewPanel
         environmentId={props.environmentId}
         cwd={props.activeWorkspaceRoot}
+        scopeKey={workspaceDockScopeKey}
         relativePath={previewFilePath}
         variant="main"
       />
@@ -293,6 +399,8 @@ export function ThreadWorkspaceShell(props: {
         selectedFilePath={activeFilePath}
         resolvedTheme={resolvedTheme}
         onOpenFile={openWorkspaceFile}
+        onMovedPath={handleMovedPath}
+        onDeletedPath={handleDeletedPath}
       />
     ) : undefined;
 
@@ -307,6 +415,7 @@ export function ThreadWorkspaceShell(props: {
       <FilePreviewPanel
         environmentId={props.environmentId}
         cwd={props.activeWorkspaceRoot}
+        scopeKey={workspaceDockScopeKey}
         relativePath={previewFilePath}
         onBack={closeFilePreview}
         variant="main"
@@ -323,6 +432,8 @@ export function ThreadWorkspaceShell(props: {
         selectedFilePath={activeFilePath}
         resolvedTheme={resolvedTheme}
         onOpenFile={openWorkspaceFile}
+        onMovedPath={handleMovedPath}
+        onDeletedPath={handleDeletedPath}
       />
     ) : null;
   const sheetContent: ReactNode = terminalSurfaceMounted ? (

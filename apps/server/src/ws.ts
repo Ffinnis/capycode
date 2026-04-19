@@ -16,7 +16,11 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
+  ProjectCreateDirectoryError,
+  ProjectDeleteEntryError,
   ProjectListDirectoryError,
+  ProjectMoveEntryError,
+  type ProjectMutationErrorCode,
   ProjectReadFileError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
@@ -111,6 +115,10 @@ type WorkspaceDbRow = {
 type ProjectWorkspaceRootRow = {
   readonly workspaceRoot: string;
 };
+
+function toProjectMutationCode(code: string): ProjectMutationErrorCode {
+  return code as ProjectMutationErrorCode;
+}
 
 type WorktreeDbRow = {
   readonly id: string;
@@ -1894,6 +1902,46 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.usageRefreshDashboard, usageService.refreshDashboard(range), {
             "rpc.aggregate": "usage",
           }),
+        [WS_METHODS.projectsCreateDirectory]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsCreateDirectory,
+            workspaceFileSystem.createDirectory(input).pipe(
+              Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
+                const message = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "Workspace file path must stay within the project root."
+                  : `Failed to create workspace directory: ${cause.detail}`;
+                return new ProjectCreateDirectoryError({
+                  code,
+                  message,
+                  cause,
+                });
+              }),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsDeleteEntry,
+            workspaceFileSystem.deleteEntry(input).pipe(
+              Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
+                const message = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "Workspace file path must stay within the project root."
+                  : `Failed to delete workspace entry: ${cause.detail}`;
+                return new ProjectDeleteEntryError({
+                  code,
+                  message,
+                  cause,
+                });
+              }),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
@@ -1901,6 +1949,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               Effect.mapError(
                 (cause) =>
                   new ProjectSearchEntriesError({
+                    code: "not_found",
                     message: `Failed to search workspace entries: ${cause.detail}`,
                     cause,
                   }),
@@ -1913,10 +1962,34 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             WS_METHODS.projectsListDirectory,
             workspaceFileSystem.listDirectory(input).pipe(
               Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
                 const message = Schema.is(WorkspacePathOutsideRootError)(cause)
                   ? "Workspace file path must stay within the project root."
                   : `Failed to list workspace directory: ${cause.detail}`;
                 return new ProjectListDirectoryError({
+                  code,
+                  message,
+                  cause,
+                });
+              }),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsMoveEntry]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsMoveEntry,
+            workspaceFileSystem.moveEntry(input).pipe(
+              Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
+                const message = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "Workspace file path must stay within the project root."
+                  : `Failed to move workspace entry: ${cause.detail}`;
+                return new ProjectMoveEntryError({
+                  code,
                   message,
                   cause,
                 });
@@ -1929,10 +2002,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             WS_METHODS.projectsReadFile,
             workspaceFileSystem.readFile(input).pipe(
               Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
                 const message = Schema.is(WorkspacePathOutsideRootError)(cause)
                   ? "Workspace file path must stay within the project root."
                   : `Failed to read workspace file: ${cause.detail}`;
                 return new ProjectReadFileError({
+                  code,
                   message,
                   cause,
                 });
@@ -1945,10 +2022,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             WS_METHODS.projectsWriteFile,
             workspaceFileSystem.writeFile(input).pipe(
               Effect.mapError((cause) => {
+                const code = Schema.is(WorkspacePathOutsideRootError)(cause)
+                  ? "outside_root"
+                  : toProjectMutationCode(cause.code);
                 const message = Schema.is(WorkspacePathOutsideRootError)(cause)
                   ? "Workspace file path must stay within the project root."
-                  : "Failed to write workspace file";
+                  : `Failed to write workspace file: ${cause.detail}`;
                 return new ProjectWriteFileError({
+                  code,
                   message,
                   cause,
                 });
