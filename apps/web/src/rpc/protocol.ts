@@ -30,7 +30,16 @@ export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;
 export type WsRpcProtocolSocketUrlProvider = string | (() => Promise<string>);
 
-const LEGACY_PROJECT_SEARCH_ENTRIES_ERROR_CODE = "not_found";
+const LEGACY_PROJECT_ERROR_CODE = "not_found";
+const ALL_LEGACY_PROJECT_ERROR_TAGS = new Set([
+  "ProjectSearchEntriesError",
+  "ProjectListDirectoryError",
+  "ProjectWriteFileError",
+  "ProjectReadFileError",
+  "ProjectCreateDirectoryError",
+  "ProjectDeleteEntryError",
+  "ProjectMoveEntryError",
+]);
 
 export function normalizeLegacyProjectRpcPayload(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -45,11 +54,12 @@ export function normalizeLegacyProjectRpcPayload(value: unknown): unknown {
   const nextRecord: Record<string, unknown> = { ...record };
 
   if (
-    record._tag === "ProjectSearchEntriesError" &&
+    typeof record._tag === "string" &&
+    ALL_LEGACY_PROJECT_ERROR_TAGS.has(record._tag) &&
     typeof record.code !== "string" &&
     !("code" in record)
   ) {
-    nextRecord.code = LEGACY_PROJECT_SEARCH_ENTRIES_ERROR_CODE;
+    nextRecord.code = LEGACY_PROJECT_ERROR_CODE;
     mutated = true;
   }
 

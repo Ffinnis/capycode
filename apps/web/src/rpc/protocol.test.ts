@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeLegacyProjectRpcPayload } from "./protocol";
 
 describe("normalizeLegacyProjectRpcPayload", () => {
-  it("adds a default code for legacy project search error payloads", () => {
+  it("adds a default code for legacy project error payloads", () => {
     const normalized = normalizeLegacyProjectRpcPayload({
       _tag: "Exit",
       requestId: "request-1",
@@ -33,6 +33,19 @@ describe("normalizeLegacyProjectRpcPayload", () => {
           },
         },
       },
+    });
+  });
+
+  it("adds a default code for other legacy project error tags", () => {
+    const normalized = normalizeLegacyProjectRpcPayload({
+      _tag: "ProjectMoveEntryError",
+      message: "Destination already exists",
+    });
+
+    expect(normalized).toEqual({
+      _tag: "ProjectMoveEntryError",
+      code: "not_found",
+      message: "Destination already exists",
     });
   });
 
