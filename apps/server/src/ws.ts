@@ -1,3 +1,4 @@
+import { basename, dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { Cause, Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
 import {
@@ -29,6 +30,7 @@ import {
   WS_METHODS,
   WorkspaceError,
   type Workspace as WorkspaceRecord,
+  type WorkspaceCreateInput,
   type WorkspaceDeleteInput,
   type WorkspaceMoveToSectionInput,
   type WorkspaceOpenExternalWorktreeInput,
@@ -163,6 +165,19 @@ function makeWorkspaceError(message: string, cause?: unknown): WorkspaceError {
   });
 }
 
+function slugifyWorkspaceName(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : "workspace";
+}
+
+function deriveWorktreePath(projectRoot: string, branch: string): string {
+  return join(dirname(projectRoot), `${basename(projectRoot)}-${slugifyWorkspaceName(branch)}`);
+}
+
 function mapWorkspaceRow(row: WorkspaceDbRow): WorkspaceRecord {
   return {
     id: row.id as never,
@@ -290,6 +305,15 @@ const loadWorkspaceSectionRecord = (
 
     return mapWorkspaceSectionRow(section);
   });
+
+const resolveCurrentProjectBranch = (
+  git: GitCoreShape,
+  projectRoot: string,
+): Effect.Effect<string, WorkspaceError> =>
+  git.listBranches({ cwd: projectRoot }).pipe(
+    Effect.map((result) => result.branches.find((branch) => branch.current)?.name ?? "main"),
+    Effect.orElseSucceed(() => "main"),
+  );
 
 const resolveCurrentBranchAtPath = (
   git: GitCoreShape,
@@ -953,6 +977,168 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             Effect.mapError((cause) => makeWorkspaceError("Failed to update workspace", cause)),
           );
           return yield* loadWorkspaceRecord(sql, workspace.id);
+        });
+
+      const createWorkspace = (input: {
+        projectId: string;
+        name: string;
+        baseBranch?: string | null;
+        branch?: string | null;
+        sectionId?: string | null;
+      }) =>
+        Effect.gen(function* () {
+          const projectRoot = yield* loadProjectWorkspaceRoot(sql, input.projectId);
+          const now = new Date().toISOString();
+          const resolvedBaseBranch = yield* resolveCurrentProjectBranch(git, projectRoot).pipe(
+            Effect.mapError((cause) => makeWorkspaceError("Failed to resolve base branch", cause)),
+          );
+          const baseBranch = input.baseBranch ?? resolvedBaseBranch;
+          const targetBranch = input.branch ?? slugifyWorkspaceName(input.name);
+          const targetWorktreePath = deriveWorktreePath(projectRoot, targetBranch);
+
+          const existingWorkspaceRows = yield* sql<{ readonly id: string }>`
+            SELECT workspaces.id AS "id"
+            FROM workspaces
+            LEFT JOIN worktrees
+              ON worktrees.id = workspaces.worktree_id
+            WHERE workspaces.project_id = ${input.projectId}
+              AND worktrees.path = ${targetWorktreePath}
+              AND workspaces.deleting_at IS NULL
+            LIMIT 1
+          `.pipe(
+            Effect.mapError((cause) =>
+              makeWorkspaceError("Failed to check existing worktree workspace", cause),
+            ),
+          );
+          if (existingWorkspaceRows[0]?.id) {
+            return yield* setActiveWorkspace(existingWorkspaceRows[0].id);
+          }
+
+          const pathAlreadyExists = existsSync(targetWorktreePath);
+          let resolvedBranch = targetBranch;
+          let worktreeId: string;
+
+          if (pathAlreadyExists) {
+            const listedGitWorktrees = yield* loadGitListedWorktrees(projectRoot);
+            const listedGitWorktree = listedGitWorktrees.find(
+              (worktree) => worktree.path === targetWorktreePath,
+            );
+            if (!listedGitWorktree || listedGitWorktree.isBare || listedGitWorktree.isDetached) {
+              return yield* makeWorkspaceError(
+                "Existing path is not a registered git worktree for this project",
+              );
+            }
+
+            const existingWorktreeRows = yield* sql<WorktreeDbRow>`
+              SELECT
+                id,
+                path,
+                branch,
+                base_branch AS "baseBranch",
+                created_by_capycode AS "createdByCapycode",
+                owns_branch AS "ownsBranch"
+              FROM worktrees
+              WHERE project_id = ${input.projectId}
+                AND path = ${targetWorktreePath}
+              LIMIT 1
+            `.pipe(
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to load existing worktree metadata", cause),
+              ),
+            );
+            worktreeId = existingWorktreeRows[0]?.id ?? crypto.randomUUID();
+            const branchRows = yield* git
+              .listBranches({ cwd: targetWorktreePath })
+              .pipe(
+                Effect.mapError((cause) =>
+                  makeWorkspaceError("Failed to inspect imported worktree branch", cause),
+                ),
+              );
+            resolvedBranch =
+              branchRows.branches.find((branch) => branch.current)?.name ?? targetBranch;
+            yield* sql`
+              INSERT INTO worktrees (
+                id,
+                project_id,
+                path,
+                branch,
+                base_branch,
+                created_at,
+                created_by_capycode,
+                owns_branch
+              )
+              VALUES (
+                ${worktreeId},
+                ${input.projectId},
+                ${targetWorktreePath},
+                ${resolvedBranch},
+                ${baseBranch},
+                ${now},
+                0,
+                0
+              )
+              ON CONFLICT (id)
+              DO UPDATE SET
+                branch = excluded.branch,
+                base_branch = excluded.base_branch,
+                owns_branch = excluded.owns_branch
+            `.pipe(
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to import existing worktree", cause),
+              ),
+            );
+          } else {
+            const ownsBranch = targetBranch !== baseBranch;
+            const createdWorktree = yield* git
+              .createWorktree({
+                cwd: projectRoot,
+                branch: baseBranch,
+                newBranch: targetBranch === baseBranch ? undefined : targetBranch,
+                path: targetWorktreePath,
+              })
+              .pipe(
+                Effect.mapError((cause) =>
+                  makeWorkspaceError("Failed to create workspace worktree", cause),
+                ),
+              );
+            worktreeId = crypto.randomUUID();
+            resolvedBranch = createdWorktree.worktree.branch;
+            yield* sql`
+              INSERT INTO worktrees (
+                id,
+                project_id,
+                path,
+                branch,
+                base_branch,
+                created_at,
+                created_by_capycode,
+                owns_branch
+              )
+              VALUES (
+                ${worktreeId},
+                ${input.projectId},
+                ${createdWorktree.worktree.path},
+                ${createdWorktree.worktree.branch},
+                ${baseBranch},
+                ${now},
+                1,
+                ${ownsBranch ? 1 : 0}
+              )
+            `.pipe(
+              Effect.mapError((cause) =>
+                makeWorkspaceError("Failed to persist created worktree", cause),
+              ),
+            );
+          }
+
+          return yield* insertWorkspaceRecord({
+            projectId: input.projectId,
+            worktreeId,
+            type: "worktree",
+            branch: resolvedBranch,
+            name: input.name,
+            sectionId: input.sectionId ?? null,
+          });
         });
 
       const getWorkspaceDeletePreview = (workspaceId: string) =>
@@ -1850,6 +2036,20 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               }),
             ),
             { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.workspacesCreate]: (input: WorkspaceCreateInput) =>
+          observeRpcEffect(
+            WS_METHODS.workspacesCreate,
+            createWorkspace({
+              projectId: input.projectId,
+              name: input.name,
+              ...(input.baseBranch !== undefined ? { baseBranch: input.baseBranch } : {}),
+              ...(input.branch !== undefined ? { branch: input.branch } : {}),
+              ...(input.sectionId !== undefined ? { sectionId: input.sectionId } : {}),
+            }),
+            {
+              "rpc.aggregate": "workspace",
+            },
           ),
         [WS_METHODS.workspacesUpdate]: (input: WorkspaceUpdateInput) =>
           observeRpcEffect(WS_METHODS.workspacesUpdate, updateWorkspace(input), {

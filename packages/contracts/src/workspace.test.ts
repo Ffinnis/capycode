@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 
-import { Workspace, WorkspaceDeletePreview, WorkspaceOpenCandidates } from "./workspace";
+import {
+  Workspace,
+  WorkspaceCreateInput,
+  WorkspaceDeletePreview,
+  WorkspaceOpenCandidates,
+} from "./workspace";
 
 const decodeWorkspaceDeletePreview = Schema.decodeUnknownSync(WorkspaceDeletePreview);
 const decodeWorkspace = Schema.decodeUnknownSync(Workspace);
+const decodeWorkspaceCreateInput = Schema.decodeUnknownSync(WorkspaceCreateInput);
 const decodeWorkspaceOpenCandidates = Schema.decodeUnknownSync(WorkspaceOpenCandidates);
 
 describe("WorkspaceDeletePreview", () => {
@@ -47,6 +53,31 @@ describe("Workspace", () => {
 
     expect(parsed.type).toBe("root");
     expect(parsed.name).toBe("Workspace");
+  });
+});
+
+describe("WorkspaceCreateInput", () => {
+  it("accepts worktree creation without an explicit type", () => {
+    const parsed = decodeWorkspaceCreateInput({
+      projectId: "project-1",
+      name: "Feature A",
+      branch: "feature/a",
+      baseBranch: "main",
+    });
+
+    expect(parsed.branch).toBe("feature/a");
+    expect(parsed.baseBranch).toBe("main");
+  });
+
+  it("rejects legacy branch-workspace creation payloads", () => {
+    expect(() =>
+      decodeWorkspaceCreateInput({
+        projectId: "project-1",
+        name: "Release 2026",
+        type: "branch",
+        branch: "release/2026",
+      }),
+    ).toThrowError(/Unexpected key with value "branch"\s+at \["type"\]/);
   });
 });
 
