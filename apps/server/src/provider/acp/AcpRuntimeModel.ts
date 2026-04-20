@@ -69,6 +69,12 @@ export type AcpParsedSessionEvent =
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "SessionUpdateMalformed";
+      readonly sessionId: string;
+      readonly error: string;
+      readonly rawPayload: unknown;
     };
 
 type AcpSessionSetupResponse =

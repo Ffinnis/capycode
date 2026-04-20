@@ -153,7 +153,7 @@ function inferDefaultVariant(
 }
 
 function inferDefaultAgent(agents: ReadonlyArray<Agent>): string | undefined {
-  return agents.find((agent) => agent.name === "build")?.name ?? agents[0]?.name ?? undefined;
+  return agents.find((agent) => agent.name === "build")?.name ?? agents[0]?.name;
 }
 
 const DEFAULT_OPENCODE_MODEL_CAPABILITIES: ModelCapabilities = {
@@ -172,20 +172,32 @@ function openCodeCapabilitiesForModel(input: {
   const variantValues = Object.keys(input.model.variants ?? {});
   const defaultVariant = inferDefaultVariant(input.providerID, variantValues);
   const variantOptions: ModelCapabilities["variantOptions"] = variantValues.map((value) =>
-    Object.assign(
-      { value, label: titleCaseSlug(value) },
-      defaultVariant === value ? { isDefault: true } : {},
-    ),
+    defaultVariant === value
+      ? {
+          value,
+          label: titleCaseSlug(value),
+          isDefault: true,
+        }
+      : {
+          value,
+          label: titleCaseSlug(value),
+        },
   );
   const primaryAgents = input.agents.filter(
     (agent) => !agent.hidden && (agent.mode === "primary" || agent.mode === "all"),
   );
   const defaultAgent = inferDefaultAgent(primaryAgents);
   const agentOptions: ModelCapabilities["agentOptions"] = primaryAgents.map((agent) =>
-    Object.assign(
-      { value: agent.name, label: titleCaseSlug(agent.name) },
-      defaultAgent === agent.name ? { isDefault: true } : {},
-    ),
+    defaultAgent === agent.name
+      ? {
+          value: agent.name,
+          label: titleCaseSlug(agent.name),
+          isDefault: true,
+        }
+      : {
+          value: agent.name,
+          label: titleCaseSlug(agent.name),
+        },
   );
   return {
     ...DEFAULT_OPENCODE_MODEL_CAPABILITIES,

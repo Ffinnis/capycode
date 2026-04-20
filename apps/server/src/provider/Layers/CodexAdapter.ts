@@ -83,6 +83,11 @@ interface CodexAdapterSessionContext {
   stopped: boolean;
 }
 
+interface ThreadLockEntry {
+  readonly semaphore: Semaphore.Semaphore;
+  readonly count: number;
+}
+
 function mapCodexRuntimeError(
   threadId: ThreadId,
   method: string,
@@ -1344,28 +1349,71 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const serverSettingsService = yield* ServerSettingsService;
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
-  const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+  const threadLocksRef = yield* SynchronizedRef.make(new Map<string, ThreadLockEntry>());
+
+  const releaseThreadSemaphore = (threadId: string) =>
+    SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
+      const existing = current.get(threadId);
+      if (!existing) {
+        return Effect.succeed([undefined, current] as const);
+      }
+
+      const next = new Map(current);
+      if (existing.count <= 1) {
+        next.delete(threadId);
+      } else {
+        next.set(threadId, {
+          semaphore: existing.semaphore,
+          count: existing.count - 1,
+        });
+      }
+      return Effect.succeed([undefined, next] as const);
+    });
 
   const getThreadSemaphore = (threadId: string) =>
     SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-      const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-        current.get(threadId),
-      );
+      const existing: Option.Option<ThreadLockEntry> = Option.fromNullishOr(current.get(threadId));
       return Option.match(existing, {
         onNone: () =>
           Semaphore.make(1).pipe(
             Effect.map((semaphore) => {
               const next = new Map(current);
-              next.set(threadId, semaphore);
-              return [semaphore, next] as const;
+              next.set(threadId, {
+                semaphore,
+                count: 1,
+              });
+              return [
+                {
+                  semaphore,
+                  release: releaseThreadSemaphore(threadId),
+                },
+                next,
+              ] as const;
             }),
           ),
-        onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
+        onSome: (entry) => {
+          const next = new Map(current);
+          next.set(threadId, {
+            semaphore: entry.semaphore,
+            count: entry.count + 1,
+          });
+          return Effect.succeed([
+            {
+              semaphore: entry.semaphore,
+              release: releaseThreadSemaphore(threadId),
+            },
+            next,
+          ] as const);
+        },
       });
     });
 
   const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-    Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+    Effect.acquireUseRelease(
+      getThreadSemaphore(threadId),
+      ({ semaphore }) => semaphore.withPermit(effect),
+      ({ release }) => release,
+    );
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     withThreadLock(
@@ -1647,13 +1695,16 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   });
 
   const stopSession: CodexAdapterShape["stopSession"] = (threadId) =>
-    Effect.gen(function* () {
-      const session = sessions.get(threadId);
-      if (!session) {
-        return;
-      }
-      yield* stopSessionInternal(session);
-    });
+    withThreadLock(
+      threadId,
+      Effect.gen(function* () {
+        const session = sessions.get(threadId);
+        if (!session) {
+          return;
+        }
+        yield* stopSessionInternal(session);
+      }),
+    );
 
   const listSessions: CodexAdapterShape["listSessions"] = () =>
     Effect.forEach(
@@ -1666,10 +1717,24 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     Effect.succeed(Boolean(sessions.get(threadId) && !sessions.get(threadId)?.stopped));
 
   const stopAll: CodexAdapterShape["stopAll"] = () =>
-    Effect.forEach(Array.from(sessions.values()), stopSessionInternal, {
-      concurrency: 1,
-      discard: true,
-    }).pipe(Effect.asVoid);
+    Effect.forEach(
+      Array.from(sessions.values()),
+      (session) =>
+        withThreadLock(
+          session.threadId,
+          Effect.gen(function* () {
+            const current = sessions.get(session.threadId);
+            if (!current) {
+              return;
+            }
+            yield* stopSessionInternal(current);
+          }),
+        ),
+      {
+        concurrency: 1,
+        discard: true,
+      },
+    ).pipe(Effect.asVoid);
 
   yield* Effect.acquireRelease(Effect.void, () =>
     stopAll().pipe(

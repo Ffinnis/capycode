@@ -577,7 +577,33 @@ const handleSessionUpdate = ({
   readonly params: EffectAcpSchema.SessionNotification;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const parsed = parseSessionUpdateEvent(params);
+    let parsedResult: ReturnType<typeof parseSessionUpdateEvent> | undefined;
+    let parseError: string | undefined;
+    // @effect-diagnostics-next-line tryCatchInEffectGen:off
+    try {
+      const candidate = parseSessionUpdateEvent(params);
+      parsedResult =
+        candidate &&
+        typeof candidate === "object" &&
+        Array.isArray((candidate as { events?: unknown }).events) &&
+        (typeof (candidate as { modeId?: unknown }).modeId === "string" ||
+          (candidate as { modeId?: unknown }).modeId === undefined)
+          ? candidate
+          : undefined;
+      parseError = parsedResult ? undefined : "Malformed ACP session update";
+    } catch (error) {
+      parseError = error instanceof Error ? error.message : "Malformed ACP session update";
+    }
+    if (!parsedResult) {
+      yield* Queue.offer(queue, {
+        _tag: "SessionUpdateMalformed",
+        sessionId: params.sessionId,
+        error: parseError ?? "Malformed ACP session update",
+        rawPayload: params.update,
+      });
+      return;
+    }
+    const parsed = parsedResult;
     const modeId = parsed.modeId;
     if (modeId) {
       yield* Ref.update(modeStateRef, (current) =>

@@ -375,6 +375,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ? persistedBinding.resumeCursor
             : undefined);
         const adapter = yield* registry.getByProvider(input.provider);
+        yield* stopStaleSessionsForThread({
+          threadId,
+          currentProvider: adapter.provider,
+        });
         const session = yield* adapter.startSession({
           ...input,
           ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
@@ -387,10 +391,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           );
         }
 
-        yield* stopStaleSessionsForThread({
-          threadId,
-          currentProvider: adapter.provider,
-        });
         yield* upsertSessionBinding(session, threadId, {
           modelSelection: input.modelSelection,
         });

@@ -357,7 +357,9 @@ describe("AcpSessionRuntime", () => {
         expect(error.message).toContain(
           'Invalid value "composer-2[fast=false]" for session config option "model"',
         );
-        expect(error.message).toContain("composer-2[fast=true]");
+        expect(error.message).toContain(
+          "expected one of default, composer-2, gpt-5.4, claude-opus-4-6",
+        );
       }
 
       const recordedRequests = readFileSync(requestLogPath, "utf8")

@@ -33,6 +33,7 @@ import packageJson from "../../../package.json" with { type: "json" };
 
 const PROVIDER = "codex" as const;
 const PROVIDER_PROBE_TIMEOUT_MS = 8_000;
+const MAX_MODEL_LIST_PAGES = 100;
 
 export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
@@ -183,8 +184,16 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
 ) {
   const models: ServerProviderModel[] = [];
   let cursor: string | null | undefined = undefined;
+  let pageCount = 0;
 
   do {
+    pageCount += 1;
+    if (pageCount > MAX_MODEL_LIST_PAGES) {
+      yield* Effect.logWarning("codex.provider.models.pagination-truncated", {
+        maxPages: MAX_MODEL_LIST_PAGES,
+      });
+      break;
+    }
     const response: CodexSchema.V2ModelListResponse = yield* client.request(
       "model/list",
       cursor ? { cursor } : {},

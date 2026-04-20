@@ -1019,13 +1019,28 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
       });
 
     const stopSession: CursorAdapterShape["stopSession"] = (threadId) =>
-      withThreadLock(
-        threadId,
-        Effect.gen(function* () {
-          const ctx = yield* requireSession(threadId);
-          yield* stopSessionInternal(ctx);
-        }),
-      );
+      Effect.gen(function* () {
+        const ctx = yield* requireSession(threadId);
+        yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+        yield* Effect.ignore(
+          ctx.acp.cancel.pipe(
+            Effect.mapError((error) =>
+              mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", error),
+            ),
+          ),
+        );
+        yield* withThreadLock(
+          threadId,
+          Effect.gen(function* () {
+            const latest = sessions.get(threadId);
+            if (!latest || latest.stopped) {
+              return;
+            }
+            yield* stopSessionInternal(latest);
+          }),
+        );
+      });
 
     const listSessions: CursorAdapterShape["listSessions"] = () =>
       Effect.sync(() => Array.from(sessions.values(), (c) => ({ ...c.session })));
