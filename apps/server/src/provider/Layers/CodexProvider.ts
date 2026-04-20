@@ -125,7 +125,6 @@ function appendCustomCodexModels(
   }
 
   const seen = new Set(models.map((model) => model.slug));
-  const fallbackCapabilities = models.find((model) => model.capabilities)?.capabilities ?? null;
   const customEntries: ServerProviderModel[] = [];
   for (const rawModel of customModels) {
     const slug = rawModel.trim();
@@ -137,7 +136,7 @@ function appendCustomCodexModels(
       slug,
       name: slug,
       isCustom: true,
-      capabilities: fallbackCapabilities,
+      capabilities: null,
     });
   }
   return customEntries.length === 0 ? models : [...models, ...customEntries];

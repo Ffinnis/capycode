@@ -1027,7 +1027,7 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
                 });
                 const client = openCodeRuntime.createOpenCodeSdkClient({
                   baseUrl: server.url,
-                  directory,
+                  directory: server.external ? "" : directory,
                   ...(server.external && serverPassword ? { serverPassword } : {}),
                 });
                 const openCodeSession = yield* runOpenCodeSdk("session.create", () =>

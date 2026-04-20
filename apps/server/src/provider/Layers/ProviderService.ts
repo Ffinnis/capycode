@@ -308,27 +308,26 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       (adapter) =>
         adapter.provider === input.currentProvider
           ? Effect.void
-          : Effect.gen(function* () {
-              const hasSession = yield* adapter.hasSession(input.threadId);
-              if (!hasSession) {
-                return;
-              }
-
-              yield* adapter.stopSession(input.threadId).pipe(
-                Effect.tap(() =>
-                  analytics.record("provider.session.stopped", {
-                    provider: adapter.provider,
-                  }),
-                ),
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("provider.session.stop-stale-failed", {
-                    threadId: input.threadId,
-                    provider: adapter.provider,
-                    cause,
-                  }).pipe(Effect.andThen(Effect.failCause(cause))),
-                ),
-              );
-            }),
+          : adapter.stopSession(input.threadId).pipe(
+              Effect.tap(() =>
+                analytics.record("provider.session.stopped", {
+                  provider: adapter.provider,
+                }),
+              ),
+              Effect.catchTag("ProviderAdapterSessionNotFoundError", () =>
+                Effect.logInfo("provider.session.stop-stale-missing", {
+                  threadId: input.threadId,
+                  provider: adapter.provider,
+                }),
+              ),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("provider.session.stop-stale-failed", {
+                  threadId: input.threadId,
+                  provider: adapter.provider,
+                  cause,
+                }).pipe(Effect.andThen(Effect.failCause(cause))),
+              ),
+            ),
       { discard: true },
     );
   });

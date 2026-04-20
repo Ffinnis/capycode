@@ -78,6 +78,11 @@ import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const PROVIDER = "cursor" as const;
+interface ThreadLockEntry {
+  readonly semaphore: Semaphore.Semaphore;
+  readonly count: number;
+}
+
 const CURSOR_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
@@ -298,7 +303,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
       options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
 
     const sessions = new Map<ThreadId, CursorSessionContext>();
-    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, ThreadLockEntry>());
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -310,7 +315,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
 
     const getThreadSemaphore = (threadId: string) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-        const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
+        const existing: Option.Option<ThreadLockEntry> = Option.fromNullishOr(
           current.get(threadId),
         );
         return Option.match(existing, {
@@ -318,16 +323,46 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             Semaphore.make(1).pipe(
               Effect.map((semaphore) => {
                 const next = new Map(current);
-                next.set(threadId, semaphore);
+                next.set(threadId, { semaphore, count: 1 });
                 return [semaphore, next] as const;
               }),
             ),
-          onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
+          onSome: (entry) =>
+            Effect.sync(() => {
+              const next = new Map(current);
+              next.set(threadId, {
+                semaphore: entry.semaphore,
+                count: entry.count + 1,
+              });
+              return [entry.semaphore, next] as const;
+            }),
         });
       });
 
+    const releaseThreadSemaphore = (threadId: string) =>
+      SynchronizedRef.modifyEffect(threadLocksRef, (current) =>
+        Effect.sync(() => {
+          const existing = current.get(threadId);
+          if (!existing) {
+            return [undefined, current] as const;
+          }
+          const next = new Map(current);
+          if (existing.count <= 1) {
+            next.delete(threadId);
+          } else {
+            next.set(threadId, {
+              semaphore: existing.semaphore,
+              count: existing.count - 1,
+            });
+          }
+          return [undefined, next] as const;
+        }),
+      ).pipe(Effect.asVoid);
+
     const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+      Effect.flatMap(getThreadSemaphore(threadId), (semaphore) =>
+        semaphore.withPermit(effect).pipe(Effect.ensuring(releaseThreadSemaphore(threadId))),
+      );
 
     const logNative = (
       threadId: ThreadId,
@@ -821,21 +856,6 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             input.modelSelection?.provider === "cursor" ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
           const resolvedModel = resolveCursorAcpBaseModelId(model);
-          yield* applyRequestedSessionConfiguration({
-            runtime: ctx.acp,
-            runtimeMode: ctx.session.runtimeMode,
-            interactionMode: input.interactionMode,
-            modelSelection:
-              model === undefined
-                ? undefined
-                : {
-                    model,
-                    options: turnModelSelection?.options,
-                  },
-            mapError: ({ cause, method }) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
-          });
-          ctx.lastPlanFingerprint = undefined;
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
           if (input.input?.trim()) {
@@ -881,6 +901,22 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             });
           }
 
+          yield* applyRequestedSessionConfiguration({
+            runtime: ctx.acp,
+            runtimeMode: ctx.session.runtimeMode,
+            interactionMode: input.interactionMode,
+            modelSelection:
+              model === undefined
+                ? undefined
+                : {
+                    model,
+                    options: turnModelSelection?.options,
+                  },
+            mapError: ({ cause, method }) =>
+              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
+          });
+          ctx.lastPlanFingerprint = undefined;
+
           ctx.activeTurnId = turnId;
           ctx.session = {
             ...ctx.session,
@@ -906,14 +942,14 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
               Effect.catch((error: ProviderAdapterError) =>
-                Effect.sync(() => {
+                Effect.gen(function* () {
                   ctx.activeTurnId = undefined;
                   ctx.session = {
                     ...ctx.session,
                     activeTurnId: undefined,
-                    updatedAt: new Date().toISOString(),
+                    updatedAt: yield* nowIso,
                   };
-                  throw error;
+                  return yield* error;
                 }),
               ),
             );

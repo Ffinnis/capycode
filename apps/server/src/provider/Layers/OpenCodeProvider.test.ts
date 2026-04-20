@@ -194,7 +194,7 @@ it.layer(
       assert.equal(snapshot.installed, true);
       assert.equal(
         snapshot.message,
-        "Couldn't reach the configured OpenCode server at http://127.0.0.1:9999. Check that the server is running and the URL is correct.",
+        "Couldn't reach the configured OpenCode server (http://127.0.0.1:9999). Check that the server is running and the URL is correct.",
       );
     }),
   );

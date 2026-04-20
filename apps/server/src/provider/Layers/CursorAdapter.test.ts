@@ -182,7 +182,6 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       }
 
       yield* adapter.stopSession(threadId);
-      console.log("debug:first:stopSession");
     }),
   );
 

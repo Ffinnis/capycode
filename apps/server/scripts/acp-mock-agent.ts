@@ -136,7 +136,7 @@ function buildConfigOptions(): ReadonlyArray<SessionConfigOption> {
     base.push(
       {
         type: "select",
-        currentValue: "high",
+        currentValue: state.reasoning,
         options: [
           { name: "Low", value: "low" },
           { name: "Medium", value: "medium" },

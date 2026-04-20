@@ -55,6 +55,20 @@ function normalizedErrorMessage(cause: unknown): string | undefined {
   return normalizeProbeMessage(cause.message);
 }
 
+function formatOpenCodeServerLabel(serverUrl: string): string {
+  const trimmed = serverUrl.trim();
+  if (!trimmed) {
+    return "configured OpenCode server";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    return `configured OpenCode server (${parsed.origin})`;
+  } catch {
+    return "configured OpenCode server";
+  }
+}
+
 function formatOpenCodeProbeError(input: {
   readonly cause: unknown;
   readonly isExternalServer: boolean;
@@ -87,7 +101,7 @@ function formatOpenCodeProbeError(input: {
     ) {
       return {
         installed: true,
-        message: `Couldn't reach the configured OpenCode server at ${input.serverUrl}. Check that the server is running and the URL is correct.`,
+        message: `Couldn't reach the ${formatOpenCodeServerLabel(input.serverUrl)}. Check that the server is running and the URL is correct.`,
       };
     }
 
@@ -380,7 +394,7 @@ export const OpenCodeProviderLive = Layer.effect(
               .loadOpenCodeInventory(
                 openCodeRuntime.createOpenCodeSdkClient({
                   baseUrl: server.url,
-                  directory: input.cwd,
+                  directory: isExternalServer ? "" : input.cwd,
                   ...(isExternalServer && input.settings.serverPassword
                     ? { serverPassword: input.settings.serverPassword }
                     : {}),
