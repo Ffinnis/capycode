@@ -628,6 +628,25 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
+  it("preserves promoted drafts when remapping a project to a new draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    const promotedTarget = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "keep promoting");
+    store.markDraftThreadPromoting(draftId, promotedTarget);
+
+    store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
+      otherThreadId,
+    );
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.promotedTo).toEqual(
+      promotedTarget,
+    );
+    expect(draftByKey(draftId)?.prompt).toBe("keep promoting");
+  });
+
   it("keeps composer drafts when the thread is still mapped by another project", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

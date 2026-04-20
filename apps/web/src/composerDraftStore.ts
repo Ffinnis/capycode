@@ -1155,7 +1155,12 @@ function upsertLogicalProjectDraftThreadState(
     [input.draftId]: nextDraftThread,
   };
   let nextDraftsByThreadKey = state.draftsByThreadKey;
+  const previousDraftThread = previousThreadKeyForLogicalProject
+    ? state.draftThreadsByThreadKey[previousThreadKeyForLogicalProject]
+    : undefined;
+  const canEvictPreviousThread = !previousDraftThread?.promotedTo;
   if (
+    canEvictPreviousThread &&
     previousThreadKeyForLogicalProject &&
     previousThreadKeyForLogicalProject !== input.draftId &&
     !isComposerThreadKeyInUse(

@@ -27,6 +27,7 @@ const IS_DEV = import.meta.env.DEV;
 
 const listeners = new Set<() => void>();
 let samplesWithId: Array<{ id: number; sample: NewThreadLatencySample }> = [];
+let cachedNewThreadLatencySamples: ReadonlyArray<NewThreadLatencySample> = [];
 let nextSampleId = 1;
 
 let nowProvider = (): number => {
@@ -42,10 +43,15 @@ function emitChange(): void {
   }
 }
 
+function refreshCachedNewThreadLatencySamples(): void {
+  cachedNewThreadLatencySamples = samplesWithId.map((entry) => entry.sample);
+}
+
 function appendSample(sample: NewThreadLatencySample): number {
   const sampleId = nextSampleId;
   nextSampleId += 1;
   samplesWithId = [...samplesWithId, { id: sampleId, sample }].slice(-MAX_SAMPLES);
+  refreshCachedNewThreadLatencySamples();
   emitChange();
   return sampleId;
 }
@@ -71,6 +77,7 @@ function updateSampleById(
     { id: previous.id, sample: next },
     ...samplesWithId.slice(index + 1),
   ];
+  refreshCachedNewThreadLatencySamples();
   emitChange();
 }
 
@@ -156,7 +163,7 @@ export function startNewThreadLatency(flow: NewThreadLatencyFlow): NewThreadLate
 }
 
 export function getNewThreadLatencySamples(): ReadonlyArray<NewThreadLatencySample> {
-  return samplesWithId.map((entry) => entry.sample);
+  return cachedNewThreadLatencySamples;
 }
 
 export function useNewThreadLatencySamples(): ReadonlyArray<NewThreadLatencySample> {
@@ -174,6 +181,7 @@ export function useNewThreadLatencySamples(): ReadonlyArray<NewThreadLatencySamp
 
 export function __resetNewThreadLatencyForTests(): void {
   samplesWithId = [];
+  refreshCachedNewThreadLatencySamples();
   nextSampleId = 1;
   emitChange();
 }

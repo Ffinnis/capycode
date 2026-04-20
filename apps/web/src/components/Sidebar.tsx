@@ -2488,6 +2488,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           useStore.getState(),
           scopeProjectRef(workspace.environmentId, workspace.projectId),
         )?.id ?? null;
+      const previousActiveWorkspaceInput = previousActiveWorkspaceId
+        ? {
+            environmentId: workspace.environmentId,
+            projectId: workspace.projectId,
+            workspaceId: previousActiveWorkspaceId,
+          }
+        : null;
       const workspaceToken = latestWorkspaceNewThreadTokenRef.current + 1;
       latestWorkspaceNewThreadTokenRef.current = workspaceToken;
       const latencyTracker = startNewThreadLatency("workspace-button");
@@ -2496,12 +2503,22 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         projectId: workspace.projectId,
         workspaceId: workspace.id,
       });
-      await handleNewThread(scopeProjectRef(workspace.environmentId, workspace.projectId), {
-        branch: threadLaunchInput.branch,
-        worktreePath: threadLaunchInput.worktreePath,
-        envMode: threadLaunchInput.envMode,
-        latencyTracker,
-      });
+      try {
+        await handleNewThread(scopeProjectRef(workspace.environmentId, workspace.projectId), {
+          branch: threadLaunchInput.branch,
+          worktreePath: threadLaunchInput.worktreePath,
+          envMode: threadLaunchInput.envMode,
+          latencyTracker,
+        });
+      } catch (error) {
+        if (
+          latestWorkspaceNewThreadTokenRef.current === workspaceToken &&
+          previousActiveWorkspaceInput
+        ) {
+          setActiveWorkspaceForProject(previousActiveWorkspaceInput);
+        }
+        throw error;
+      }
       void api.workspaces
         .setActive({ workspaceId: workspace.id })
         .then(() => {
@@ -2512,12 +2529,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           if (latestWorkspaceNewThreadTokenRef.current !== workspaceToken) {
             return;
           }
-          if (previousActiveWorkspaceId) {
-            setActiveWorkspaceForProject({
-              environmentId: workspace.environmentId,
-              projectId: workspace.projectId,
-              workspaceId: previousActiveWorkspaceId,
-            });
+          if (previousActiveWorkspaceInput) {
+            setActiveWorkspaceForProject(previousActiveWorkspaceInput);
           }
           toastManager.add({
             type: "error",

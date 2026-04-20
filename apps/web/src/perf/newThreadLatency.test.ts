@@ -76,4 +76,27 @@ describe("newThreadLatency", () => {
     expect(samples[0]?.durationMs).toBe(1);
     expect(samples[49]?.durationMs).toBe(1);
   });
+
+  it("returns stable snapshot references between writes", () => {
+    const initialSnapshot = getNewThreadLatencySamples();
+    expect(getNewThreadLatencySamples()).toBe(initialSnapshot);
+
+    let nowMs = 0;
+    __setNewThreadLatencyNowProviderForTests(() => nowMs);
+
+    const tracker = startNewThreadLatency("workspace-button");
+    nowMs = 10;
+    tracker.markRouteReady();
+
+    const routeReadySnapshot = getNewThreadLatencySamples();
+    expect(routeReadySnapshot).not.toBe(initialSnapshot);
+    expect(getNewThreadLatencySamples()).toBe(routeReadySnapshot);
+
+    nowMs = 20;
+    tracker.markWorkspaceAck("success");
+
+    const ackSnapshot = getNewThreadLatencySamples();
+    expect(ackSnapshot).not.toBe(routeReadySnapshot);
+    expect(getNewThreadLatencySamples()).toBe(ackSnapshot);
+  });
 });
