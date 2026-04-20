@@ -22,8 +22,21 @@ import {
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
 import { ProviderRegistry } from "../Services/ProviderRegistry.ts";
+import { afterEach, beforeEach } from "vitest";
 
-process.env.T3CODE_CURSOR_ENABLED = "1";
+const originalCursorEnabled = process.env.T3CODE_CURSOR_ENABLED;
+
+beforeEach(() => {
+  process.env.T3CODE_CURSOR_ENABLED = "1";
+});
+
+afterEach(() => {
+  if (originalCursorEnabled === undefined) {
+    delete process.env.T3CODE_CURSOR_ENABLED;
+  } else {
+    process.env.T3CODE_CURSOR_ENABLED = originalCursorEnabled;
+  }
+});
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -348,9 +361,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           models: [],
         } satisfies ServerProvider;
 
-        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, refreshedProvider).models, [
-          ...previousProvider.models,
-        ]);
+        assert.deepStrictEqual(
+          mergeProviderSnapshot(previousProvider, refreshedProvider).models,
+          [],
+        );
       });
 
       it("fills missing capabilities from the previous provider snapshot", () => {
@@ -445,7 +459,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
 
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry;
-            assert.strictEqual(spawnCount > 0, true);
             const refreshed = yield* Effect.gen(function* () {
               for (let remainingAttempts = 50; remainingAttempts > 0; remainingAttempts -= 1) {
                 const providers = yield* registry.getProviders;
@@ -453,6 +466,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
                   (provider) => provider.provider === "claudeAgent",
                 );
                 if (claudeProvider?.status === "ready") {
+                  assert.strictEqual(spawnCount > 0, true);
                   return providers;
                 }
                 yield* Effect.sleep("10 millis");

@@ -397,20 +397,25 @@ function updateProviderSession(
     readonly clearLastError?: boolean;
   },
 ): ProviderSession {
-  const nextSession = {
+  const nextSession: ProviderSession = {
     ...context.session,
     ...patch,
     updatedAt: nowIso(),
-  } as ProviderSession & Record<string, unknown>;
-  const mutableSession = nextSession as Record<string, unknown>;
-  if (options?.clearActiveTurnId) {
-    delete mutableSession.activeTurnId;
-  }
-  if (options?.clearLastError) {
-    delete mutableSession.lastError;
-  }
-  context.session = nextSession;
-  return nextSession;
+  };
+  const sessionWithoutActiveTurnId = options?.clearActiveTurnId
+    ? (() => {
+        const { activeTurnId: _activeTurnId, ...rest } = nextSession;
+        return rest;
+      })()
+    : nextSession;
+  const normalizedSession = options?.clearLastError
+    ? (() => {
+        const { lastError: _lastError, ...rest } = sessionWithoutActiveTurnId;
+        return rest;
+      })()
+    : sessionWithoutActiveTurnId;
+  context.session = normalizedSession;
+  return normalizedSession;
 }
 
 const stopOpenCodeContext = Effect.fn("stopOpenCodeContext")(function* (

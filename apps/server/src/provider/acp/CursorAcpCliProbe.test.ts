@@ -44,29 +44,25 @@ describe.runIf(process.env.T3_CURSOR_ACP_PROBE === "1")("Cursor ACP CLI probe", 
       const runtime = yield* AcpSessionRuntime;
       const started = yield* runtime.start();
       const result = started.sessionSetupResult;
-      console.log("session/new result:", JSON.stringify(result, null, 2));
 
       expect(typeof started.sessionId).toBe("string");
 
       const configOptions = result.configOptions;
-      console.log("session/new configOptions:", JSON.stringify(configOptions, null, 2));
-
-      if (Array.isArray(configOptions)) {
-        const modelConfig = configOptions.find((opt) => opt.category === "model");
-        const parameterizedOptions = configOptions.filter(
-          (opt) =>
-            opt.category === "thought_level" ||
-            opt.category === "model_option" ||
-            opt.category === "model_config",
-        );
-        console.log("Model config option:", JSON.stringify(modelConfig, null, 2));
-        console.log(
-          "Parameterized model config options:",
-          JSON.stringify(parameterizedOptions, null, 2),
-        );
-        expect(modelConfig).toBeDefined();
-        expect(typeof modelConfig?.id).toBe("string");
-      }
+      expect(Array.isArray(configOptions)).toBe(true);
+      const typedConfigOptions = configOptions as ReadonlyArray<{
+        readonly category?: string;
+        readonly id?: string;
+      }>;
+      const modelConfig = typedConfigOptions.find((opt) => opt.category === "model");
+      const parameterizedOptions = typedConfigOptions.filter(
+        (opt) =>
+          opt.category === "thought_level" ||
+          opt.category === "model_option" ||
+          opt.category === "model_config",
+      );
+      expect(modelConfig).toBeDefined();
+      expect(typeof modelConfig?.id).toBe("string");
+      expect(parameterizedOptions.length).toBeGreaterThanOrEqual(0);
     }).pipe(
       Effect.provide(
         AcpSessionRuntime.layer({
@@ -107,8 +103,6 @@ describe.runIf(process.env.T3_CURSOR_ACP_PROBE === "1")("Cursor ACP CLI probe", 
 
       const setResult: EffectAcpSchema.SetSessionConfigOptionResponse =
         yield* runtime.setConfigOption(modelConfigId, "gpt-5.4");
-
-      console.log("session/set_config_option result:", JSON.stringify(setResult, null, 2));
 
       if (Array.isArray(setResult.configOptions)) {
         const modelConfig = setResult.configOptions.find((opt) => opt.category === "model");

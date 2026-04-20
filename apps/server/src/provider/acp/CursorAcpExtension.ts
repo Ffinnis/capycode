@@ -1,6 +1,6 @@
 /**
  * Public Docs: https://cursor.com/docs/cli/acp#cursor-extension-methods
- * Additional reference provided by the Cursor team: https://anysphere.enterprise.slack.com/files/U068SSJE141/F0APT1HSZRP/cursor-acp-extension-method-schemas.md
+ * Additional internal reference is documented in checked-in repo notes.
  */
 import type { UserInputQuestion } from "@capycode/contracts";
 import { Schema } from "effect";
@@ -83,7 +83,8 @@ export function extractTodosAsPlan(params: typeof CursorUpdateTodosRequest.Type)
   }>;
 } {
   const plan = params.todos.flatMap((todo) => {
-    const step = todo.content?.trim() ?? todo.title?.trim() ?? "";
+    const trimmedContent = todo.content?.trim();
+    const step = trimmedContent ? trimmedContent : (todo.title?.trim() ?? "");
     if (step === "") {
       return [];
     }

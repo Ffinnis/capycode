@@ -1398,11 +1398,21 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       accumulatedSnapshot?.totalProcessedTokens ?? accumulatedSnapshot?.usedTokens;
     const lastGoodUsage = context.lastKnownTokenUsage;
     const maxTokens = resultContextWindow ?? context.lastKnownContextWindow;
+    const effectiveProcessedTokens =
+      accumulatedTotalProcessedTokens ?? lastGoodUsage?.usedTokens ?? undefined;
     const usageSnapshot: ThreadTokenUsageSnapshot | undefined = lastGoodUsage
       ? {
           ...lastGoodUsage,
-          ...(typeof maxTokens === "number" && Number.isFinite(maxTokens) && maxTokens > 0
-            ? { maxTokens }
+          ...(typeof maxTokens === "number" &&
+          Number.isFinite(maxTokens) &&
+          maxTokens > 0 &&
+          typeof effectiveProcessedTokens === "number" &&
+          Number.isFinite(effectiveProcessedTokens)
+            ? {
+                maxTokens,
+                usedTokens: Math.min(effectiveProcessedTokens, maxTokens),
+                lastUsedTokens: Math.min(effectiveProcessedTokens, maxTokens),
+              }
             : {}),
           ...(typeof accumulatedTotalProcessedTokens === "number" &&
           Number.isFinite(accumulatedTotalProcessedTokens) &&

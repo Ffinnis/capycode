@@ -581,7 +581,8 @@ function stripAnsi(text: string): string {
  * Lines look like: `CLI Version         2026.03.20-44cb435`
  */
 function extractAboutField(plain: string, key: string): string | undefined {
-  const regex = new RegExp(`^${key}\\s{2,}(.+)$`, "mi");
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`^${escapedKey}\\s{2,}(.+)$`, "mi");
   const match = regex.exec(plain);
   return match?.[1]?.trim();
 }

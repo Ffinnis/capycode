@@ -18,7 +18,14 @@ export function normalizeCliVersion(version: string): string {
     segments.push("0");
   }
 
-  return prerelease ? `${segments.join(".")}-${prerelease}` : segments.join(".");
+  const cleanPrerelease = prerelease
+    ?.trim()
+    .split(".")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(".");
+
+  return cleanPrerelease ? `${segments.join(".")}-${cleanPrerelease}` : segments.join(".");
 }
 
 function parseCliSemver(version: string): ParsedCliSemver | null {

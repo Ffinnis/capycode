@@ -56,8 +56,11 @@ const CodexUserInputAnswerObject = Schema.Struct({
   answers: Schema.Array(Schema.String),
 });
 
-// TODO: Verify `packages/effect-codex-app-server/scripts/generate.ts` so the generated
-// `V2TurnStartParams` schema includes `collaborationMode` directly.
+// TODO(#31): Verify `packages/effect-codex-app-server/scripts/generate.ts`
+// so the generated `V2TurnStartParams` schema includes `collaborationMode`
+// directly. Once upstream is fixed we can delete
+// `CodexTurnStartParamsWithCollaborationMode` and rely on
+// `EffectCodexSchema.V2TurnStartParams`.
 const CodexTurnStartParamsWithCollaborationMode = EffectCodexSchema.V2TurnStartParams.pipe(
   Schema.fieldsAssign({
     collaborationMode: Schema.optionalKey(EffectCodexSchema.V2TurnStartParams__CollaborationMode),
@@ -1182,9 +1185,9 @@ export const makeCodexSessionRuntime = (
         activeTurnId: undefined,
       });
       yield* emitSessionEvent("session/closed", "Session stopped");
-      yield* Scope.close(runtimeScope, Exit.void);
       yield* Queue.shutdown(serverNotifications);
       yield* Queue.shutdown(events);
+      yield* Scope.close(runtimeScope, Exit.void);
     });
 
     return {

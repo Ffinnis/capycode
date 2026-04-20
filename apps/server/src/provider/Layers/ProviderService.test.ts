@@ -18,6 +18,7 @@ import {
   TurnId,
 } from "@capycode/contracts";
 import { it, assert, vi } from "@effect/vitest";
+import { beforeEach } from "vitest";
 
 import { Effect, Fiber, Layer, Metric, Option, PubSub, Ref, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -210,9 +211,25 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
     sessions.set(threadId, update(existing));
   };
 
+  const reset = () => {
+    sessions.clear();
+    startSession.mockClear();
+    sendTurn.mockClear();
+    interruptTurn.mockClear();
+    respondToRequest.mockClear();
+    respondToUserInput.mockClear();
+    stopSession.mockClear();
+    listSessions.mockClear();
+    hasSession.mockClear();
+    readThread.mockClear();
+    rollbackThread.mockClear();
+    stopAll.mockClear();
+  };
+
   return {
     adapter,
     emit,
+    reset,
     updateSession,
     startSession,
     sendTurn,
@@ -337,6 +354,12 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
 );
 
 const routing = makeProviderServiceLayer();
+
+beforeEach(() => {
+  routing.codex.reset();
+  routing.claude.reset();
+  routing.cursor.reset();
+});
 
 it.effect("ProviderServiceLive writes canonical events to the emitting thread segment", () =>
   Effect.gen(function* () {
@@ -1067,6 +1090,11 @@ routing.layer("ProviderServiceLive routing", (it) => {
 });
 
 const fanout = makeProviderServiceLayer();
+beforeEach(() => {
+  fanout.codex.reset();
+  fanout.claude.reset();
+  fanout.cursor.reset();
+});
 fanout.layer("ProviderServiceLive fanout", (it) => {
   it.effect("fans out adapter turn completion events", () =>
     Effect.gen(function* () {
@@ -1348,6 +1376,11 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
 });
 
 const validation = makeProviderServiceLayer();
+beforeEach(() => {
+  validation.codex.reset();
+  validation.claude.reset();
+  validation.cursor.reset();
+});
 validation.layer("ProviderServiceLive validation", (it) => {
   it.effect("returns ProviderValidationError for invalid input payloads", () =>
     Effect.gen(function* () {

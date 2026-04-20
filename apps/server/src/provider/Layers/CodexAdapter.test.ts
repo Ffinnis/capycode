@@ -41,6 +41,7 @@ const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
   private readonly now = new Date().toISOString();
+  private cachedSession: ProviderSession | undefined;
 
   public readonly startImpl = vi.fn(() =>
     Promise.resolve({
@@ -96,16 +97,25 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   public readonly closeImpl = vi.fn(() => Promise.resolve(undefined));
 
   readonly options: CodexSessionRuntimeOptions;
-
   constructor(options: CodexSessionRuntimeOptions) {
     this.options = options;
   }
 
   start() {
-    return Effect.promise(() => this.startImpl());
+    return Effect.promise(() =>
+      this.startImpl().then((session) => {
+        this.cachedSession = session;
+        return session;
+      }),
+    );
   }
 
-  getSession = Effect.promise(() => this.startImpl());
+  getSession = Effect.sync(() => {
+    if (!this.cachedSession) {
+      throw new Error("FakeCodexRuntime.getSession called before start()");
+    }
+    return this.cachedSession;
+  });
 
   sendTurn(input: CodexSessionRuntimeSendTurnInput) {
     return Effect.promise(() => this.sendTurnImpl(input));

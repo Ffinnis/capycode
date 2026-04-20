@@ -277,13 +277,14 @@ export const OpenCodeProviderLive = Layer.effect(
     }): Effect.fn.Return<ServerProvider, never> {
       const checkedAt = new Date().toISOString();
       const customModels = input.settings.customModels;
-      const isExternalServer = input.settings.serverUrl.trim().length > 0;
+      const serverUrl = input.settings.serverUrl.trim();
+      const isExternalServer = serverUrl.length > 0;
 
       const fallback = (cause: unknown, version: string | null = null) => {
         const failure = formatOpenCodeProbeError({
           cause,
           isExternalServer,
-          serverUrl: input.settings.serverUrl,
+          serverUrl,
         });
         return buildServerProvider({
           provider: PROVIDER,
@@ -355,7 +356,7 @@ export const OpenCodeProviderLive = Layer.effect(
             const server = yield* openCodeRuntime
               .connectToOpenCodeServer({
                 binaryPath: input.settings.binaryPath,
-                serverUrl: input.settings.serverUrl,
+                serverUrl,
               })
               .pipe(
                 Effect.mapError(

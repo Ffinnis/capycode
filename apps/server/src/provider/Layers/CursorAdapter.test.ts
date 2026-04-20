@@ -417,9 +417,6 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     "streams ACP tool calls and approvals on the active turn in approval-required mode",
     () =>
       Effect.gen(function* () {
-        const previousEmitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS;
-        process.env.T3_ACP_EMIT_TOOL_CALLS = "1";
-
         const adapter = yield* CursorAdapter;
         const serverSettings = yield* ServerSettingsService;
         const threadId = ThreadId.make("cursor-tool-call-probe");
@@ -550,17 +547,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           }
         });
 
-        yield* program.pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              if (previousEmitToolCalls === undefined) {
-                delete process.env.T3_ACP_EMIT_TOOL_CALLS;
-              } else {
-                process.env.T3_ACP_EMIT_TOOL_CALLS = previousEmitToolCalls;
-              }
-            }),
-          ),
-        );
+        yield* program;
       }).pipe(
         Effect.provide(
           makeCursorAdapterLive().pipe(

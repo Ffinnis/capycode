@@ -25,14 +25,6 @@ export function mapAcpToAdapterError(
       cause: error,
     });
   }
-  if (Schema.is(EffectAcpErrors.AcpRequestError)(error)) {
-    return new ProviderAdapterRequestError({
-      provider,
-      method,
-      detail: error.message,
-      cause: error,
-    });
-  }
   return new ProviderAdapterRequestError({
     provider,
     method,

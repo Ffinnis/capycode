@@ -325,7 +325,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
                     threadId: input.threadId,
                     provider: adapter.provider,
                     cause,
-                  }),
+                  }).pipe(Effect.andThen(Effect.failCause(cause))),
                 ),
               );
             }),

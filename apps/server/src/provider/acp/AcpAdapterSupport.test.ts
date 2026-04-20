@@ -24,4 +24,15 @@ describe("AcpAdapterSupport", () => {
     expect(error._tag).toBe("ProviderAdapterRequestError");
     expect(error.message).toContain("Invalid params");
   });
+
+  it("maps ACP process exited errors to provider adapter session closed errors", () => {
+    const error = mapAcpToAdapterError(
+      "cursor",
+      "thread-1" as never,
+      "session/prompt",
+      new EffectAcpErrors.AcpProcessExitedError({ code: 1 }),
+    );
+
+    expect(error._tag).toBe("ProviderAdapterSessionClosedError");
+  });
 });

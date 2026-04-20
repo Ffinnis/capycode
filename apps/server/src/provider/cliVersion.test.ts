@@ -11,7 +11,7 @@ describe("cliVersion", () => {
     assert.isTrue(compareCliVersions("2.1.111-beta.1", "2.1.111") < 0);
   });
 
-  it("rejects malformed numeric segments", () => {
+  it("falls back to ordering for malformed numeric segments", () => {
     assert.isTrue(compareCliVersions("1.2.3abc", "1.2.10") > 0);
   });
 });
