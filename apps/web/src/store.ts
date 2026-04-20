@@ -113,6 +113,7 @@ const MAX_THREAD_CHECKPOINTS = 500;
 const MAX_THREAD_PROPOSED_PLANS = 200;
 const MAX_THREAD_ACTIVITIES = 500;
 const EMPTY_THREAD_IDS: ThreadId[] = [];
+const EMPTY_WORKSPACE_IDS: WorkspaceId[] = [];
 
 function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
@@ -2125,6 +2126,64 @@ export function setThreadBranch(
   return commitEnvironmentState(state, threadRef.environmentId, nextEnvironmentState);
 }
 
+export function setActiveWorkspaceForProject(
+  state: AppState,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly workspaceId: WorkspaceId;
+  },
+): AppState {
+  const environmentState = getStoredEnvironmentState(state, input.environmentId);
+  const currentActiveWorkspaceId =
+    environmentState.activeWorkspaceIdByProjectId[input.projectId] ?? null;
+  if (currentActiveWorkspaceId === input.workspaceId) {
+    return state;
+  }
+
+  const workspaceIds =
+    environmentState.workspaceIdsByProjectId[input.projectId] ?? EMPTY_WORKSPACE_IDS;
+  if (!workspaceIds.includes(input.workspaceId)) {
+    return state;
+  }
+
+  const nextWorkspaceById = { ...environmentState.workspaceById };
+  let workspaceFlagChanged = false;
+  for (const workspaceId of workspaceIds) {
+    const workspace = environmentState.workspaceById[workspaceId];
+    if (!workspace) {
+      continue;
+    }
+    const shouldBeActive = workspaceId === input.workspaceId;
+    if (workspace.isActive === shouldBeActive) {
+      continue;
+    }
+    nextWorkspaceById[workspaceId] = {
+      ...workspace,
+      isActive: shouldBeActive,
+    };
+    workspaceFlagChanged = true;
+  }
+
+  const nextActiveWorkspaceIdByProjectId = {
+    ...environmentState.activeWorkspaceIdByProjectId,
+    [input.projectId]: input.workspaceId,
+  };
+
+  if (!workspaceFlagChanged) {
+    return commitEnvironmentState(state, input.environmentId, {
+      ...environmentState,
+      activeWorkspaceIdByProjectId: nextActiveWorkspaceIdByProjectId,
+    });
+  }
+
+  return commitEnvironmentState(state, input.environmentId, {
+    ...environmentState,
+    workspaceById: nextWorkspaceById,
+    activeWorkspaceIdByProjectId: nextActiveWorkspaceIdByProjectId,
+  });
+}
+
 interface AppStore extends AppState {
   setActiveEnvironmentId: (environmentId: EnvironmentId) => void;
   syncServerReadModel: (readModel: OrchestrationReadModel, environmentId: EnvironmentId) => void;
@@ -2148,6 +2207,11 @@ interface AppStore extends AppState {
     branch: string | null,
     worktreePath: string | null,
   ) => void;
+  setActiveWorkspaceForProject: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly workspaceId: WorkspaceId;
+  }) => void;
 }
 
 export const useStore = create<AppStore>((set, get) => ({
@@ -2169,4 +2233,6 @@ export const useStore = create<AppStore>((set, get) => ({
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadRef, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadRef, branch, worktreePath)),
+  setActiveWorkspaceForProject: (input) =>
+    set((state) => setActiveWorkspaceForProject(state, input)),
 }));

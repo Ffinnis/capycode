@@ -317,6 +317,26 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   return [...ordered, ...remaining];
 }
 
+export function buildLogicalProjectEntryIndex<
+  TEntry extends { environmentId: string; projectId: string },
+>(input: {
+  entries: readonly TEntry[];
+  physicalToLogicalKey: ReadonlyMap<string, string>;
+}): Map<string, TEntry[]> {
+  const next = new Map<string, TEntry[]>();
+  for (const entry of input.entries) {
+    const physicalKey = `${entry.environmentId}:${entry.projectId}`;
+    const logicalKey = input.physicalToLogicalKey.get(physicalKey) ?? physicalKey;
+    const existing = next.get(logicalKey);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      next.set(logicalKey, [entry]);
+    }
+  }
+  return next;
+}
+
 export function getVisibleSidebarThreadIds<TThreadId>(
   renderedProjects: readonly {
     shouldShowThreadPanel?: boolean;

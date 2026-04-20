@@ -1,7 +1,7 @@
 import { scopedProjectKey, scopeProjectRef } from "@capycode/client-runtime";
 import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef } from "@capycode/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+import { startTransition, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   type DraftThreadEnvMode,
@@ -11,6 +11,7 @@ import {
 import { newDraftId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import { deriveLogicalProjectKey } from "../logicalProject";
+import type { NewThreadLatencyTracker } from "../perf/newThreadLatency";
 import { selectProjectsAcrossEnvironments, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -18,11 +19,30 @@ import { useUiStateStore } from "../uiStateStore";
 
 function useNewThreadState() {
   const projects = useStore(useShallow((store) => selectProjectsAcrossEnvironments(store)));
+  const projectsByScopedKey = useMemo(
+    () =>
+      new Map(
+        projects.map((project) => [
+          scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+          project,
+        ]),
+      ),
+    [projects],
+  );
   const router = useRouter();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteTarget(currentRouteParams);
   }, [router]);
+  const runTransition = useCallback(
+    <T>(work: () => Promise<T> | T) =>
+      new Promise<T>((resolve, reject) => {
+        startTransition(() => {
+          Promise.resolve().then(work).then(resolve).catch(reject);
+        });
+      }),
+    [],
+  );
 
   return useCallback(
     (
@@ -31,22 +51,18 @@ function useNewThreadState() {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
+        latencyTracker?: NewThreadLatencyTracker | null;
       },
     ): Promise<void> => {
       const {
+        createOrReuseProjectDraft,
         getDraftSessionByLogicalProjectKey,
         getDraftSession,
         getDraftThread,
-        applyStickyState,
-        setDraftThreadContext,
-        setLogicalProjectDraftThreadId,
       } = useComposerDraftStore.getState();
+      const latencyTracker = options?.latencyTracker ?? null;
       const currentRouteTarget = getCurrentRouteTarget();
-      const project = projects.find(
-        (candidate) =>
-          candidate.id === projectRef.projectId &&
-          candidate.environmentId === projectRef.environmentId,
-      );
+      const project = projectsByScopedKey.get(scopedProjectKey(projectRef));
       const logicalProjectKey = project
         ? deriveLogicalProjectKey(project)
         : scopedProjectKey(projectRef);
@@ -61,26 +77,32 @@ function useNewThreadState() {
         : null;
       if (storedDraftThread) {
         return (async () => {
-          if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
-            setDraftThreadContext(storedDraftThread.draftId, {
+          createOrReuseProjectDraft({
+            logicalProjectKey,
+            projectRef,
+            draftId: storedDraftThread.draftId,
+            options: {
+              threadId: storedDraftThread.threadId,
               ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
               ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
               ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-            });
-          }
-          setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, storedDraftThread.draftId, {
-            threadId: storedDraftThread.threadId,
+            },
           });
+          latencyTracker?.markDraftMutationComplete();
           if (
             currentRouteTarget?.kind === "draft" &&
             currentRouteTarget.draftId === storedDraftThread.draftId
           ) {
+            latencyTracker?.markRouteReady();
             return;
           }
-          await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: storedDraftThread.draftId },
-          });
+          await runTransition(() =>
+            router.navigate({
+              to: "/draft/$draftId",
+              params: { draftId: storedDraftThread.draftId },
+            }),
+          );
+          latencyTracker?.markRouteReady();
         })();
       }
 
@@ -89,22 +111,22 @@ function useNewThreadState() {
         currentRouteTarget?.kind === "draft" &&
         latestActiveDraftThread.logicalProjectKey === logicalProjectKey
       ) {
-        if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
-          setDraftThreadContext(currentRouteTarget.draftId, {
+        createOrReuseProjectDraft({
+          logicalProjectKey,
+          projectRef,
+          draftId: currentRouteTarget.draftId,
+          options: {
+            threadId: latestActiveDraftThread.threadId,
+            createdAt: latestActiveDraftThread.createdAt,
+            runtimeMode: latestActiveDraftThread.runtimeMode,
+            interactionMode: latestActiveDraftThread.interactionMode,
             ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
             ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
             ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-          });
-        }
-        setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
-          threadId: latestActiveDraftThread.threadId,
-          createdAt: latestActiveDraftThread.createdAt,
-          runtimeMode: latestActiveDraftThread.runtimeMode,
-          interactionMode: latestActiveDraftThread.interactionMode,
-          ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
-          ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-          ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
+          },
         });
+        latencyTracker?.markDraftMutationComplete();
+        latencyTracker?.markRouteReady();
         return Promise.resolve();
       }
 
@@ -112,23 +134,31 @@ function useNewThreadState() {
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
       return (async () => {
-        setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
-          threadId,
-          createdAt,
-          branch: options?.branch ?? null,
-          worktreePath: options?.worktreePath ?? null,
-          envMode: options?.envMode ?? "local",
-          runtimeMode: DEFAULT_RUNTIME_MODE,
+        createOrReuseProjectDraft({
+          logicalProjectKey,
+          projectRef,
+          draftId,
+          options: {
+            threadId,
+            createdAt,
+            branch: options?.branch ?? null,
+            worktreePath: options?.worktreePath ?? null,
+            envMode: options?.envMode ?? "local",
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+          },
+          applyStickyState: true,
         });
-        applyStickyState(draftId);
-
-        await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId },
-        });
+        latencyTracker?.markDraftMutationComplete();
+        await runTransition(() =>
+          router.navigate({
+            to: "/draft/$draftId",
+            params: { draftId },
+          }),
+        );
+        latencyTracker?.markRouteReady();
       })();
     },
-    [getCurrentRouteTarget, router, projects],
+    [getCurrentRouteTarget, projectsByScopedKey, router, runTransition],
   );
 }
 

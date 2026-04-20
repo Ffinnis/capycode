@@ -535,6 +535,59 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("atomically creates a draft mapping and snapshots sticky state in one write", () => {
+    const store = useComposerDraftStore.getState();
+    store.setStickyModelSelection(
+      modelSelection("codex", "gpt-5.4", {
+        reasoningEffort: "high",
+      }),
+    );
+
+    let writes = 0;
+    const unsubscribe = useComposerDraftStore.subscribe(() => {
+      writes += 1;
+    });
+
+    try {
+      store.createOrReuseProjectDraft({
+        logicalProjectKey: scopedProjectKey(projectRef),
+        projectRef,
+        draftId,
+        options: {
+          threadId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          branch: "feature/atomic",
+          worktreePath: "/tmp/feature-atomic",
+          envMode: "worktree",
+        },
+        applyStickyState: true,
+      });
+    } finally {
+      unsubscribe();
+    }
+
+    expect(writes).toBe(1);
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      environmentId: TEST_ENVIRONMENT_ID,
+      projectId,
+      branch: "feature/atomic",
+      worktreePath: "/tmp/feature-atomic",
+      envMode: "worktree",
+    });
+    expect(draftByKey(draftId)).toMatchObject({
+      activeProvider: "codex",
+      modelSelectionByProvider: {
+        codex: {
+          provider: "codex",
+          model: "gpt-5.4",
+          options: {
+            reasoningEffort: "high",
+          },
+        },
+      },
+    });
+  });
+
   it("clears only matching project draft mapping entries", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

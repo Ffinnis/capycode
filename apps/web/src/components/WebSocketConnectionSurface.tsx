@@ -12,6 +12,7 @@ import {
 } from "../rpc/wsConnectionState";
 import { toastManager } from "./ui/toast";
 import { getPrimaryEnvironmentConnection } from "../environments/runtime";
+import { useNewThreadLatencySamples } from "../perf/newThreadLatency";
 
 const FORCED_WS_RECONNECT_DEBOUNCE_MS = 5_000;
 type WsAutoReconnectTrigger = "focus" | "online";
@@ -385,6 +386,70 @@ export function SlowRpcAckToastCoordinator() {
   return null;
 }
 
+function formatLatencyMs(durationMs: number): string {
+  return `${durationMs.toFixed(1)}ms`;
+}
+
+function percentile(sortedValues: readonly number[], quantile: number): number {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+  const index = Math.max(
+    0,
+    Math.min(sortedValues.length - 1, Math.ceil(sortedValues.length * quantile) - 1),
+  );
+  return sortedValues[index] ?? 0;
+}
+
+function NewThreadLatencyDebugSurface() {
+  const samples = useNewThreadLatencySamples();
+  if (!import.meta.env.DEV || samples.length === 0) {
+    return null;
+  }
+  const recentSamples = samples.slice(-10).toReversed();
+  const sortedDurations = samples
+    .map((sample) => sample.durationMs)
+    .toSorted((left, right) => left - right);
+  const p95 = percentile(sortedDurations, 0.95);
+
+  return (
+    <aside className="pointer-events-none fixed right-3 bottom-3 z-50">
+      <details
+        className="pointer-events-auto max-w-[28rem] rounded-md border border-border/80 bg-background/95 p-2 text-xs shadow-lg backdrop-blur"
+        data-testid="new-thread-latency-debug"
+      >
+        <summary className="cursor-pointer select-none text-foreground">
+          New thread latency p95 {formatLatencyMs(p95)} ({samples.length} samples)
+        </summary>
+        <ul className="mt-2 max-h-64 space-y-1 overflow-auto text-muted-foreground">
+          {recentSamples.map((sample) => (
+            <li
+              key={`${sample.flow}:${sample.startedAt}:${sample.durationMs}`}
+              className="rounded bg-muted/40 px-2 py-1"
+            >
+              <div className="font-medium text-foreground">
+                {sample.flow}: {formatLatencyMs(sample.durationMs)}
+              </div>
+              <div>
+                draft {formatLatencyMs(sample.phaseBreakdown?.draftMutationMs ?? 0)} / route{" "}
+                {formatLatencyMs(sample.phaseBreakdown?.routeTransitionMs ?? 0)}
+                {sample.phaseBreakdown?.workspaceAckMs !== undefined
+                  ? ` / ack ${formatLatencyMs(sample.phaseBreakdown.workspaceAckMs)} (${sample.phaseBreakdown.workspaceAckStatus ?? "success"})`
+                  : ""}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </aside>
+  );
+}
+
 export function WebSocketConnectionSurface({ children }: { readonly children: ReactNode }) {
-  return children;
+  return (
+    <>
+      {children}
+      <NewThreadLatencyDebugSurface />
+    </>
+  );
 }

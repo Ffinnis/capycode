@@ -288,6 +288,22 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
     },
   ) => void;
+  /** Atomically upserts draft-session mapping and optional sticky composer state in one write. */
+  createOrReuseProjectDraft: (input: {
+    logicalProjectKey: string;
+    projectRef: ScopedProjectRef;
+    draftId: DraftId;
+    options?: {
+      threadId?: ThreadId;
+      branch?: string | null;
+      worktreePath?: string | null;
+      createdAt?: string;
+      envMode?: DraftThreadEnvMode;
+      runtimeMode?: RuntimeMode;
+      interactionMode?: ProviderInteractionMode;
+    };
+    applyStickyState?: boolean;
+  }) => void;
   /** Creates or updates the draft session tracked for a concrete project ref. */
   setProjectDraftThreadId: (
     projectRef: ScopedProjectRef,
@@ -1082,6 +1098,143 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
   );
 }
 
+function upsertLogicalProjectDraftThreadState(
+  state: Pick<
+    ComposerDraftStoreState,
+    | "draftThreadsByThreadKey"
+    | "draftsByThreadKey"
+    | "logicalProjectDraftThreadKeyByLogicalProjectKey"
+  >,
+  input: {
+    normalizedLogicalProjectKey: string;
+    projectRef: ScopedProjectRef;
+    draftId: DraftId;
+    options?: {
+      threadId?: ThreadId;
+      branch?: string | null;
+      worktreePath?: string | null;
+      createdAt?: string;
+      envMode?: DraftThreadEnvMode;
+      runtimeMode?: RuntimeMode;
+      interactionMode?: ProviderInteractionMode;
+    };
+  },
+): {
+  draftsByThreadKey: ComposerDraftStoreState["draftsByThreadKey"];
+  draftThreadsByThreadKey: ComposerDraftStoreState["draftThreadsByThreadKey"];
+  logicalProjectDraftThreadKeyByLogicalProjectKey: ComposerDraftStoreState["logicalProjectDraftThreadKeyByLogicalProjectKey"];
+  changed: boolean;
+} {
+  const existingThread = state.draftThreadsByThreadKey[input.draftId];
+  const previousThreadKeyForLogicalProject =
+    state.logicalProjectDraftThreadKeyByLogicalProjectKey[input.normalizedLogicalProjectKey];
+  const nextDraftThread = createDraftThreadState(
+    input.projectRef,
+    input.options?.threadId ?? existingThread?.threadId ?? ThreadId.make(input.draftId),
+    input.normalizedLogicalProjectKey,
+    existingThread,
+    input.options,
+  );
+  const hasSameLogicalMapping = previousThreadKeyForLogicalProject === input.draftId;
+  if (hasSameLogicalMapping && draftThreadsEqual(existingThread, nextDraftThread)) {
+    return {
+      draftsByThreadKey: state.draftsByThreadKey,
+      draftThreadsByThreadKey: state.draftThreadsByThreadKey,
+      logicalProjectDraftThreadKeyByLogicalProjectKey:
+        state.logicalProjectDraftThreadKeyByLogicalProjectKey,
+      changed: false,
+    };
+  }
+
+  const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> = {
+    ...state.logicalProjectDraftThreadKeyByLogicalProjectKey,
+    [input.normalizedLogicalProjectKey]: input.draftId,
+  };
+  const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
+    ...state.draftThreadsByThreadKey,
+    [input.draftId]: nextDraftThread,
+  };
+  let nextDraftsByThreadKey = state.draftsByThreadKey;
+  if (
+    previousThreadKeyForLogicalProject &&
+    previousThreadKeyForLogicalProject !== input.draftId &&
+    !isComposerThreadKeyInUse(
+      nextLogicalProjectDraftThreadKeyByLogicalProjectKey,
+      previousThreadKeyForLogicalProject,
+    )
+  ) {
+    delete nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
+    if (state.draftsByThreadKey[previousThreadKeyForLogicalProject] !== undefined) {
+      nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+      delete nextDraftsByThreadKey[previousThreadKeyForLogicalProject];
+    }
+  }
+
+  return {
+    draftsByThreadKey: nextDraftsByThreadKey,
+    draftThreadsByThreadKey: nextDraftThreadsByThreadKey,
+    logicalProjectDraftThreadKeyByLogicalProjectKey:
+      nextLogicalProjectDraftThreadKeyByLogicalProjectKey,
+    changed: true,
+  };
+}
+
+function applyStickyStateToThreadKey(
+  state: Pick<
+    ComposerDraftStoreState,
+    "draftsByThreadKey" | "stickyModelSelectionByProvider" | "stickyActiveProvider"
+  >,
+  threadKey: string,
+): {
+  draftsByThreadKey: ComposerDraftStoreState["draftsByThreadKey"];
+  changed: boolean;
+} {
+  const stickyMap = state.stickyModelSelectionByProvider;
+  const stickyActiveProvider = state.stickyActiveProvider;
+  if (Object.keys(stickyMap).length === 0 && stickyActiveProvider === null) {
+    return {
+      draftsByThreadKey: state.draftsByThreadKey,
+      changed: false,
+    };
+  }
+  const existing = state.draftsByThreadKey[threadKey];
+  const base = existing ?? createEmptyThreadDraft();
+  const nextMap = { ...base.modelSelectionByProvider };
+  for (const [provider, selection] of Object.entries(stickyMap)) {
+    if (selection) {
+      const current = nextMap[provider as ProviderKind];
+      nextMap[provider as ProviderKind] = {
+        ...selection,
+        model: current?.model ?? selection.model,
+      };
+    }
+  }
+  if (
+    Equal.equals(base.modelSelectionByProvider, nextMap) &&
+    base.activeProvider === stickyActiveProvider
+  ) {
+    return {
+      draftsByThreadKey: state.draftsByThreadKey,
+      changed: false,
+    };
+  }
+  const nextDraft: ComposerThreadDraftState = {
+    ...base,
+    modelSelectionByProvider: nextMap,
+    activeProvider: stickyActiveProvider,
+  };
+  const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+  if (shouldRemoveDraft(nextDraft)) {
+    delete nextDraftsByThreadKey[threadKey];
+  } else {
+    nextDraftsByThreadKey[threadKey] = nextDraft;
+  }
+  return {
+    draftsByThreadKey: nextDraftsByThreadKey,
+    changed: true,
+  };
+}
+
 function removeDraftThreadReferences(
   state: Pick<
     ComposerDraftStoreState,
@@ -1859,48 +2012,59 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return;
           }
           set((state) => {
-            const existingThread = state.draftThreadsByThreadKey[draftId];
-            const previousThreadKeyForLogicalProject =
-              state.logicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey];
-            const nextDraftThread = createDraftThreadState(
-              projectRef,
-              options?.threadId ?? existingThread?.threadId ?? ThreadId.make(draftId),
+            const upserted = upsertLogicalProjectDraftThreadState(state, {
               normalizedLogicalProjectKey,
-              existingThread,
-              options,
-            );
-            const hasSameLogicalMapping = previousThreadKeyForLogicalProject === draftId;
-            if (hasSameLogicalMapping && draftThreadsEqual(existingThread, nextDraftThread)) {
+              projectRef,
+              draftId,
+              ...(options ? { options } : {}),
+            });
+            if (!upserted.changed) {
               return state;
             }
-            const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> = {
-              ...state.logicalProjectDraftThreadKeyByLogicalProjectKey,
-              [normalizedLogicalProjectKey]: draftId,
+            return {
+              draftsByThreadKey: upserted.draftsByThreadKey,
+              draftThreadsByThreadKey: upserted.draftThreadsByThreadKey,
+              logicalProjectDraftThreadKeyByLogicalProjectKey:
+                upserted.logicalProjectDraftThreadKeyByLogicalProjectKey,
             };
-            const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
-              ...state.draftThreadsByThreadKey,
-              [draftId]: nextDraftThread,
-            };
-            let nextDraftsByThreadKey = state.draftsByThreadKey;
-            if (
-              previousThreadKeyForLogicalProject &&
-              previousThreadKeyForLogicalProject !== draftId &&
-              !isComposerThreadKeyInUse(
-                nextLogicalProjectDraftThreadKeyByLogicalProjectKey,
-                previousThreadKeyForLogicalProject,
-              )
-            ) {
-              delete nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
-              if (state.draftsByThreadKey[previousThreadKeyForLogicalProject] !== undefined) {
-                nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-                delete nextDraftsByThreadKey[previousThreadKeyForLogicalProject];
+          });
+        },
+        createOrReuseProjectDraft: (input) => {
+          const normalizedLogicalProjectKey = logicalProjectDraftKey(input.logicalProjectKey);
+          if (normalizedLogicalProjectKey.length === 0 || input.draftId.length === 0) {
+            return;
+          }
+          set((state) => {
+            const upserted = upsertLogicalProjectDraftThreadState(state, {
+              normalizedLogicalProjectKey,
+              projectRef: input.projectRef,
+              draftId: input.draftId,
+              ...(input.options ? { options: input.options } : {}),
+            });
+            let nextDraftsByThreadKey = upserted.draftsByThreadKey;
+            let changed = upserted.changed;
+            if (input.applyStickyState) {
+              const stickyResult = applyStickyStateToThreadKey(
+                {
+                  draftsByThreadKey: nextDraftsByThreadKey,
+                  stickyModelSelectionByProvider: state.stickyModelSelectionByProvider,
+                  stickyActiveProvider: state.stickyActiveProvider,
+                },
+                input.draftId,
+              );
+              if (stickyResult.changed) {
+                nextDraftsByThreadKey = stickyResult.draftsByThreadKey;
+                changed = true;
               }
+            }
+            if (!changed) {
+              return state;
             }
             return {
               draftsByThreadKey: nextDraftsByThreadKey,
-              draftThreadsByThreadKey: nextDraftThreadsByThreadKey,
+              draftThreadsByThreadKey: upserted.draftThreadsByThreadKey,
               logicalProjectDraftThreadKeyByLogicalProjectKey:
-                nextLogicalProjectDraftThreadKeyByLogicalProjectKey,
+                upserted.logicalProjectDraftThreadKeyByLogicalProjectKey,
             };
           });
         },
@@ -2110,41 +2274,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return;
           }
           set((state) => {
-            const stickyMap = state.stickyModelSelectionByProvider;
-            const stickyActiveProvider = state.stickyActiveProvider;
-            if (Object.keys(stickyMap).length === 0 && stickyActiveProvider === null) {
+            const stickyResult = applyStickyStateToThreadKey(state, threadKey);
+            if (!stickyResult.changed) {
               return state;
             }
-            const existing = state.draftsByThreadKey[threadKey];
-            const base = existing ?? createEmptyThreadDraft();
-            const nextMap = { ...base.modelSelectionByProvider };
-            for (const [provider, selection] of Object.entries(stickyMap)) {
-              if (selection) {
-                const current = nextMap[provider as ProviderKind];
-                nextMap[provider as ProviderKind] = {
-                  ...selection,
-                  model: current?.model ?? selection.model,
-                };
-              }
-            }
-            if (
-              Equal.equals(base.modelSelectionByProvider, nextMap) &&
-              base.activeProvider === stickyActiveProvider
-            ) {
-              return state;
-            }
-            const nextDraft: ComposerThreadDraftState = {
-              ...base,
-              modelSelectionByProvider: nextMap,
-              activeProvider: stickyActiveProvider,
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
+            return { draftsByThreadKey: stickyResult.draftsByThreadKey };
           });
         },
         setPrompt: (threadRef, prompt) => {
