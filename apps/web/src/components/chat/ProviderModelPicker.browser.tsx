@@ -8,6 +8,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { getCustomModelOptionsByProvider } from "../../modelSelection";
 import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@capycode/contracts/settings";
 import { __resetLocalApiForTests } from "../../localApi";
+import { CLIENT_SETTINGS_STORAGE_KEY } from "../../clientPersistenceStorage";
 
 // Mock the environments/runtime module to provide a mock primary environment connection
 vi.mock("../../environments/runtime", () => {
@@ -267,11 +268,13 @@ function getSidebarProviderOrder() {
 describe("ProviderModelPicker", () => {
   beforeEach(async () => {
     // Reset test environment before each test
+    localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
     await __resetLocalApiForTests();
   });
 
   afterEach(async () => {
     document.body.innerHTML = "";
+    localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
     await __resetLocalApiForTests();
   });
 
@@ -381,7 +384,7 @@ describe("ProviderModelPicker", () => {
 
   it("shows locked provider header and only its models in locked mode", async () => {
     localStorage.setItem(
-      "t3code:client-settings:v1",
+      CLIENT_SETTINGS_STORAGE_KEY,
       JSON.stringify({
         ...DEFAULT_CLIENT_SETTINGS,
         favorites: [
@@ -411,7 +414,7 @@ describe("ProviderModelPicker", () => {
         ]);
       });
     } finally {
-      localStorage.removeItem("t3code:client-settings:v1");
+      localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
       await mounted.cleanup();
     }
   });
@@ -767,7 +770,7 @@ describe("ProviderModelPicker", () => {
   });
 
   it("toggles favorite stars when clicked", async () => {
-    localStorage.removeItem("t3code:client-settings:v1");
+    localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
 
     const mounted = await mountPicker({
       provider: "claudeAgent",
@@ -807,12 +810,12 @@ describe("ProviderModelPicker", () => {
       });
     } finally {
       await mounted.cleanup();
-      localStorage.removeItem("t3code:client-settings:v1");
+      localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
     }
   });
 
   it("does not duplicate favorited models across favorites and all models sections", async () => {
-    localStorage.removeItem("t3code:client-settings:v1");
+    localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
 
     const mounted = await mountPicker({
       provider: "claudeAgent",
@@ -841,13 +844,13 @@ describe("ProviderModelPicker", () => {
       });
     } finally {
       await mounted.cleanup();
-      localStorage.removeItem("t3code:client-settings:v1");
+      localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
     }
   });
 
   it("shows favorited models first within the selected provider list", async () => {
     localStorage.setItem(
-      "t3code:client-settings:v1",
+      CLIENT_SETTINGS_STORAGE_KEY,
       JSON.stringify({
         ...DEFAULT_CLIENT_SETTINGS,
         favorites: [{ provider: "codex", model: "gpt-5.3-codex" }],
@@ -869,7 +872,7 @@ describe("ProviderModelPicker", () => {
       });
     } finally {
       await mounted.cleanup();
-      localStorage.removeItem("t3code:client-settings:v1");
+      localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
     }
   });
 

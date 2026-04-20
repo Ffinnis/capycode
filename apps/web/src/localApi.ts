@@ -28,12 +28,20 @@ import {
 
 let cachedApi: LocalApi | undefined;
 
+function missingRpcMethod(method: string) {
+  return async () => {
+    throw new Error(`Local API RPC method unavailable: ${method}`);
+  };
+}
+
 export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
+  const desktopBridge = window.desktopBridge;
+
   return {
     dialogs: {
       pickFolder: async () => {
-        if (!window.desktopBridge) return null;
-        return window.desktopBridge.pickFolder();
+        if (typeof desktopBridge?.pickFolder !== "function") return null;
+        return desktopBridge.pickFolder();
       },
       confirm: async (message) => {
         // Use in-app confirmation dialog instead of native dialogs
@@ -43,8 +51,8 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
     shell: {
       openInEditor: (cwd, editor) => rpcClient.shell.openInEditor({ cwd, editor }),
       openExternal: async (url) => {
-        if (window.desktopBridge) {
-          const opened = await window.desktopBridge.openExternal(url);
+        if (typeof desktopBridge?.openExternal === "function") {
+          const opened = await desktopBridge.openExternal(url);
           if (!opened) {
             throw new Error("Unable to open link.");
           }
@@ -64,58 +72,93 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
     },
     persistence: {
       getClientSettings: async () => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.getClientSettings();
+        if (typeof desktopBridge?.getClientSettings === "function") {
+          return desktopBridge.getClientSettings();
         }
         return readBrowserClientSettings();
       },
       setClientSettings: async (settings) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.setClientSettings(settings);
+        if (typeof desktopBridge?.setClientSettings === "function") {
+          return desktopBridge.setClientSettings(settings);
         }
         writeBrowserClientSettings(settings);
       },
       getSavedEnvironmentRegistry: async () => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.getSavedEnvironmentRegistry();
+        if (typeof desktopBridge?.getSavedEnvironmentRegistry === "function") {
+          return desktopBridge.getSavedEnvironmentRegistry();
         }
         return readBrowserSavedEnvironmentRegistry();
       },
       setSavedEnvironmentRegistry: async (records) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.setSavedEnvironmentRegistry(records);
+        if (typeof desktopBridge?.setSavedEnvironmentRegistry === "function") {
+          return desktopBridge.setSavedEnvironmentRegistry(records);
         }
         writeBrowserSavedEnvironmentRegistry(records);
       },
       getSavedEnvironmentSecret: async (environmentId) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.getSavedEnvironmentSecret(environmentId);
+        if (typeof desktopBridge?.getSavedEnvironmentSecret === "function") {
+          return desktopBridge.getSavedEnvironmentSecret(environmentId);
         }
         return readBrowserSavedEnvironmentSecret(environmentId);
       },
       setSavedEnvironmentSecret: async (environmentId, secret) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.setSavedEnvironmentSecret(environmentId, secret);
+        if (typeof desktopBridge?.setSavedEnvironmentSecret === "function") {
+          return desktopBridge.setSavedEnvironmentSecret(environmentId, secret);
         }
         return writeBrowserSavedEnvironmentSecret(environmentId, secret);
       },
       removeSavedEnvironmentSecret: async (environmentId) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.removeSavedEnvironmentSecret(environmentId);
+        if (typeof desktopBridge?.removeSavedEnvironmentSecret === "function") {
+          return desktopBridge.removeSavedEnvironmentSecret(environmentId);
         }
         removeBrowserSavedEnvironmentSecret(environmentId);
       },
     },
     server: {
-      getConfig: rpcClient.server.getConfig,
-      refreshProviders: rpcClient.server.refreshProviders,
-      upsertKeybinding: rpcClient.server.upsertKeybinding,
-      getSettings: rpcClient.server.getSettings,
-      updateSettings: rpcClient.server.updateSettings,
+      getConfig: (...args) => {
+        const method = rpcClient.server?.getConfig;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("server.getConfig")();
+      },
+      refreshProviders: (...args) => {
+        const method = rpcClient.server?.refreshProviders;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("server.refreshProviders")();
+      },
+      upsertKeybinding: (...args) => {
+        const method = rpcClient.server?.upsertKeybinding;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("server.upsertKeybinding")();
+      },
+      getSettings: (...args) => {
+        const method = rpcClient.server?.getSettings;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("server.getSettings")();
+      },
+      updateSettings: (...args) => {
+        const method = rpcClient.server?.updateSettings;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("server.updateSettings")();
+      },
     },
     usage: {
-      getDashboard: rpcClient.usage.getDashboard,
-      refreshDashboard: rpcClient.usage.refreshDashboard,
+      getDashboard: (...args) => {
+        const method = rpcClient.usage?.getDashboard;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("usage.getDashboard")();
+      },
+      refreshDashboard: (...args) => {
+        const method = rpcClient.usage?.refreshDashboard;
+        return typeof method === "function"
+          ? method(...args)
+          : missingRpcMethod("usage.refreshDashboard")();
+      },
     },
   };
 }
