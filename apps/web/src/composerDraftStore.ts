@@ -1063,7 +1063,7 @@ function createDraftThreadState(
         : projectChanged
           ? "local"
           : (existingThread?.envMode ?? "local")),
-    promotedTo: null,
+    promotedTo: existingThread?.promotedTo ?? null,
   };
 }
 

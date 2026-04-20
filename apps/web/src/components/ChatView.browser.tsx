@@ -1290,10 +1290,13 @@ async function triggerChatNewShortcutUntilPath(
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     dispatchChatNewShortcut();
-    await waitForLayout();
-    pathname = router.state.location.pathname;
-    if (predicate(pathname)) {
-      return pathname;
+    const settleDeadline = Date.now() + 300;
+    while (Date.now() < settleDeadline) {
+      await waitForLayout();
+      pathname = router.state.location.pathname;
+      if (predicate(pathname)) {
+        return pathname;
+      }
     }
   }
   throw new Error(`${errorMessage} Last path: ${pathname}`);
@@ -3268,8 +3271,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
         useStore.getState().environmentStateById[LOCAL_ENVIRONMENT_ID]
           ?.activeWorkspaceIdByProjectId[PROJECT_ID],
       ).toBe(secondaryWorkspaceId);
-      expect(wsRequests.some((request) => request._tag === WS_METHODS.workspacesSetActive)).toBe(
-        true,
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some((request) => request._tag === WS_METHODS.workspacesSetActive),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
       );
       expect(
         wsRequests.some((request) => request._tag === ORCHESTRATION_WS_METHODS.getSnapshot),
