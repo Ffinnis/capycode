@@ -1004,6 +1004,29 @@ function isComposerThreadKeyInUse(mappings: Record<string, string>, threadKey: s
   return Object.values(mappings).includes(threadKey);
 }
 
+function assignLogicalProjectDraftMapping(
+  mappings: Record<string, string>,
+  logicalProjectKey: string,
+  draftId: string,
+): {
+  removedAliasForDraftId: boolean;
+} {
+  let removedAliasForDraftId = false;
+  for (const [existingLogicalProjectKey, mappedDraftId] of Object.entries(mappings)) {
+    if (mappedDraftId !== draftId) {
+      continue;
+    }
+    if (existingLogicalProjectKey !== logicalProjectKey) {
+      removedAliasForDraftId = true;
+    }
+    delete mappings[existingLogicalProjectKey];
+  }
+  mappings[logicalProjectKey] = draftId;
+  return {
+    removedAliasForDraftId,
+  };
+}
+
 function toProjectDraftSession(
   draftId: DraftId,
   draftSession: DraftSessionState,
@@ -1135,7 +1158,16 @@ function upsertLogicalProjectDraftThreadState(
     existingThread,
     input.options,
   );
-  const hasSameLogicalMapping = previousThreadKeyForLogicalProject === input.draftId;
+  const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> = {
+    ...state.logicalProjectDraftThreadKeyByLogicalProjectKey,
+  };
+  const { removedAliasForDraftId } = assignLogicalProjectDraftMapping(
+    nextLogicalProjectDraftThreadKeyByLogicalProjectKey,
+    input.normalizedLogicalProjectKey,
+    input.draftId,
+  );
+  const hasSameLogicalMapping =
+    previousThreadKeyForLogicalProject === input.draftId && !removedAliasForDraftId;
   if (hasSameLogicalMapping && draftThreadsEqual(existingThread, nextDraftThread)) {
     return {
       draftsByThreadKey: state.draftsByThreadKey,
@@ -1145,11 +1177,6 @@ function upsertLogicalProjectDraftThreadState(
       changed: false,
     };
   }
-
-  const nextLogicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string> = {
-    ...state.logicalProjectDraftThreadKeyByLogicalProjectKey,
-    [input.normalizedLogicalProjectKey]: input.draftId,
-  };
   const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
     ...state.draftThreadsByThreadKey,
     [input.draftId]: nextDraftThread,
@@ -2904,10 +2931,28 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             ...hydratedDraftThreadsByThreadKey,
             ...currentState.draftThreadsByThreadKey,
           },
-          logicalProjectDraftThreadKeyByLogicalProjectKey: {
-            ...normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
-            ...currentState.logicalProjectDraftThreadKeyByLogicalProjectKey,
-          },
+          logicalProjectDraftThreadKeyByLogicalProjectKey: (() => {
+            const mergedLogicalMappings: Record<string, string> = {};
+            for (const [logicalProjectKey, draftThreadKey] of Object.entries(
+              normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
+            )) {
+              assignLogicalProjectDraftMapping(
+                mergedLogicalMappings,
+                logicalProjectKey,
+                draftThreadKey,
+              );
+            }
+            for (const [logicalProjectKey, draftThreadKey] of Object.entries(
+              currentState.logicalProjectDraftThreadKeyByLogicalProjectKey,
+            )) {
+              assignLogicalProjectDraftMapping(
+                mergedLogicalMappings,
+                logicalProjectKey,
+                draftThreadKey,
+              );
+            }
+            return mergedLogicalMappings;
+          })(),
           stickyModelSelectionByProvider: {
             ...normalizedPersisted.stickyModelSelectionByProvider,
             ...currentState.stickyModelSelectionByProvider,

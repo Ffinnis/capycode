@@ -588,6 +588,46 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("keeps only the latest logical-project mapping when reusing a draft id via setProjectDraftThreadId", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+
+    store.setProjectDraftThreadId(otherProjectRef, draftId, { threadId: otherThreadId });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.threadId).toBe(otherThreadId);
+    expect(
+      useComposerDraftStore.getState().logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ).toEqual({
+      [scopedProjectKey(otherProjectRef)]: draftId,
+    });
+  });
+
+  it("keeps only the latest logical-project mapping when reusing a draft id via createOrReuseProjectDraft", () => {
+    const store = useComposerDraftStore.getState();
+    store.createOrReuseProjectDraft({
+      logicalProjectKey: scopedProjectKey(projectRef),
+      projectRef,
+      draftId,
+      options: { threadId },
+    });
+
+    store.createOrReuseProjectDraft({
+      logicalProjectKey: scopedProjectKey(otherProjectRef),
+      projectRef: otherProjectRef,
+      draftId,
+      options: { threadId: otherThreadId },
+    });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.threadId).toBe(otherThreadId);
+    expect(
+      useComposerDraftStore.getState().logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ).toEqual({
+      [scopedProjectKey(otherProjectRef)]: draftId,
+    });
+  });
+
   it("clears only matching project draft mapping entries", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
