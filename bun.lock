@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@capycode/desktop",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "effect": "catalog:",
         "electron": "40.6.0",
@@ -42,7 +42,7 @@
     },
     "apps/server": {
       "name": "capycode",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "bin": {
         "capycode": "./dist/bin.mjs",
       },
@@ -74,7 +74,7 @@
     },
     "apps/web": {
       "name": "@capycode/web",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "@base-ui/react": "^1.2.0",
         "@capycode/client-runtime": "workspace:*",
@@ -141,7 +141,7 @@
     },
     "packages/client-runtime": {
       "name": "@capycode/client-runtime",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "@capycode/contracts": "workspace:*",
       },
@@ -153,7 +153,7 @@
     },
     "packages/contracts": {
       "name": "@capycode/contracts",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -197,7 +197,7 @@
     },
     "packages/shared": {
       "name": "@capycode/shared",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "@capycode/contracts": "workspace:*",
         "effect": "catalog:",
