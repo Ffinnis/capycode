@@ -535,6 +535,99 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("atomically creates a draft mapping and snapshots sticky state in one write", () => {
+    const store = useComposerDraftStore.getState();
+    store.setStickyModelSelection(
+      modelSelection("codex", "gpt-5.4", {
+        reasoningEffort: "high",
+      }),
+    );
+
+    let writes = 0;
+    const unsubscribe = useComposerDraftStore.subscribe(() => {
+      writes += 1;
+    });
+
+    try {
+      store.createOrReuseProjectDraft({
+        logicalProjectKey: scopedProjectKey(projectRef),
+        projectRef,
+        draftId,
+        options: {
+          threadId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          branch: "feature/atomic",
+          worktreePath: "/tmp/feature-atomic",
+          envMode: "worktree",
+        },
+        applyStickyState: true,
+      });
+    } finally {
+      unsubscribe();
+    }
+
+    expect(writes).toBe(1);
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      environmentId: TEST_ENVIRONMENT_ID,
+      projectId,
+      branch: "feature/atomic",
+      worktreePath: "/tmp/feature-atomic",
+      envMode: "worktree",
+    });
+    expect(draftByKey(draftId)).toMatchObject({
+      activeProvider: "codex",
+      modelSelectionByProvider: {
+        codex: {
+          provider: "codex",
+          model: "gpt-5.4",
+          options: {
+            reasoningEffort: "high",
+          },
+        },
+      },
+    });
+  });
+
+  it("keeps only the latest logical-project mapping when reusing a draft id via setProjectDraftThreadId", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+
+    store.setProjectDraftThreadId(otherProjectRef, draftId, { threadId: otherThreadId });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.threadId).toBe(otherThreadId);
+    expect(
+      useComposerDraftStore.getState().logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ).toEqual({
+      [scopedProjectKey(otherProjectRef)]: draftId,
+    });
+  });
+
+  it("keeps only the latest logical-project mapping when reusing a draft id via createOrReuseProjectDraft", () => {
+    const store = useComposerDraftStore.getState();
+    store.createOrReuseProjectDraft({
+      logicalProjectKey: scopedProjectKey(projectRef),
+      projectRef,
+      draftId,
+      options: { threadId },
+    });
+
+    store.createOrReuseProjectDraft({
+      logicalProjectKey: scopedProjectKey(otherProjectRef),
+      projectRef: otherProjectRef,
+      draftId,
+      options: { threadId: otherThreadId },
+    });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.threadId).toBe(otherThreadId);
+    expect(
+      useComposerDraftStore.getState().logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ).toEqual({
+      [scopedProjectKey(otherProjectRef)]: draftId,
+    });
+  });
+
   it("clears only matching project draft mapping entries", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
@@ -573,6 +666,42 @@ describe("composerDraftStore project draft thread mapping", () => {
     );
     expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
     expect(draftByKey(draftId)).toBeUndefined();
+  });
+
+  it("preserves promoted drafts when remapping a project to a new draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    const promotedTarget = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "keep promoting");
+    store.markDraftThreadPromoting(draftId, promotedTarget);
+
+    store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
+      otherThreadId,
+    );
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.promotedTo).toEqual(
+      promotedTarget,
+    );
+    expect(draftByKey(draftId)?.prompt).toBe("keep promoting");
+  });
+
+  it("preserves promoted marker when reusing the same logical project draft mapping", () => {
+    const store = useComposerDraftStore.getState();
+    const promotedTarget = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.markDraftThreadPromoting(draftId, promotedTarget);
+
+    store.createOrReuseProjectDraft({
+      logicalProjectKey: scopedProjectKey(projectRef),
+      projectRef,
+      draftId,
+      options: { threadId },
+    });
+
+    expect(store.getDraftThread(draftId)?.promotedTo).toEqual(promotedTarget);
   });
 
   it("keeps composer drafts when the thread is still mapped by another project", () => {

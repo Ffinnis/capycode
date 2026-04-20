@@ -9,6 +9,7 @@ import {
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
+import { startNewThreadLatency } from "../perf/newThreadLatency";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useServerKeybindings } from "~/rpc/serverState";
@@ -77,7 +78,11 @@ export function ChatRouteGlobalShortcuts() {
       if (newThreadOptions) {
         event.preventDefault();
         event.stopPropagation();
-        void handleNewThread(projectRef, newThreadOptions);
+        const latencyTracker = startNewThreadLatency("shortcut");
+        void handleNewThread(projectRef, {
+          ...newThreadOptions,
+          latencyTracker,
+        });
         return;
       }
     };

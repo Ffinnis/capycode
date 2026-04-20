@@ -165,6 +165,7 @@ import {
   toggleWorkspaceThreadListOpen,
   useThreadJumpHintVisibility,
   ThreadStatusPill,
+  buildLogicalProjectEntryIndex,
 } from "./Sidebar.logic";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { getProviderBrandIcon, getProviderBrandIconClassName } from "./providerBrandIcon";
@@ -173,6 +174,7 @@ import { ensureEnvironmentApi, readEnvironmentApi } from "../environmentApi";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "../rpc/serverState";
 import { deriveLogicalProjectKey } from "../logicalProject";
+import { startNewThreadLatency } from "../perf/newThreadLatency";
 import {
   useSavedEnvironmentRegistryStore,
   useSavedEnvironmentRuntimeStore,
@@ -1622,6 +1624,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const clearProjectDraftThreadId = useComposerDraftStore(
     (state) => state.clearProjectDraftThreadId,
   );
+  const setActiveWorkspaceForProject = useStore((state) => state.setActiveWorkspaceForProject);
+  const latestWorkspaceNewThreadTokenRef = useRef(0);
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{
     threadId: ThreadId;
   }>({
@@ -2471,18 +2475,74 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
   const handleCreateThreadForWorkspace = useCallback(
     async (workspace: SidebarWorkspaceSnapshot) => {
-      await setWorkspaceActive(workspace);
+      const api = readEnvironmentApi(workspace.environmentId);
+      if (!api) {
+        throw new Error("Workspace API unavailable.");
+      }
       const threadLaunchInput = resolveWorkspaceThreadLaunchInput(
         workspace,
         projectGitStatus.data?.branch ?? null,
       );
-      await handleNewThread(scopeProjectRef(workspace.environmentId, workspace.projectId), {
-        branch: threadLaunchInput.branch,
-        worktreePath: threadLaunchInput.worktreePath,
-        envMode: threadLaunchInput.envMode,
+      const previousActiveWorkspaceId =
+        selectActiveWorkspaceForProjectRef(
+          useStore.getState(),
+          scopeProjectRef(workspace.environmentId, workspace.projectId),
+        )?.id ?? null;
+      const previousActiveWorkspaceInput = previousActiveWorkspaceId
+        ? {
+            environmentId: workspace.environmentId,
+            projectId: workspace.projectId,
+            workspaceId: previousActiveWorkspaceId,
+          }
+        : null;
+      const workspaceToken = latestWorkspaceNewThreadTokenRef.current + 1;
+      latestWorkspaceNewThreadTokenRef.current = workspaceToken;
+      const latencyTracker = startNewThreadLatency("workspace-button");
+      setActiveWorkspaceForProject({
+        environmentId: workspace.environmentId,
+        projectId: workspace.projectId,
+        workspaceId: workspace.id,
       });
+      try {
+        await handleNewThread(scopeProjectRef(workspace.environmentId, workspace.projectId), {
+          branch: threadLaunchInput.branch,
+          worktreePath: threadLaunchInput.worktreePath,
+          envMode: threadLaunchInput.envMode,
+          latencyTracker,
+        });
+      } catch (error) {
+        if (
+          latestWorkspaceNewThreadTokenRef.current === workspaceToken &&
+          previousActiveWorkspaceInput
+        ) {
+          setActiveWorkspaceForProject(previousActiveWorkspaceInput);
+        }
+        throw error;
+      }
+      void api.workspaces
+        .setActive({ workspaceId: workspace.id })
+        .then(() => {
+          latencyTracker.markWorkspaceAck("success");
+        })
+        .catch((error) => {
+          latencyTracker.markWorkspaceAck("error");
+          if (latestWorkspaceNewThreadTokenRef.current !== workspaceToken) {
+            return;
+          }
+          if (previousActiveWorkspaceInput) {
+            setActiveWorkspaceForProject(previousActiveWorkspaceInput);
+          }
+          toastManager.add({
+            type: "error",
+            title: "Workspace sync failed",
+            description:
+              error instanceof Error
+                ? error.message
+                : "Failed to persist the active workspace on the server.",
+          });
+        });
     },
-    [handleNewThread, projectGitStatus.data?.branch, setWorkspaceActive],
+    [handleNewThread, projectGitStatus.data?.branch, setActiveWorkspaceForProject],
   );
 
   const deleteWorkspace = useCallback(
@@ -4322,22 +4382,30 @@ export default function Sidebar() {
     sidebarThreadByKey,
   ]);
 
-  // Group threads by logical project key so all threads from grouped projects
-  // are displayed together.
-  const threadsByProjectKey = useMemo(() => {
-    const next = new Map<string, SidebarThreadSummary[]>();
-    for (const thread of sidebarThreads) {
-      const physicalKey = scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId));
-      const logicalKey = physicalToLogicalKey.get(physicalKey) ?? physicalKey;
-      const existing = next.get(logicalKey);
-      if (existing) {
-        existing.push(thread);
-      } else {
-        next.set(logicalKey, [thread]);
-      }
-    }
-    return next;
-  }, [sidebarThreads, physicalToLogicalKey]);
+  const threadsByProjectKey = useMemo(
+    () =>
+      buildLogicalProjectEntryIndex({
+        entries: sidebarThreads,
+        physicalToLogicalKey,
+      }),
+    [physicalToLogicalKey, sidebarThreads],
+  );
+  const workspacesByProjectKey = useMemo(
+    () =>
+      buildLogicalProjectEntryIndex({
+        entries: sidebarWorkspaces,
+        physicalToLogicalKey,
+      }),
+    [physicalToLogicalKey, sidebarWorkspaces],
+  );
+  const workspaceSectionsByProjectKey = useMemo(
+    () =>
+      buildLogicalProjectEntryIndex({
+        entries: sidebarWorkspaceSections,
+        physicalToLogicalKey,
+      }),
+    [physicalToLogicalKey, sidebarWorkspaceSections],
+  );
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
       terminalFocus: isTerminalFocused(),
@@ -4585,57 +4653,44 @@ export default function Sidebar() {
     visibleThreads,
   ]);
   const isManualProjectSorting = sidebarProjectSortOrder === "manual";
-  const visibleSidebarThreadKeys = useMemo(
-    () =>
-      sortedProjects.flatMap((project) => {
-        const projectExpanded = projectExpandedById[project.projectKey] ?? true;
-        if (!projectExpanded) {
-          return [];
-        }
-        const projectWorkspaceEntries = sidebarWorkspaces.filter((workspace) => {
-          const physicalKey = scopedProjectKey(
-            scopeProjectRef(workspace.environmentId, workspace.projectId),
-          );
-          return (physicalToLogicalKey.get(physicalKey) ?? physicalKey) === project.projectKey;
-        });
-        if (projectWorkspaceEntries.length === 0) {
-          return [];
-        }
-        const projectWorkspaceSectionEntries = sidebarWorkspaceSections.filter((section) => {
-          const physicalKey = scopedProjectKey(
-            scopeProjectRef(section.environmentId, section.projectId),
-          );
-          return (physicalToLogicalKey.get(physicalKey) ?? physicalKey) === project.projectKey;
-        });
-        const workspaceSnapshots = buildSidebarWorkspaceSnapshots(project, projectWorkspaceEntries);
-        const workspaceSections = buildSidebarWorkspaceSections(
-          project,
-          projectWorkspaceSectionEntries,
-        );
-        const projectWorkspaceItems = buildSidebarProjectWorkspaceItems(
-          workspaceSections,
-          workspaceSnapshots,
-        );
-        const workspacesBySectionId = buildSidebarWorkspacesBySectionId(workspaceSnapshots);
-        const workspaceThreadsByKey = buildSidebarWorkspaceThreadsByKey({
-          visibleProjectThreads: (threadsByProjectKey.get(project.projectKey) ?? []).filter(
-            (thread) => thread.archivedAt === null,
-          ),
-          workspaceByScopedId: buildSidebarWorkspaceByScopedId(workspaceSnapshots),
-          defaultWorkspaceKeyByProjectIdentity:
-            buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
-          threadSortOrder: sidebarThreadSortOrder,
-        });
-        const threadKeysByWorkspaceKey = new Map(
-          [...workspaceThreadsByKey.entries()].map(([workspaceKey, threads]) => [
-            workspaceKey,
-            threads.map((thread) =>
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            ),
-          ]),
-        );
-
-        return getVisibleWorkspacePanelThreadIds({
+  const workspacePanelThreadKeysByProjectKey = useMemo(() => {
+    const next = new Map<string, string[]>();
+    for (const project of sortedProjects) {
+      const projectWorkspaceEntries = workspacesByProjectKey.get(project.projectKey) ?? [];
+      if (projectWorkspaceEntries.length === 0) {
+        next.set(project.projectKey, []);
+        continue;
+      }
+      const projectWorkspaceSectionEntries =
+        workspaceSectionsByProjectKey.get(project.projectKey) ?? [];
+      const workspaceSnapshots = buildSidebarWorkspaceSnapshots(project, projectWorkspaceEntries);
+      const workspaceSections = buildSidebarWorkspaceSections(
+        project,
+        projectWorkspaceSectionEntries,
+      );
+      const projectWorkspaceItems = buildSidebarProjectWorkspaceItems(
+        workspaceSections,
+        workspaceSnapshots,
+      );
+      const workspacesBySectionId = buildSidebarWorkspacesBySectionId(workspaceSnapshots);
+      const workspaceThreadsByKey = buildSidebarWorkspaceThreadsByKey({
+        visibleProjectThreads: (threadsByProjectKey.get(project.projectKey) ?? []).filter(
+          (thread) => thread.archivedAt === null,
+        ),
+        workspaceByScopedId: buildSidebarWorkspaceByScopedId(workspaceSnapshots),
+        defaultWorkspaceKeyByProjectIdentity:
+          buildDefaultWorkspaceKeyByProjectIdentity(workspaceSnapshots),
+        threadSortOrder: sidebarThreadSortOrder,
+      });
+      const threadKeysByWorkspaceKey = new Map(
+        [...workspaceThreadsByKey.entries()].map(([workspaceKey, threads]) => [
+          workspaceKey,
+          threads.map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+        ]),
+      );
+      next.set(
+        project.projectKey,
+        getVisibleWorkspacePanelThreadIds({
           items: projectWorkspaceItems.map((item) =>
             item.kind === "workspace"
               ? { kind: "workspace" as const, workspaceKey: item.workspace.workspaceKey }
@@ -4648,18 +4703,28 @@ export default function Sidebar() {
           workspacesBySectionId,
           openWorkspaceKeys: openWorkspaceThreadLists,
           threadIdsByWorkspaceKey: threadKeysByWorkspaceKey,
-        });
+        }),
+      );
+    }
+    return next;
+  }, [
+    openWorkspaceThreadLists,
+    sidebarThreadSortOrder,
+    sortedProjects,
+    threadsByProjectKey,
+    workspaceSectionsByProjectKey,
+    workspacesByProjectKey,
+  ]);
+  const visibleSidebarThreadKeys = useMemo(
+    () =>
+      sortedProjects.flatMap((project) => {
+        const projectExpanded = projectExpandedById[project.projectKey] ?? true;
+        if (!projectExpanded) {
+          return [];
+        }
+        return workspacePanelThreadKeysByProjectKey.get(project.projectKey) ?? [];
       }),
-    [
-      openWorkspaceThreadLists,
-      physicalToLogicalKey,
-      projectExpandedById,
-      sidebarThreadSortOrder,
-      sidebarWorkspaceSections,
-      sidebarWorkspaces,
-      sortedProjects,
-      threadsByProjectKey,
-    ],
+    [projectExpandedById, sortedProjects, workspacePanelThreadKeysByProjectKey],
   );
   const threadJumpCommandByKey = useMemo(() => {
     const mapping = new Map<string, NonNullable<ReturnType<typeof threadJumpCommandForIndex>>>();

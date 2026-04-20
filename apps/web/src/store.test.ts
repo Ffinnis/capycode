@@ -25,6 +25,7 @@ import {
   selectProjectsAcrossEnvironments,
   selectThreadByRef,
   selectThreadExistsByRef,
+  setActiveWorkspaceForProject,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
   syncServerReadModel,
@@ -710,6 +711,143 @@ describe("store read model sync", () => {
     const next = syncServerReadModel(initialState, readModel, localEnvironmentId);
 
     expect(projectsOf(next).map((project) => project.id)).toEqual([project1, project2, project3]);
+  });
+
+  it("optimistically switches active workspace state for a project", () => {
+    const projectId = ProjectId.make("project-1");
+    const rootWorkspaceId = WorkspaceId.make("workspace-root");
+    const featureWorkspaceId = WorkspaceId.make("workspace-feature");
+    const state = makeEmptyState({
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+      workspaceIds: [rootWorkspaceId, featureWorkspaceId],
+      workspaceById: {
+        [rootWorkspaceId]: {
+          id: rootWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: null,
+          type: "root",
+          name: "Workspace",
+          branch: "main",
+          worktreePath: null,
+          sectionId: null,
+          tabOrder: 0,
+          isDefault: true,
+          isActive: true,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+        [featureWorkspaceId]: {
+          id: featureWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: WorktreeId.make("worktree-feature"),
+          type: "worktree",
+          name: "feature",
+          branch: "feature",
+          worktreePath: "/tmp/project-feature",
+          sectionId: null,
+          tabOrder: 1,
+          isDefault: false,
+          isActive: false,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [rootWorkspaceId, featureWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: rootWorkspaceId,
+      },
+    });
+
+    const next = setActiveWorkspaceForProject(state, {
+      environmentId: localEnvironmentId,
+      projectId,
+      workspaceId: featureWorkspaceId,
+    });
+    const nextEnvironmentState = localEnvironmentStateOf(next);
+    expect(nextEnvironmentState.activeWorkspaceIdByProjectId[projectId]).toBe(featureWorkspaceId);
+    expect(nextEnvironmentState.workspaceById[rootWorkspaceId]?.isActive).toBe(false);
+    expect(nextEnvironmentState.workspaceById[featureWorkspaceId]?.isActive).toBe(true);
+  });
+
+  it("returns the same state when the active workspace is unchanged", () => {
+    const projectId = ProjectId.make("project-1");
+    const rootWorkspaceId = WorkspaceId.make("workspace-root");
+    const state = makeEmptyState({
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+      workspaceIds: [rootWorkspaceId],
+      workspaceById: {
+        [rootWorkspaceId]: {
+          id: rootWorkspaceId,
+          environmentId: localEnvironmentId,
+          projectId,
+          worktreeId: null,
+          type: "root",
+          name: "Workspace",
+          branch: "main",
+          worktreePath: null,
+          sectionId: null,
+          tabOrder: 0,
+          isDefault: true,
+          isActive: true,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          lastOpenedAt: "2026-02-27T00:00:00.000Z",
+          deletingAt: null,
+        },
+      },
+      workspaceIdsByProjectId: {
+        [projectId]: [rootWorkspaceId],
+      },
+      activeWorkspaceIdByProjectId: {
+        [projectId]: rootWorkspaceId,
+      },
+    });
+
+    const next = setActiveWorkspaceForProject(state, {
+      environmentId: localEnvironmentId,
+      projectId,
+      workspaceId: rootWorkspaceId,
+    });
+
+    expect(next).toBe(state);
   });
 
   it("optimistically removes a workspace and reassigns the active workspace", () => {

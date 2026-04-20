@@ -1290,10 +1290,13 @@ async function triggerChatNewShortcutUntilPath(
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     dispatchChatNewShortcut();
-    await waitForLayout();
-    pathname = router.state.location.pathname;
-    if (predicate(pathname)) {
-      return pathname;
+    const settleDeadline = Date.now() + 300;
+    while (Date.now() < settleDeadline) {
+      await waitForLayout();
+      pathname = router.state.location.pathname;
+      if (predicate(pathname)) {
+        return pathname;
+      }
     }
   }
   throw new Error(`${errorMessage} Last path: ${pathname}`);
@@ -3189,6 +3192,294 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("opens a workspace draft without waiting for snapshot refresh and syncs setActive in background", async () => {
+    const secondaryWorkspaceId = "workspace-browser-secondary" as WorkspaceId;
+    let resolveSetActive: (() => void) | null = null;
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-workspace-fast-open-test" as MessageId,
+        targetText: "workspace fast open",
+      }),
+      configureFixture: (nextFixture) => {
+        const baseWorkspace = nextFixture.snapshot.workspaces[0]!;
+        nextFixture.snapshot = {
+          ...nextFixture.snapshot,
+          workspaces: [
+            {
+              ...baseWorkspace,
+              id: DEFAULT_WORKSPACE_ID,
+              type: "root",
+              isDefault: true,
+              isActive: true,
+              worktreePath: null,
+              branch: "main",
+            },
+            {
+              ...baseWorkspace,
+              id: secondaryWorkspaceId,
+              type: "worktree",
+              name: "feature/secondary",
+              branch: "feature/secondary",
+              worktreePath: "/repo/worktrees/feature-secondary",
+              isDefault: false,
+              isActive: false,
+              tabOrder: 1,
+            },
+          ],
+        };
+      },
+    });
+
+    customWsRpcResolver = (body) => {
+      if (body._tag === ORCHESTRATION_WS_METHODS.getSnapshot) {
+        return fixture.snapshot;
+      }
+      if (body._tag === WS_METHODS.workspacesSetActive) {
+        const workspaceId = "workspaceId" in body ? body.workspaceId : null;
+        return new Promise((resolve) => {
+          resolveSetActive = () => {
+            const workspace = fixture.snapshot.workspaces.find(
+              (candidate) => candidate.id === workspaceId,
+            );
+            fixture.snapshot = {
+              ...fixture.snapshot,
+              workspaces: fixture.snapshot.workspaces.map((candidate) => ({
+                ...candidate,
+                isActive: candidate.id === workspaceId,
+              })),
+            };
+            resolve(workspace);
+          };
+        });
+      }
+      return undefined;
+    };
+
+    try {
+      wsRequests.length = 0;
+      const newThreadButton = page.getByTestId(`new-thread-button-${secondaryWorkspaceId}`);
+      await expect.element(newThreadButton).toBeInTheDocument();
+      await newThreadButton.click();
+
+      await waitForURL(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "Workspace new-thread should navigate before server workspace sync completes.",
+      );
+      expect(
+        useStore.getState().environmentStateById[LOCAL_ENVIRONMENT_ID]
+          ?.activeWorkspaceIdByProjectId[PROJECT_ID],
+      ).toBe(secondaryWorkspaceId);
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some((request) => request._tag === WS_METHODS.workspacesSetActive),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(
+        wsRequests.some((request) => request._tag === ORCHESTRATION_WS_METHODS.getSnapshot),
+      ).toBe(false);
+
+      expect(resolveSetActive).not.toBeNull();
+    } finally {
+      customWsRpcResolver = null;
+      await mounted.cleanup();
+    }
+  });
+
+  it("rolls back optimistic workspace activation on setActive failure without leaving the draft route", async () => {
+    const secondaryWorkspaceId = "workspace-browser-failing" as WorkspaceId;
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-workspace-failure-test" as MessageId,
+        targetText: "workspace failure",
+      }),
+      configureFixture: (nextFixture) => {
+        const baseWorkspace = nextFixture.snapshot.workspaces[0]!;
+        nextFixture.snapshot = {
+          ...nextFixture.snapshot,
+          workspaces: [
+            {
+              ...baseWorkspace,
+              id: DEFAULT_WORKSPACE_ID,
+              type: "root",
+              isDefault: true,
+              isActive: true,
+              worktreePath: null,
+              branch: "main",
+            },
+            {
+              ...baseWorkspace,
+              id: secondaryWorkspaceId,
+              type: "worktree",
+              name: "feature/failure",
+              branch: "feature/failure",
+              worktreePath: "/repo/worktrees/feature-failure",
+              isDefault: false,
+              isActive: false,
+              tabOrder: 1,
+            },
+          ],
+        };
+      },
+    });
+
+    customWsRpcResolver = (body) => {
+      if (body._tag === WS_METHODS.workspacesSetActive) {
+        throw new Error("setActive failed");
+      }
+      return undefined;
+    };
+
+    try {
+      const newThreadButton = page.getByTestId(`new-thread-button-${secondaryWorkspaceId}`);
+      await expect.element(newThreadButton).toBeInTheDocument();
+      await newThreadButton.click();
+
+      const draftPath = await waitForURL(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "Workspace new-thread should still open a draft route on setActive failure.",
+      );
+      await vi.waitFor(
+        () => {
+          expect(
+            useStore.getState().environmentStateById[LOCAL_ENVIRONMENT_ID]
+              ?.activeWorkspaceIdByProjectId[PROJECT_ID],
+          ).toBe(DEFAULT_WORKSPACE_ID);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(mounted.router.state.location.pathname).toBe(draftPath);
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("Workspace sync failed");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      customWsRpcResolver = null;
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps the latest optimistic workspace after a stale setActive failure", async () => {
+    const firstWorkspaceId = "workspace-browser-race-a" as WorkspaceId;
+    const secondWorkspaceId = "workspace-browser-race-b" as WorkspaceId;
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-workspace-race-test" as MessageId,
+        targetText: "workspace race",
+      }),
+      configureFixture: (nextFixture) => {
+        const baseWorkspace = nextFixture.snapshot.workspaces[0]!;
+        nextFixture.snapshot = {
+          ...nextFixture.snapshot,
+          workspaces: [
+            {
+              ...baseWorkspace,
+              id: DEFAULT_WORKSPACE_ID,
+              type: "root",
+              isDefault: true,
+              isActive: true,
+              worktreePath: null,
+              branch: "main",
+            },
+            {
+              ...baseWorkspace,
+              id: firstWorkspaceId,
+              type: "worktree",
+              name: "feature/a",
+              branch: "feature/a",
+              worktreePath: "/repo/worktrees/feature-a",
+              isDefault: false,
+              isActive: false,
+              tabOrder: 1,
+            },
+            {
+              ...baseWorkspace,
+              id: secondWorkspaceId,
+              type: "worktree",
+              name: "feature/b",
+              branch: "feature/b",
+              worktreePath: "/repo/worktrees/feature-b",
+              isDefault: false,
+              isActive: false,
+              tabOrder: 2,
+            },
+          ],
+        };
+      },
+    });
+
+    customWsRpcResolver = (body) => {
+      if (body._tag !== WS_METHODS.workspacesSetActive) {
+        return undefined;
+      }
+      const workspaceId = "workspaceId" in body ? body.workspaceId : null;
+      if (workspaceId === firstWorkspaceId) {
+        return new Promise((_resolve, reject) => {
+          window.setTimeout(() => reject(new Error("first failure")), 90);
+        });
+      }
+      if (workspaceId === secondWorkspaceId) {
+        return new Promise((resolve) => {
+          window.setTimeout(() => {
+            fixture.snapshot = {
+              ...fixture.snapshot,
+              workspaces: fixture.snapshot.workspaces.map((candidate) => ({
+                ...candidate,
+                isActive: candidate.id === secondWorkspaceId,
+              })),
+            };
+            resolve(
+              fixture.snapshot.workspaces.find((candidate) => candidate.id === secondWorkspaceId),
+            );
+          }, 20);
+        });
+      }
+      return undefined;
+    };
+
+    try {
+      const firstButton = page.getByTestId(`new-thread-button-${firstWorkspaceId}`);
+      const secondButton = page.getByTestId(`new-thread-button-${secondWorkspaceId}`);
+      await expect.element(firstButton).toBeInTheDocument();
+      await expect.element(secondButton).toBeInTheDocument();
+
+      await firstButton.click();
+      await secondButton.click();
+
+      await waitForURL(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "Workspace race should still leave the user on a draft route.",
+      );
+      await vi.waitFor(
+        () => {
+          expect(
+            useStore.getState().environmentStateById[LOCAL_ENVIRONMENT_ID]
+              ?.activeWorkspaceIdByProjectId[PROJECT_ID],
+          ).toBe(secondWorkspaceId);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      expect(
+        useStore.getState().environmentStateById[LOCAL_ENVIRONMENT_ID]
+          ?.activeWorkspaceIdByProjectId[PROJECT_ID],
+      ).toBe(secondWorkspaceId);
+    } finally {
+      customWsRpcResolver = null;
+      await mounted.cleanup();
+    }
+  });
+
   it("canonicalizes promoted draft threads to the server thread route", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
@@ -3556,6 +3847,74 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await mounted.cleanup();
     }
   });
+
+  it("performs at most one composer draft write per chat.new invocation", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-chat-shortcut-write-test" as MessageId,
+        targetText: "chat shortcut write count",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "chat.new",
+              shortcut: {
+                key: "o",
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: true,
+                altKey: false,
+                modKey: true,
+              },
+              whenAst: {
+                type: "not",
+                node: { type: "identifier", name: "terminalFocus" },
+              },
+            },
+          ],
+        };
+      },
+    });
+
+    try {
+      await waitForNewThreadShortcutLabel();
+      await waitForServerConfigToApply();
+      const composerEditor = await waitForComposerEditor();
+      composerEditor.focus();
+      await waitForLayout();
+
+      let writes = 0;
+      const unsubscribe = useComposerDraftStore.subscribe(() => {
+        writes += 1;
+      });
+      const firstDraftPath = await triggerChatNewShortcutUntilPath(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "First shortcut invocation should open a draft route.",
+      );
+      unsubscribe();
+      expect(writes).toBeLessThanOrEqual(1);
+
+      writes = 0;
+      const unsubscribeSecond = useComposerDraftStore.subscribe(() => {
+        writes += 1;
+      });
+      const secondPath = await triggerChatNewShortcutUntilPath(
+        mounted.router,
+        (path) => path === firstDraftPath,
+        "Second shortcut invocation should reuse the existing draft route.",
+      );
+      unsubscribeSecond();
+      expect(secondPath).toBe(firstDraftPath);
+      expect(writes).toBeLessThanOrEqual(1);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("creates a fresh draft after the previous draft thread is promoted", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,

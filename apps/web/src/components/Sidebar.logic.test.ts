@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { scopedThreadKey, scopeThreadRef } from "@capycode/client-runtime";
+import {
+  scopedProjectKey,
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@capycode/client-runtime";
 import {
   createThreadJumpHintVisibilityController,
+  buildLogicalProjectEntryIndex,
   ensureWorkspaceThreadListOpen,
   formatWorkspaceDeleteImpactMessage,
   getVisibleSidebarThreadIds,
@@ -448,6 +454,59 @@ describe("orderItemsByPreferredIds", () => {
       ProjectId.make("project-2"),
       ProjectId.make("project-1"),
     ]);
+  });
+});
+
+describe("buildLogicalProjectEntryIndex", () => {
+  it("groups entries by logical project key while preserving source order", () => {
+    const physicalToLogicalKey = new Map<string, string>([
+      [
+        scopedProjectKey(
+          scopeProjectRef(EnvironmentId.make("environment-a"), ProjectId.make("project-1")),
+        ),
+        "logical-project-1",
+      ],
+      [
+        scopedProjectKey(
+          scopeProjectRef(EnvironmentId.make("environment-b"), ProjectId.make("project-2")),
+        ),
+        "logical-project-1",
+      ],
+    ]);
+    const indexed = buildLogicalProjectEntryIndex({
+      entries: [
+        {
+          environmentId: EnvironmentId.make("environment-a"),
+          projectId: ProjectId.make("project-1"),
+          id: "entry-a",
+        },
+        {
+          environmentId: EnvironmentId.make("environment-b"),
+          projectId: ProjectId.make("project-2"),
+          id: "entry-b",
+        },
+        {
+          environmentId: EnvironmentId.make("environment-c"),
+          projectId: ProjectId.make("project-3"),
+          id: "entry-c",
+        },
+      ],
+      physicalToLogicalKey,
+    });
+
+    expect(indexed.get("logical-project-1")?.map((entry) => entry.id)).toEqual([
+      "entry-a",
+      "entry-b",
+    ]);
+    expect(
+      indexed
+        .get(
+          scopedProjectKey(
+            scopeProjectRef(EnvironmentId.make("environment-c"), ProjectId.make("project-3")),
+          ),
+        )
+        ?.map((entry) => entry.id),
+    ).toEqual(["entry-c"]);
   });
 });
 
