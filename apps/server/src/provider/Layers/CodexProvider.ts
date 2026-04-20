@@ -395,6 +395,12 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   if (Result.isFailure(probeResult)) {
     const error = probeResult.failure;
     const installed = !Schema.is(CodexErrors.CodexAppServerSpawnError)(error);
+    yield* Effect.logError("codex.provider.probe.failed", {
+      installed,
+      error,
+      message: error.message,
+      stack: error.stack,
+    });
     return buildServerProvider({
       provider: PROVIDER,
       enabled: codexSettings.enabled,
@@ -407,7 +413,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "error",
         auth: { status: "unknown" },
         message: installed
-          ? `Codex app-server provider probe failed: ${error.message}.`
+          ? "Codex app-server provider probe failed; see server logs for details."
           : "Codex CLI (`codex`) is not installed or not on PATH.",
       },
     });
