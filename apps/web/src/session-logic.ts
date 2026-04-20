@@ -20,16 +20,18 @@ import type {
   TurnDiffSummary,
 } from "./types";
 
-export type ProviderPickerKind = ProviderKind | "cursor";
+export type ProviderPickerKind = ProviderKind;
 
 export const PROVIDER_OPTIONS: Array<{
   value: ProviderPickerKind;
   label: string;
   available: boolean;
+  pickerSidebarBadge?: "new" | "soon";
 }> = [
   { value: "codex", label: "Codex", available: true },
   { value: "claudeAgent", label: "Claude", available: true },
-  { value: "cursor", label: "Cursor", available: false },
+  { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
+  { value: "cursor", label: "Cursor", available: true, pickerSidebarBadge: "new" },
 ];
 
 export interface WorkLogEntry {

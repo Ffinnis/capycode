@@ -4,7 +4,11 @@ import {
   type ProviderKind,
   type ServerProvider,
 } from "@capycode/contracts";
-import { normalizeModelSlug, resolveSelectableModel } from "@capycode/shared/model";
+import {
+  createModelSelection,
+  normalizeModelSlug,
+  resolveSelectableModel,
+} from "@capycode/shared/model";
 import { getComposerProviderState } from "./components/chat/composerProviderRegistry";
 import { UnifiedSettings } from "@capycode/contracts/settings";
 import {
@@ -12,6 +16,7 @@ import {
   getProviderModels,
   resolveSelectableProvider,
 } from "./providerModels";
+import { ModelEsque } from "./components/chat/providerIconUtils";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -27,6 +32,8 @@ export type ProviderCustomModelConfig = {
 export interface AppModelOption {
   slug: string;
   name: string;
+  shortName?: string;
+  subProvider?: string;
   isCustom: boolean;
 }
 
@@ -44,6 +51,20 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     description: "Save additional Claude model slugs for the picker and `/model` command.",
     placeholder: "your-claude-model-slug",
     example: "claude-sonnet-5-0",
+  },
+  cursor: {
+    provider: "cursor",
+    title: "Cursor",
+    description: "Save additional Cursor model slugs for the picker and `/model` command.",
+    placeholder: "your-cursor-model-slug",
+    example: "claude-sonnet-4-6",
+  },
+  opencode: {
+    provider: "opencode",
+    title: "OpenCode",
+    description: "Save additional OpenCode model slugs in `provider/model` format.",
+    placeholder: "openai/gpt-5",
+    example: "anthropic/claude-sonnet-4-5-20250929",
   },
 };
 
@@ -85,11 +106,16 @@ export function getAppModelOptions(
   selectedModel?: string | null,
 ): AppModelOption[] {
   const options: AppModelOption[] = getProviderModels(providers, provider).map(
-    ({ slug, name, isCustom }) => ({
-      slug,
-      name,
-      isCustom,
-    }),
+    ({ slug, name, shortName, subProvider, isCustom }) => {
+      const option: AppModelOption = { slug, name, isCustom };
+      if (shortName) {
+        option.shortName = shortName;
+      }
+      if (subProvider) {
+        option.subProvider = subProvider;
+      }
+      return option;
+    },
   );
   const seen = new Set(options.map((option) => option.slug));
   const trimmedSelectedModel = selectedModel?.trim().toLowerCase();
@@ -151,7 +177,7 @@ export function getCustomModelOptionsByProvider(
   providers: ReadonlyArray<ServerProvider>,
   selectedProvider?: ProviderKind | null,
   selectedModel?: string | null,
-): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
+): Record<ProviderKind, ReadonlyArray<ModelEsque>> {
   return {
     codex: getAppModelOptions(
       settings,
@@ -164,6 +190,18 @@ export function getCustomModelOptionsByProvider(
       providers,
       "claudeAgent",
       selectedProvider === "claudeAgent" ? selectedModel : undefined,
+    ),
+    cursor: getAppModelOptions(
+      settings,
+      providers,
+      "cursor",
+      selectedProvider === "cursor" ? selectedModel : undefined,
+    ),
+    opencode: getAppModelOptions(
+      settings,
+      providers,
+      "opencode",
+      selectedProvider === "opencode" ? selectedModel : undefined,
     ),
   };
 }
@@ -192,9 +230,5 @@ export function resolveAppModelSelectionState(
     },
   });
 
-  return {
-    provider,
-    model,
-    ...(modelOptionsForDispatch ? { options: modelOptionsForDispatch } : {}),
-  };
+  return createModelSelection(provider, model, modelOptionsForDispatch);
 }

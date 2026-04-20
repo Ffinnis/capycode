@@ -19,7 +19,7 @@ import {
 } from "@capycode/contracts";
 import { scopeThreadRef } from "@capycode/client-runtime";
 import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@capycode/contracts/settings";
-import { normalizeModelSlug } from "@capycode/shared/model";
+import { createModelSelection, normalizeModelSlug } from "@capycode/shared/model";
 import { Equal } from "effect";
 import { APP_VERSION } from "../../branding";
 import {
@@ -139,6 +139,18 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Claude",
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
+  },
+  {
+    provider: "cursor",
+    title: "Cursor",
+    binaryPlaceholder: "Cursor agent binary path",
+    binaryDescription: "Path to the Cursor Agent binary",
+  },
+  {
+    provider: "opencode",
+    title: "OpenCode",
+    binaryPlaceholder: "OpenCode binary path",
+    binaryDescription: "Path to the OpenCode binary",
   },
 ] as const;
 
@@ -479,12 +491,30 @@ export function GeneralSettingsPanel() {
         DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
       settings.providers.claudeAgent.customModels.length > 0,
     ),
+    cursor: Boolean(
+      settings.providers.cursor.binaryPath !==
+        DEFAULT_UNIFIED_SETTINGS.providers.cursor.binaryPath ||
+      settings.providers.cursor.apiEndpoint !==
+        DEFAULT_UNIFIED_SETTINGS.providers.cursor.apiEndpoint ||
+      settings.providers.cursor.customModels.length > 0,
+    ),
+    opencode: Boolean(
+      settings.providers.opencode.binaryPath !==
+        DEFAULT_UNIFIED_SETTINGS.providers.opencode.binaryPath ||
+      settings.providers.opencode.serverUrl !==
+        DEFAULT_UNIFIED_SETTINGS.providers.opencode.serverUrl ||
+      settings.providers.opencode.serverPassword !==
+        DEFAULT_UNIFIED_SETTINGS.providers.opencode.serverPassword ||
+      settings.providers.opencode.customModels.length > 0,
+    ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
   >({
     codex: "",
     claudeAgent: "",
+    cursor: "",
+    opencode: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
@@ -1067,11 +1097,11 @@ export function GeneralSettingsPanel() {
                     textGenerationModelSelection: resolveAppModelSelectionState(
                       {
                         ...settings,
-                        textGenerationModelSelection: {
-                          provider: textGenProvider,
-                          model: textGenModel,
-                          ...(nextOptions ? { options: nextOptions } : {}),
-                        },
+                        textGenerationModelSelection: createModelSelection(
+                          textGenProvider,
+                          textGenModel,
+                          nextOptions,
+                        ),
                       },
                       serverProviders,
                     ),
@@ -1398,7 +1428,11 @@ export function GeneralSettingsPanel() {
                           placeholder={
                             providerCard.provider === "codex"
                               ? "gpt-6.7-codex-ultra-preview"
-                              : "claude-sonnet-5-0"
+                              : providerCard.provider === "claudeAgent"
+                                ? "claude-sonnet-5-0"
+                                : providerCard.provider === "cursor"
+                                  ? "claude-sonnet-4-6"
+                                  : "openai/gpt-5"
                           }
                           spellCheck={false}
                         />

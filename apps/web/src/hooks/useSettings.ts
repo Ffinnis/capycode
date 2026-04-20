@@ -19,7 +19,7 @@ import {
 } from "@capycode/contracts/settings";
 import { ensureLocalApi } from "~/localApi";
 import { Struct } from "effect";
-import { deepMerge } from "@capycode/shared/Struct";
+import { applyServerSettingsPatch } from "@capycode/shared/serverSettings";
 import { applySettingsUpdated, getServerConfig, useServerSettings } from "~/rpc/serverState";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
@@ -154,7 +154,7 @@ export function useUpdateSettings() {
     if (Object.keys(serverPatch).length > 0) {
       const currentServerConfig = getServerConfig();
       if (currentServerConfig) {
-        applySettingsUpdated(deepMerge(currentServerConfig.settings, serverPatch));
+        applySettingsUpdated(applyServerSettingsPatch(currentServerConfig.settings, serverPatch));
       }
       // Fire-and-forget RPC — push will reconcile on success
       void ensureLocalApi().server.updateSettings(serverPatch);

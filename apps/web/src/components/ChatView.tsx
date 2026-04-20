@@ -25,7 +25,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@capycode/client-runtime";
-import { applyClaudePromptEffortPrefix } from "@capycode/shared/model";
+import { applyClaudePromptEffortPrefix, createModelSelection } from "@capycode/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@capycode/shared/projectScripts";
 import { truncate } from "@capycode/shared/String";
 import {
@@ -2603,16 +2603,13 @@ export default function ChatView(props: ChatViewProps) {
         }
       }
       const title = truncate(titleSeed);
-      const threadCreateModelSelection: ModelSelection = {
-        provider: ctxSelectedProvider,
-        model:
-          ctxSelectedModel ||
+      const threadCreateModelSelection = createModelSelection(
+        ctxSelectedProvider,
+        ctxSelectedModel ||
           activeProject.defaultModelSelection?.model ||
           DEFAULT_MODEL_BY_PROVIDER.codex,
-        ...(ctxSelectedModelSelection.options
-          ? { options: ctxSelectedModelSelection.options }
-          : {}),
-      };
+        ctxSelectedModelSelection.options,
+      );
 
       // Auto-title from first message
       if (isFirstMessage && isServerThread) {
