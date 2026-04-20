@@ -1,5 +1,13 @@
-import { ServerSettings } from "@capycode/contracts";
+import {
+  ServerSettings,
+  type ClaudeModelOptions,
+  type CodexModelOptions,
+  type CursorModelOptions,
+  type OpenCodeModelOptions,
+  type ServerSettingsPatch,
+} from "@capycode/contracts";
 import { Schema } from "effect";
+import { deepMerge } from "./Struct";
 import { fromLenientJson } from "./schemaJson";
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
@@ -37,4 +45,61 @@ export function parsePersistedServerObservabilitySettings(
   } catch {
     return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined };
   }
+}
+
+function shouldReplaceTextGenerationModelSelection(
+  patch: ServerSettingsPatch["textGenerationModelSelection"] | undefined,
+): boolean {
+  return Boolean(patch && (patch.provider !== undefined || patch.model !== undefined));
+}
+
+const withModelSelectionOptions = <Options>(options: Options | undefined) =>
+  options ? { options } : {};
+
+export function applyServerSettingsPatch(
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+): ServerSettings {
+  const selectionPatch = patch.textGenerationModelSelection;
+  const next = deepMerge(current, patch);
+  if (!selectionPatch || !shouldReplaceTextGenerationModelSelection(selectionPatch)) {
+    return next;
+  }
+
+  const provider = selectionPatch.provider ?? current.textGenerationModelSelection.provider;
+  const model = selectionPatch.model ?? current.textGenerationModelSelection.model;
+
+  return {
+    ...next,
+    textGenerationModelSelection:
+      provider === "codex"
+        ? {
+            provider,
+            model,
+            ...withModelSelectionOptions(selectionPatch.options as CodexModelOptions | undefined),
+          }
+        : provider === "claudeAgent"
+          ? {
+              provider,
+              model,
+              ...withModelSelectionOptions(
+                selectionPatch.options as ClaudeModelOptions | undefined,
+              ),
+            }
+          : provider === "cursor"
+            ? {
+                provider,
+                model,
+                ...withModelSelectionOptions(
+                  selectionPatch.options as CursorModelOptions | undefined,
+                ),
+              }
+            : {
+                provider,
+                model,
+                ...withModelSelectionOptions(
+                  selectionPatch.options as OpenCodeModelOptions | undefined,
+                ),
+              },
+  };
 }

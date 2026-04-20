@@ -161,7 +161,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
       Effect.tap((canonicalEvent) =>
-        canonicalEventLogger ? canonicalEventLogger.write(canonicalEvent, null) : Effect.void,
+        canonicalEventLogger
+          ? canonicalEventLogger.write(canonicalEvent, canonicalEvent.threadId)
+          : Effect.void,
       ),
       Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
       Effect.asVoid,
@@ -297,6 +299,39 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return { adapter: recovered.adapter, threadId: input.threadId, isActive: true } as const;
   });
 
+  const stopStaleSessionsForThread = Effect.fn("stopStaleSessionsForThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly currentProvider: ProviderSession["provider"];
+  }) {
+    yield* Effect.forEach(
+      adapters,
+      (adapter) =>
+        adapter.provider === input.currentProvider
+          ? Effect.void
+          : adapter.stopSession(input.threadId).pipe(
+              Effect.tap(() =>
+                analytics.record("provider.session.stopped", {
+                  provider: adapter.provider,
+                }),
+              ),
+              Effect.catchTag("ProviderAdapterSessionNotFoundError", () =>
+                Effect.logInfo("provider.session.stop-stale-missing", {
+                  threadId: input.threadId,
+                  provider: adapter.provider,
+                }),
+              ),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("provider.session.stop-stale-failed", {
+                  threadId: input.threadId,
+                  provider: adapter.provider,
+                  cause,
+                }).pipe(Effect.andThen(Effect.failCause(cause))),
+              ),
+            ),
+      { discard: true },
+    );
+  });
+
   const startSession: ProviderServiceShape["startSession"] = Effect.fn("startSession")(
     function* (threadId, rawInput) {
       const parsed = yield* decodeInputOrValidationError({
@@ -339,6 +374,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ? persistedBinding.resumeCursor
             : undefined);
         const adapter = yield* registry.getByProvider(input.provider);
+        yield* stopStaleSessionsForThread({
+          threadId,
+          currentProvider: adapter.provider,
+        });
         const session = yield* adapter.startSession({
           ...input,
           ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
@@ -582,7 +621,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         if (routed.isActive) {
           yield* routed.adapter.stopSession(routed.threadId);
         }
-        yield* directory.remove(input.threadId);
+        yield* directory.upsert({
+          threadId: input.threadId,
+          provider: routed.adapter.provider,
+          status: "stopped",
+          runtimePayload: {
+            activeTurnId: null,
+          },
+        });
         yield* analytics.record("provider.session.stopped", {
           provider: routed.adapter.provider,
         });

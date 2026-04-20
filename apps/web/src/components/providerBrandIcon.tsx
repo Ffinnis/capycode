@@ -1,10 +1,12 @@
 import type { ProviderKind } from "@capycode/contracts";
 
-import { ClaudeAI, type Icon, OpenAI } from "./Icons";
+import { ClaudeAI, CursorIcon, type Icon, OpenAI, OpenCodeIcon } from "./Icons";
 
 const PROVIDER_BRAND_ICON: Record<ProviderKind, Icon> = {
   codex: OpenAI,
   claudeAgent: ClaudeAI,
+  cursor: CursorIcon,
+  opencode: OpenCodeIcon,
 };
 
 export function getProviderBrandIcon(provider: ProviderKind): Icon {
@@ -15,5 +17,8 @@ export function getProviderBrandIconClassName(
   provider: ProviderKind,
   fallbackClassName: string,
 ): string {
-  return provider === "claudeAgent" ? `${fallbackClassName} text-[#d97757]` : fallbackClassName;
+  if (provider === "claudeAgent") {
+    return `${fallbackClassName} text-[#d97757]`;
+  }
+  return fallbackClassName;
 }

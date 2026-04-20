@@ -8,12 +8,12 @@
  */
 import { Context } from "effect";
 import type { Effect } from "effect";
-import type { ChatAttachment, ModelSelection } from "@capycode/contracts";
+import type { ChatAttachment, ModelSelection, ProviderKind } from "@capycode/contracts";
 
 import type { TextGenerationError } from "@capycode/contracts";
 
 /** Providers that support git text generation (commit messages, PR content, branch names). */
-export type TextGenerationProvider = "codex" | "claudeAgent";
+export type TextGenerationProvider = ProviderKind;
 
 export interface CommitMessageGenerationInput {
   cwd: string;

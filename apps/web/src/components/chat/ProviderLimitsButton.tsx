@@ -1,4 +1,9 @@
-import type { ProviderKind, ProviderRateWindow, ProviderUsageDashboard } from "@capycode/contracts";
+import {
+  type ProviderKind,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderRateWindow,
+  type ProviderUsageDashboard,
+} from "@capycode/contracts";
 import { DEFAULT_USAGE_RANGE } from "@capycode/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangleIcon } from "lucide-react";
@@ -121,7 +126,7 @@ export function ProviderLimitsButton(props: { provider: ProviderKind }) {
         <div className="px-3 py-3">
           <div className="flex items-baseline justify-between gap-2">
             <div className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-              {props.provider === "codex" ? "Codex" : "Claude"} limits
+              {PROVIDER_DISPLAY_NAMES[props.provider]} limits
             </div>
             <div className="text-[11px] text-muted-foreground/70">
               {provider?.lastLimitsRefreshAt

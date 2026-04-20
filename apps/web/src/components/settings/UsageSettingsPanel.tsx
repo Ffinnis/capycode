@@ -30,6 +30,15 @@ const numberFormatter = new Intl.NumberFormat("en-US");
 const providerMeta: Record<ProviderKind, { label: string }> = {
   codex: { label: "Codex" },
   claudeAgent: { label: "Claude" },
+  cursor: { label: "Cursor" },
+  opencode: { label: "OpenCode" },
+};
+
+const providerSortOrder: Record<ProviderKind, number> = {
+  codex: 0,
+  claudeAgent: 1,
+  opencode: 2,
+  cursor: 3,
 };
 
 function formatInteger(value: number) {
@@ -473,8 +482,8 @@ export function UsageSettingsPanel() {
     const realtimeMatchesRange =
       realtimeSnapshot?.providers?.some((p) => p.range === range) ?? false;
     const snapshot = realtimeMatchesRange ? realtimeSnapshot : usageQuery.data;
-    return (snapshot?.providers ?? []).toSorted((left, right) =>
-      left.provider === right.provider ? 0 : left.provider === "codex" ? -1 : 1,
+    return (snapshot?.providers ?? []).toSorted(
+      (left, right) => providerSortOrder[left.provider] - providerSortOrder[right.provider],
     );
   }, [realtimeSnapshot, usageQuery.data, range]);
 

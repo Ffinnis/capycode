@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   MessageId,
+  ModelSelection,
   OrchestrationCheckpointSummary,
   OrchestrationEvent,
   OrchestrationMessage,
@@ -19,7 +20,7 @@ import type {
   WorkspaceId,
   WorkspaceSectionId,
 } from "@capycode/contracts";
-import { resolveModelSlugForProvider } from "@capycode/shared/model";
+import { createModelSelection, resolveModelSlugForProvider } from "@capycode/shared/model";
 import { create } from "zustand";
 import {
   derivePendingApprovals,
@@ -119,13 +120,12 @@ function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function normalizeModelSelection<T extends { provider: "codex" | "claudeAgent"; model: string }>(
-  selection: T,
-): T {
-  return {
-    ...selection,
-    model: resolveModelSlugForProvider(selection.provider, selection.model),
-  };
+function normalizeModelSelection(selection: ModelSelection): ModelSelection {
+  return createModelSelection(
+    selection.provider,
+    resolveModelSlugForProvider(selection.provider, selection.model),
+    selection.options,
+  );
 }
 
 function mapProjectScripts(scripts: ReadonlyArray<Project["scripts"][number]>): Project["scripts"] {
