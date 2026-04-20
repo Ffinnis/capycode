@@ -2326,7 +2326,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
       useComposerDraftStore.getState().setPrompt(THREAD_REF, "Ship it");
       await waitForLayout();
 
-      const sendButton = await waitForSendButton();
+      const sendButton = await waitForElement(
+        () => document.querySelector<HTMLButtonElement>('button[type="submit"]'),
+        "Unable to find draft composer submit button.",
+      );
       expect(sendButton.disabled).toBe(false);
       sendButton.click();
 
@@ -3480,7 +3483,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("canonicalizes promoted draft threads to the server thread route", async () => {
+  it("keeps the active draft route mounted after the first send bootstrap", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
       snapshot: createSnapshotForTargetUser({
@@ -3505,36 +3508,45 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const newDraftId = draftIdFromPath(newThreadPath);
       const newThreadId = draftThreadIdFor(newDraftId);
 
-      // The composer editor should be present for the new draft thread.
       await waitForComposerEditor();
 
-      // `thread.created` should only mark the draft as promoting; it should
-      // not navigate away until the server thread has actual runtime state.
-      await materializePromotedDraftThreadViaDomainEvent(newThreadId);
-      expect(mounted.router.state.location.pathname).toBe(newThreadPath);
-      await expect.element(page.getByTestId("composer-editor")).toBeInTheDocument();
+      useComposerDraftStore.getState().setPrompt(newDraftId, "first bootstrap turn");
+      await waitForLayout();
 
-      // Once the server thread starts, the route should canonicalize.
-      await startPromotedServerThreadViaDomainEvent(newThreadId);
+      const sendButton = await waitForSendButton();
+      sendButton.click();
+
       await vi.waitFor(
         () => {
-          expect(useComposerDraftStore.getState().draftThreadsByThreadKey[newDraftId]).toBe(
-            undefined,
-          );
+          const threadTurnRequests = wsRequests.filter(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              request.type === "thread.turn.start",
+          ) as Array<{
+            _tag: string;
+            type: string;
+            threadId: ThreadId;
+            bootstrap?: {
+              createThread?: {
+                projectId?: string;
+              };
+            };
+          }>;
+          expect(threadTurnRequests[0]).toMatchObject({
+            threadId: newThreadId,
+            bootstrap: {
+              createThread: {
+                projectId: PROJECT_ID,
+              },
+            },
+          });
         },
         { timeout: 8_000, interval: 16 },
       );
 
-      // The route should switch to the canonical server thread path.
-      await waitForURL(
-        mounted.router,
-        (path) => path === serverThreadPath(newThreadId),
-        "Promoted drafts should canonicalize to the server thread route.",
-      );
-
-      // The composer should remain usable after canonicalization, regardless of
-      // whether the promoted thread is still visibly empty or has already
-      // entered the running state.
+      await materializePromotedDraftThreadViaDomainEvent(newThreadId);
+      await startPromotedServerThreadViaDomainEvent(newThreadId);
+      expect(mounted.router.state.location.pathname).toBe(newThreadPath);
       await expect.element(page.getByTestId("composer-editor")).toBeInTheDocument();
     } finally {
       await mounted.cleanup();
@@ -3961,18 +3973,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const promotedDraftId = draftIdFromPath(promotedThreadPath);
       const promotedThreadId = draftThreadIdFor(promotedDraftId);
 
-      await promoteDraftThreadViaDomainEvent(promotedThreadId);
-      await waitForURL(
-        mounted.router,
-        (path) => path === serverThreadPath(promotedThreadId),
-        "Promoted drafts should canonicalize to the server thread route before a fresh draft is created.",
-      );
-      await vi.waitFor(
-        () => {
-          expect(useComposerDraftStore.getState().getDraftThread(promotedDraftId)).toBeNull();
-        },
-        { timeout: 8_000, interval: 16 },
-      );
+      await materializePromotedDraftThreadViaDomainEvent(promotedThreadId);
+      await startPromotedServerThreadViaDomainEvent(promotedThreadId);
+      expect(mounted.router.state.location.pathname).toBe(promotedThreadPath);
 
       const freshThreadPath = await triggerChatNewShortcutUntilPath(
         mounted.router,

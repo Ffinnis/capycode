@@ -308,11 +308,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       (adapter) =>
         adapter.provider === input.currentProvider
           ? Effect.void
-          : adapter.stopSession(input.threadId).pipe(
-              Effect.tap(() =>
-                analytics.record("provider.session.stopped", {
-                  provider: adapter.provider,
-                }),
+          : adapter.hasSession(input.threadId).pipe(
+              Effect.flatMap((hasSession) =>
+                hasSession
+                  ? adapter.stopSession(input.threadId).pipe(
+                      Effect.tap(() =>
+                        analytics.record("provider.session.stopped", {
+                          provider: adapter.provider,
+                        }),
+                      ),
+                    )
+                  : Effect.logInfo("provider.session.stop-stale-skipped", {
+                      threadId: input.threadId,
+                      provider: adapter.provider,
+                    }),
               ),
               Effect.catchTag("ProviderAdapterSessionNotFoundError", () =>
                 Effect.logInfo("provider.session.stop-stale-missing", {

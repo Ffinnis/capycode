@@ -1,6 +1,6 @@
 import { scopeProjectRef } from "@capycode/client-runtime";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import {
   ThreadWorkspaceShell,
@@ -29,20 +29,21 @@ function DraftChatThreadRouteView() {
       [draftSession?.threadId],
     ),
   );
+  const wasPromotedOnMount = useRef(Boolean(draftSession?.promotedTo)).current;
   const serverThreadStarted = threadHasStarted(serverThread);
   const canonicalThreadRef = useMemo(
     () =>
       draftSession?.promotedTo
-        ? serverThreadStarted
+        ? wasPromotedOnMount && serverThreadStarted
           ? draftSession.promotedTo
           : null
-        : serverThread
+        : !draftSession && serverThread
           ? {
               environmentId: serverThread.environmentId,
               threadId: serverThread.id,
             }
           : null,
-    [draftSession?.promotedTo, serverThread, serverThreadStarted],
+    [draftSession, serverThread, serverThreadStarted, wasPromotedOnMount],
   );
   const activeProjectRef = draftSession
     ? scopeProjectRef(draftSession.environmentId, draftSession.projectId)

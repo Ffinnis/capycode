@@ -435,10 +435,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
   const serverThread = useStore(
-    useMemo(
-      () => createThreadSelectorByRef(routeKind === "server" ? routeThreadRef : null),
-      [routeKind, routeThreadRef],
-    ),
+    useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
   );
   const setStoreThreadError = useStore((store) => store.setError);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
@@ -446,10 +443,10 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setThreadChangedFilesExpanded,
   );
   const activeThreadLastVisitedAt = useUiStateStore((store) =>
-    routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
+    serverThread ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const changedFilesExpandedByTurnId = useUiStateStore((store) =>
-    routeKind === "server"
+    serverThread
       ? (store.threadChangedFilesExpandedById[routeThreadKey] ??
         EMPTY_CHANGED_FILES_EXPANDED_BY_TURN_ID)
       : EMPTY_CHANGED_FILES_EXPANDED_BY_TURN_ID,
@@ -613,10 +610,9 @@ export default function ChatView(props: ChatViewProps) {
   const fallbackDraftProject = useStore(
     useMemo(() => createProjectSelectorByRef(fallbackDraftProjectRef), [fallbackDraftProjectRef]),
   );
-  const localDraftError =
-    routeKind === "server" && serverThread
-      ? null
-      : ((draftId ? localDraftErrorsByDraftId[draftId] : null) ?? null);
+  const localDraftError = serverThread
+    ? null
+    : ((draftId ? localDraftErrorsByDraftId[draftId] : null) ?? null);
   const localDraftThread = useMemo(
     () =>
       draftThread
@@ -632,8 +628,8 @@ export default function ChatView(props: ChatViewProps) {
         : undefined,
     [draftThread, fallbackDraftProject?.defaultModelSelection, localDraftError, threadId],
   );
-  const isServerThread = routeKind === "server" && serverThread !== undefined;
-  const activeThread = isServerThread ? serverThread : localDraftThread;
+  const isServerThread = serverThread !== undefined;
+  const activeThread = serverThread ?? localDraftThread;
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode =
     composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;

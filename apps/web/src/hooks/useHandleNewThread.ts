@@ -109,6 +109,7 @@ function useNewThreadState() {
       if (
         latestActiveDraftThread &&
         currentRouteTarget?.kind === "draft" &&
+        !latestActiveDraftThread.promotedTo &&
         latestActiveDraftThread.logicalProjectKey === logicalProjectKey
       ) {
         createOrReuseProjectDraft({

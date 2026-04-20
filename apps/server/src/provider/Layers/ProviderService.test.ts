@@ -65,7 +65,12 @@ type LegacyProviderRuntimeEvent = {
   readonly [key: string]: unknown;
 };
 
-function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
+function makeFakeCodexAdapter(
+  provider: ProviderKind = "codex",
+  options?: {
+    readonly throwOnMissingStop?: boolean;
+  },
+) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
@@ -131,6 +136,12 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
   const stopSession = vi.fn(
     (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
       Effect.sync(() => {
+        if (!sessions.has(threadId) && options?.throwOnMissingStop === true) {
+          throw new ProviderAdapterSessionNotFoundError({
+            provider,
+            threadId,
+          });
+        }
         sessions.delete(threadId);
       }),
   );
@@ -842,6 +853,50 @@ describe("ProviderServiceLive routing", () => {
         );
       }),
     ),
+  );
+
+  it.effect("skips unrelated provider stopSession calls when the thread is not active there", () =>
+    Effect.gen(function* () {
+      const codex = makeFakeCodexAdapter("codex");
+      const openCode = makeFakeCodexAdapter("opencode", {
+        throwOnMissingStop: true,
+      });
+      const registry: typeof ProviderAdapterRegistry.Service = {
+        getByProvider: (provider) =>
+          provider === "codex"
+            ? Effect.succeed(codex.adapter)
+            : provider === "opencode"
+              ? Effect.succeed(openCode.adapter)
+              : Effect.fail(new ProviderUnsupportedError({ provider })),
+        listProviders: () => Effect.succeed(["codex", "opencode"]),
+      };
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const providerLayer = makeProviderServiceLive().pipe(
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(AnalyticsService.layerTest),
+      );
+
+      const session = yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        return yield* provider.startSession(asThreadId("thread-codex-no-opencode"), {
+          provider: "codex",
+          threadId: asThreadId("thread-codex-no-opencode"),
+          runtimeMode: "full-access",
+        });
+      }).pipe(Effect.provide(providerLayer));
+
+      assert.equal(session.provider, "codex");
+      assert.equal(codex.startSession.mock.calls.length, 1);
+      assert.deepEqual(openCode.hasSession.mock.calls, [[asThreadId("thread-codex-no-opencode")]]);
+      assert.equal(openCode.stopSession.mock.calls.length, 0);
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("recovers stale sessions for sendTurn using persisted cwd", () =>
