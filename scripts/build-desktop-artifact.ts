@@ -185,6 +185,24 @@ interface StagePackageJson {
   readonly overrides: Record<string, unknown>;
 }
 
+interface WorkspacePackageJson {
+  readonly name: string;
+  readonly version?: string;
+  readonly private?: boolean;
+  readonly type?: string;
+  readonly exports?: Record<
+    string,
+    | string
+    | {
+        readonly types?: string;
+        readonly import?: string;
+        readonly require?: string;
+        readonly default?: string;
+      }
+  >;
+  readonly dependencies?: Record<string, string>;
+}
+
 const AzureTrustedSigningOptionsConfig = Config.all({
   publisherName: Config.string("AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"),
   endpoint: Config.string("AZURE_TRUSTED_SIGNING_ENDPOINT"),
@@ -441,6 +459,226 @@ function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+function isWorkspaceDependencySpec(spec: string): boolean {
+  return spec.startsWith("workspace:");
+}
+
+function deriveBuiltModuleBasename(sourcePath: string): string {
+  const normalized = sourcePath.replace(/\\/g, "/");
+  const fileName = normalized.split("/").at(-1) ?? normalized;
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
+function resolveWorkspaceExports(
+  exportsField: WorkspacePackageJson["exports"],
+): WorkspacePackageJson["exports"] {
+  if (!exportsField) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(exportsField).map(([subpath, entry]) => {
+      const sourcePath =
+        typeof entry === "string"
+          ? entry
+          : (entry.import ?? entry.require ?? entry.types ?? entry.default);
+      if (!sourcePath) {
+        throw new Error(`Unsupported exports entry for '${subpath}'.`);
+      }
+
+      const basename = deriveBuiltModuleBasename(sourcePath);
+      return [
+        subpath,
+        {
+          types: `./dist/${basename}.d.mts`,
+          import: `./dist/${basename}.mjs`,
+          require: `./dist/${basename}.cjs`,
+          default: `./dist/${basename}.mjs`,
+        },
+      ];
+    }),
+  );
+}
+
+const resolveWorkspacePackageDirs = Effect.fn("resolveWorkspacePackageDirs")(function* (
+  repoRoot: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const packageDirs = [path.join(repoRoot, "apps"), path.join(repoRoot, "packages")];
+  const results = new Map<string, string>();
+
+  for (const parentDir of packageDirs) {
+    if (!(yield* fs.exists(parentDir))) {
+      continue;
+    }
+
+    const entries = yield* fs.readDirectory(parentDir);
+    for (const entry of entries) {
+      const packageDir = path.join(parentDir, entry);
+      const packageJsonPath = path.join(packageDir, "package.json");
+      if (!(yield* fs.exists(packageJsonPath))) {
+        continue;
+      }
+
+      const packageJson = JSON.parse(
+        yield* fs.readFileString(packageJsonPath),
+      ) as WorkspacePackageJson;
+      results.set(packageJson.name, packageDir);
+    }
+  }
+
+  return results;
+});
+
+const stageWorkspaceDependencies = Effect.fn("stageWorkspaceDependencies")(function* ({
+  repoRoot,
+  stageAppDir,
+  dependencies,
+  catalog,
+}: {
+  readonly repoRoot: string;
+  readonly stageAppDir: string;
+  readonly dependencies: Record<string, string>;
+  readonly catalog: Record<string, string>;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const withBuildError = <A, E>(
+    effect: Effect.Effect<A, E, never>,
+    message: string,
+  ): Effect.Effect<A, BuildScriptError, never> =>
+    effect.pipe(Effect.mapError((cause) => new BuildScriptError({ message, cause })));
+
+  const parseWorkspacePackageJson = (
+    packageJsonPath: string,
+    packageName: string,
+  ): Effect.Effect<WorkspacePackageJson, BuildScriptError, never> =>
+    withBuildError(
+      fs.readFileString(packageJsonPath).pipe(
+        Effect.flatMap((contents) =>
+          Effect.try({
+            try: () => JSON.parse(contents) as WorkspacePackageJson,
+            catch: (cause) =>
+              new BuildScriptError({
+                message: `Could not parse package.json for workspace package '${packageName}'.`,
+                cause,
+              }),
+          }),
+        ),
+      ),
+      `Could not read package.json for workspace package '${packageName}'.`,
+    );
+
+  const workspacePackageDirs = yield* resolveWorkspacePackageDirs(repoRoot).pipe(
+    Effect.mapError(
+      (cause) =>
+        new BuildScriptError({
+          message: "Could not enumerate workspace packages for desktop dependency staging.",
+          cause,
+        }),
+    ),
+  );
+  const stageWorkspaceRoot = path.join(stageAppDir, "workspace-deps");
+  const stagedPackages = new Set<string>();
+
+  const stagePackage = (packageName: string): Effect.Effect<string, BuildScriptError, never> =>
+    Effect.gen(function* () {
+      const sourceDir = workspacePackageDirs.get(packageName);
+      if (!sourceDir) {
+        return yield* new BuildScriptError({
+          message: `Could not resolve workspace package '${packageName}' while staging desktop dependencies.`,
+        });
+      }
+
+      const stageDir = path.join(stageWorkspaceRoot, packageName);
+      if (stagedPackages.has(packageName)) {
+        return `file:${path.relative(stageAppDir, stageDir)}`;
+      }
+
+      const packageJsonPath = path.join(sourceDir, "package.json");
+      const packageJson = yield* parseWorkspacePackageJson(packageJsonPath, packageName);
+      const distDir = path.join(sourceDir, "dist");
+      const hasDist = yield* withBuildError(
+        fs.exists(distDir),
+        `Could not verify built output for workspace package '${packageName}'.`,
+      );
+      if (!hasDist) {
+        return yield* new BuildScriptError({
+          message: `Missing built dist for workspace package '${packageName}' at ${distDir}. Run the package build first.`,
+        });
+      }
+
+      yield* withBuildError(
+        fs.makeDirectory(stageDir, { recursive: true }),
+        `Could not create staged directory for workspace package '${packageName}'.`,
+      );
+      yield* withBuildError(
+        fs.copy(distDir, path.join(stageDir, "dist")),
+        `Could not copy built dist for workspace package '${packageName}' into the staged desktop app.`,
+      );
+
+      const stagedDependencies: Record<string, string> = {};
+      for (const [dependencyName, spec] of Object.entries(packageJson.dependencies ?? {})) {
+        if (isWorkspaceDependencySpec(spec)) {
+          stagedDependencies[dependencyName] = yield* stagePackage(dependencyName);
+          continue;
+        }
+
+        stagedDependencies[dependencyName] = resolveCatalogDependencies(
+          { [dependencyName]: spec },
+          catalog,
+          packageName,
+        )[dependencyName]!;
+      }
+
+      const stagedExports = packageJson.exports
+        ? resolveWorkspaceExports(packageJson.exports)
+        : undefined;
+      const stagedPackageJson: WorkspacePackageJson = {
+        name: packageJson.name,
+        version: packageJson.version ?? "0.0.0",
+        private: true,
+        ...(packageJson.type ? { type: packageJson.type } : {}),
+        ...(stagedExports ? { exports: stagedExports } : {}),
+        dependencies: stagedDependencies,
+      };
+
+      const stagedPackageJsonString = yield* encodeJsonString(stagedPackageJson).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BuildScriptError({
+              message: `Could not serialize staged package.json for workspace package '${packageName}'.`,
+              cause,
+            }),
+        ),
+      );
+      yield* withBuildError(
+        fs.writeFileString(path.join(stageDir, "package.json"), `${stagedPackageJsonString}\n`),
+        `Could not write staged package.json for workspace package '${packageName}'.`,
+      );
+      stagedPackages.add(packageName);
+
+      return `file:${path.relative(stageAppDir, stageDir)}`;
+    });
+
+  const resolvedDependencies: Record<string, string> = {};
+  for (const [dependencyName, spec] of Object.entries(dependencies)) {
+    if (isWorkspaceDependencySpec(spec)) {
+      resolvedDependencies[dependencyName] = yield* stagePackage(dependencyName);
+      continue;
+    }
+
+    resolvedDependencies[dependencyName] = resolveCatalogDependencies(
+      { [dependencyName]: spec },
+      catalog,
+      "apps/server",
+    )[dependencyName]!;
+  }
+
+  return resolvedDependencies;
+});
+
 function resolveGitHubPublishConfig():
   | {
       readonly provider: "github";
@@ -587,19 +825,6 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       }),
   });
 
-  const resolvedServerDependencies = yield* Effect.try({
-    try: () =>
-      resolveCatalogDependencies(
-        serverDependencies,
-        rootPackageJson.workspaces.catalog,
-        "apps/server",
-      ),
-    catch: (cause) =>
-      new BuildScriptError({
-        message: "Could not resolve production dependencies from apps/server/package.json.",
-        cause,
-      }),
-  });
   const resolvedDesktopRuntimeDependencies = yield* Effect.try({
     try: () =>
       resolveDesktopRuntimeDependencies(
@@ -659,6 +884,21 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/desktop"), { recursive: true });
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/server"), { recursive: true });
+
+  const resolvedServerDependencies = yield* stageWorkspaceDependencies({
+    repoRoot,
+    stageAppDir,
+    dependencies: serverDependencies,
+    catalog: rootPackageJson.workspaces.catalog,
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new BuildScriptError({
+          message: "Could not resolve production dependencies from apps/server/package.json.",
+          cause,
+        }),
+    ),
+  );
 
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));

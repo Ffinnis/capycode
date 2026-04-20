@@ -25,8 +25,8 @@
     }
   },
   "scripts": {
-    "dev": "tsdown src/client.ts src/rpc.ts src/protocol.ts src/schema.ts --format esm,cjs --dts --watch --clean",
-    "build": "tsdown src/client.ts src/rpc.ts src/protocol.ts src/schema.ts --format esm,cjs --dts --clean",
+    "dev": "tsdown src/client.ts src/rpc.ts src/protocol.ts src/schema.ts src/errors.ts --format esm,cjs --dts --watch --clean",
+    "build": "tsdown src/client.ts src/rpc.ts src/protocol.ts src/schema.ts src/errors.ts --format esm,cjs --dts --clean",
     "prepare": "effect-language-service patch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
