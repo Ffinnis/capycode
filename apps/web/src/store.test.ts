@@ -618,6 +618,56 @@ describe("store read model sync", () => {
     expect(threadsOf(next)[0]?.modelSelection.model).toBe("claude-sonnet-4-6");
   });
 
+  it("preserves opencode as the active session provider during read-model sync", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        modelSelection: {
+          provider: "opencode",
+          model: "openai/gpt-5",
+        },
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "opencode",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-02-27T00:00:00.000Z",
+        },
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel, localEnvironmentId);
+
+    expect(threadsOf(next)[0]?.session?.provider).toBe("opencode");
+  });
+
+  it("preserves cursor as the active session provider during read-model sync", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        modelSelection: {
+          provider: "cursor",
+          model: "composer-2",
+        },
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "cursor",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-02-27T00:00:00.000Z",
+        },
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel, localEnvironmentId);
+
+    expect(threadsOf(next)[0]?.session?.provider).toBe("cursor");
+  });
+
   it("preserves project and thread updatedAt timestamps from the read model", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
